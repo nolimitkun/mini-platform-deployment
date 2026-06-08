@@ -1,9 +1,9 @@
 name: validate
 
 # Validates this deployment repo's GitOps charts and scripts. The vendored
-# upstream charts live in the separate mini-platform repo and are not checked
-# out here, so charts/* path-existence checks are skipped; the app-of-apps
-# render and shellcheck still run. Only this repo's wiring is validated.
+# upstream charts live in the separate mini-platform repo; CI checks it out
+# beside this one and points CHARTS_DIR at it so charts/* path-existence checks
+# run too, alongside the app-of-apps render, kubeconform, and shellcheck.
 on:
   push:
     branches: [main]
@@ -15,6 +15,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Check out the vendored charts repo as a sibling so validate-gitops.sh can
+      # resolve every charts/* chartPath. Tracks the same revision name as the
+      # branch under test, falling back to the charts repo's default branch.
+      - name: Check out charts repo
+        uses: actions/checkout@v4
+        with:
+          repository: nolimitkun/mini-platform
+          ref: ${{ github.head_ref || github.ref_name }}
+          path: charts-repo
+        continue-on-error: true
+
+      - name: Default charts repo checkout if ref missing
+        run: |
+          if [ ! -d charts-repo/charts ]; then
+            echo "Branch not found in charts repo; checking out its default branch."
+            rm -rf charts-repo
+            git clone --depth 1 https://github.com/nolimitkun/mini-platform.git charts-repo
+          fi
 
       - name: Install helm
         uses: azure/setup-helm@v4
@@ -35,4 +54,6 @@ jobs:
           shellcheck --version | grep version:
 
       - name: Validate GitOps charts and scripts
+        env:
+          CHARTS_DIR: ${{ github.workspace }}/charts-repo
         run: ./scripts/validate-gitops.sh
