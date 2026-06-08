@@ -514,17 +514,29 @@ else
     -n "$ARGO_NS" -f minikube/values/argo-cd-values.yaml --wait --timeout 15m
 fi
 kubectl apply -f minikube/gitops/root-application.yaml
-# The root Application's source points at the deployment repo; its four helm
-# parameters carry both source URLs/revisions down to the generated Applications.
+# The root Application's source points at the deployment repo; replace the full
+# source shape so upgrades from older single-repo app-of-apps specs cannot keep
+# stale paths or missing multi-repo parameters.
 source_patch="$(jq -cn \
   --arg charts_repo "$CHARTS_REPO_URL" --arg charts_rev "$CHARTS_REVISION" \
   --arg deploy_repo "$DEPLOY_REPO_URL" --arg deploy_rev "$DEPLOY_REVISION" '[
-  {"op":"replace","path":"/spec/source/repoURL","value":$deploy_repo},
-  {"op":"replace","path":"/spec/source/targetRevision","value":$deploy_rev},
-  {"op":"replace","path":"/spec/source/helm/parameters/0/value","value":$charts_repo},
-  {"op":"replace","path":"/spec/source/helm/parameters/1/value","value":$charts_rev},
-  {"op":"replace","path":"/spec/source/helm/parameters/2/value","value":$deploy_repo},
-  {"op":"replace","path":"/spec/source/helm/parameters/3/value","value":$deploy_rev}
+  {
+    "op":"replace",
+    "path":"/spec/source",
+    "value":{
+      "repoURL":$deploy_repo,
+      "targetRevision":$deploy_rev,
+      "path":"minikube/gitops/mini-platform",
+      "helm":{
+        "parameters":[
+          {"name":"chartsRepo","value":$charts_repo},
+          {"name":"chartsRevision","value":$charts_rev},
+          {"name":"deployRepo","value":$deploy_repo},
+          {"name":"deployRevision","value":$deploy_rev}
+        ]
+      }
+    }
+  }
 ]')"
 kubectl -n "$ARGO_NS" patch application mini-platform --type=json -p "$source_patch" >/dev/null
 kubectl -n "$ARGO_NS" annotate application mini-platform \

@@ -72,6 +72,7 @@ runs as a single persistent standalone server in this starter configuration and
 | `scripts/deploy-minikube.sh` | Creates/resets Minikube and automates the Argo CD + Vault bootstrap |
 | `scripts/bootstrap-vault-secrets.sh` | Generates and writes initial credentials into Vault |
 | `scripts/port-forward-services.sh` | Host-local or LAN port forwards for browser services |
+| `scripts/check-local-deployment.sh` | Verifies local Argo CD sync/health, pod readiness, secret sync, and optional Open WebUI smoke test |
 | `scripts/set-repo.sh` | Repoints the charts/deploy repo URLs and revisions in one command |
 | `scripts/validate-gitops.sh` | Lints/renders the GitOps charts and shellchecks the scripts; run in CI too |
 | `tools/` | Optional utility workloads (e.g. network diagnostics) |
@@ -397,7 +398,16 @@ The app-of-apps reconciles these applications (and the `vault-resources` and
 
 ### Via ingress
 
-With ingress (and the Minikube tunnel, where applicable) running:
+With ingress running, add the `.test` hosts to your local resolver or
+`/etc/hosts` using the Minikube node IP (`minikube ip -p mini-platform`). On
+Docker-driver clusters where the ingress `LoadBalancer` remains pending, keep a
+tunnel open in another terminal:
+
+```bash
+minikube tunnel -p mini-platform
+```
+
+Then open the service hostnames:
 
 | Service | Endpoint |
 | --- | --- |
@@ -443,6 +453,9 @@ If LAN IP autodetection picks the wrong interface, pass it explicitly:
 
 Services are then reachable at endpoints like `http://192.168.1.54:8080`. Stop
 the forwards with `./scripts/port-forward-services.sh stop`.
+
+Port-forwarding is also the quickest fallback when host-to-Minikube ingress
+routing is unavailable but the in-cluster services are healthy.
 
 ### Retrieving credentials
 
@@ -490,6 +503,13 @@ configure TLS and authentication before exposing it.
 `serviceAccount: spark-operator-spark`.
 
 **General health:**
+
+```bash
+./scripts/check-local-deployment.sh
+```
+
+Add `--smoke-open-webui` to verify Open WebUI responds through a temporary
+port-forward. For a manual snapshot, inspect the same resources directly:
 
 ```bash
 kubectl -n argocd get applications
