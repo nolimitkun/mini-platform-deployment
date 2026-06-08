@@ -1,0 +1,22 @@
+hub:
+  authenticatePrometheus: false
+  networkPolicy:
+    enabled: true
+
+proxy:
+  chp:
+    networkPolicy:
+      enabled: true
+  traefik:
+    networkPolicy:
+      enabled: true
+  service:
+    type: ClusterIP
+
+singleuser:
+  networkPolicy:
+    enabled: true
+
+scheduling:
+  userPlaceholder:
+    enabled: false

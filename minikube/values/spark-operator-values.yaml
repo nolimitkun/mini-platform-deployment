@@ -1,0 +1,12 @@
+spark:
+  jobNamespaces:
+    - mini-platform
+
+webhook:
+  enable: true
+
+prometheus:
+  metrics:
+    enable: true
+  podMonitor:
+    create: false

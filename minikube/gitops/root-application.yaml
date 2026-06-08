@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mini-platform
+  namespace: argocd
+spec:
+  project: default
+  # The app-of-apps chart lives in the deployment repo. It in turn emits one
+  # multi-source Application per release, pulling charts from chartsRepo and
+  # values from deployRepo. Keep these four parameters in sync with
+  # minikube/gitops/mini-platform/values.yaml via scripts/set-repo.sh.
+  source:
+    repoURL: https://github.com/nolimitkun/mini-platform-deployment.git
+    targetRevision: main
+    path: minikube/gitops/mini-platform
+    helm:
+      parameters:
+        - name: chartsRepo
+          value: https://github.com/nolimitkun/mini-platform.git
+        - name: chartsRevision
+          value: main
+        - name: deployRepo
+          value: https://github.com/nolimitkun/mini-platform-deployment.git
+        - name: deployRevision
+          value: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

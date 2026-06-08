@@ -1,0 +1,69 @@
+extraScrapeConfigs: |
+  - job_name: postgresql
+    static_configs:
+      - targets: ["postgresql-metrics:9187"]
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-metrics:9121"]
+  - job_name: qdrant
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["qdrant:6333"]
+  - job_name: litellm
+    static_configs:
+      - targets: ["litellm:4000"]
+  - job_name: mlflow
+    metrics_path: /metrics
+    basic_auth:
+      username_file: /etc/prometheus/secrets/mlflow-auth/admin-user
+      password_file: /etc/prometheus/secrets/mlflow-auth/admin-password
+    static_configs:
+      - targets: ["mlflow-tracking:80"]
+  - job_name: grafana
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["grafana:80"]
+  - job_name: minio
+    metrics_path: /minio/v2/metrics/cluster
+    static_configs:
+      - targets: ["minio:9000"]
+  - job_name: minio-node
+    metrics_path: /minio/v2/metrics/node
+    static_configs:
+      - targets: ["minio:9000"]
+  - job_name: mlflow-minio
+    metrics_path: /minio/v2/metrics/cluster
+    static_configs:
+      - targets: ["mlflow-minio:80"]
+  - job_name: mlflow-minio-node
+    metrics_path: /minio/v2/metrics/node
+    static_configs:
+      - targets: ["mlflow-minio:80"]
+  - job_name: langfuse-s3
+    metrics_path: /minio/v2/metrics/cluster
+    static_configs:
+      - targets: ["langfuse-s3:9000"]
+  - job_name: langfuse-s3-node
+    metrics_path: /minio/v2/metrics/node
+    static_configs:
+      - targets: ["langfuse-s3:9000"]
+  - job_name: vllm-engine
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["vllm-qwen-engine-service:80"]
+  - job_name: vllm-router
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["vllm-router-service:80"]
+  - job_name: trino
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["trino:5556"]
+
+server:
+  extraSecretMounts:
+    - name: mlflow-auth
+      secretName: mlflow-auth
+      mountPath: /etc/prometheus/secrets/mlflow-auth
+      subPath: ""
+      readOnly: true

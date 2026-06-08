@@ -1,0 +1,26 @@
+global:
+  # Starter deployment uses in-cluster HTTP. Configure TLS before exposing Vault.
+  tlsDisable: true
+
+# Existing workloads consume Kubernetes Secrets populated by Vault Secrets Operator.
+injector:
+  enabled: false
+
+server:
+  enabled: true
+  standalone:
+    enabled: true
+  dataStorage:
+    enabled: true
+    size: 10Gi
+  auditStorage:
+    enabled: true
+    size: 10Gi
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: false
+
+ui:
+  enabled: true
+  serviceType: ClusterIP

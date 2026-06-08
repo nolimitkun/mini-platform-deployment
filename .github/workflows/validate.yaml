@@ -1,0 +1,38 @@
+name: validate
+
+# Validates this deployment repo's GitOps charts and scripts. The vendored
+# upstream charts live in the separate mini-platform repo and are not checked
+# out here, so charts/* path-existence checks are skipped; the app-of-apps
+# render and shellcheck still run. Only this repo's wiring is validated.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL \
+            https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C /usr/local/bin kubeconform
+          kubeconform -v
+
+      # shellcheck is preinstalled on ubuntu-latest runners.
+      - name: Tool versions
+        run: |
+          helm version --short
+          shellcheck --version | grep version:
+
+      - name: Validate GitOps charts and scripts
+        run: ./scripts/validate-gitops.sh

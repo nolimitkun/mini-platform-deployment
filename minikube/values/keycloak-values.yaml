@@ -1,0 +1,28 @@
+global:
+  security:
+    allowInsecureImages: true
+
+image:
+  repository: bitnamilegacy/keycloak
+
+auth:
+  adminUser: admin
+  existingSecret: keycloak-admin
+  passwordSecretKey: admin-password
+
+service:
+  type: ClusterIP
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+
+postgresql:
+  enabled: true
+  image:
+    repository: bitnamilegacy/postgresql
+  auth:
+    existingSecret: keycloak-postgresql
+    secretKeys:
+      userPasswordKey: password

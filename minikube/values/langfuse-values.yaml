@@ -1,0 +1,110 @@
+langfuse:
+  salt:
+    secretKeyRef:
+      name: langfuse-app-secrets
+      key: salt
+  encryptionKey:
+    secretKeyRef:
+      name: langfuse-app-secrets
+      key: encryption-key
+  nextauth:
+    url: http://langfuse.test
+    secret:
+      secretKeyRef:
+        name: langfuse-app-secrets
+        key: nextauth-secret
+  features:
+    telemetryEnabled: false
+  # Provision the tracing project using the same Vault-managed keys consumed by LiteLLM.
+  additionalEnv:
+    - name: LANGFUSE_INIT_ORG_ID
+      value: mini-platform
+    - name: LANGFUSE_INIT_ORG_NAME
+      value: Mini Platform
+    - name: LANGFUSE_INIT_PROJECT_ID
+      value: litellm
+    - name: LANGFUSE_INIT_PROJECT_NAME
+      value: LiteLLM
+    - name: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+      valueFrom:
+        secretKeyRef:
+          name: litellm-langfuse
+          key: LANGFUSE_PUBLIC_KEY
+    - name: LANGFUSE_INIT_PROJECT_SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          name: litellm-langfuse
+          key: LANGFUSE_SECRET_KEY
+    # Without an init user, the org/project are created for API access but no
+    # UI account is a member of the org, so the dashboard appears empty.
+    - name: LANGFUSE_INIT_USER_EMAIL
+      valueFrom:
+        secretKeyRef:
+          name: langfuse-init-user
+          key: LANGFUSE_INIT_USER_EMAIL
+    - name: LANGFUSE_INIT_USER_NAME
+      valueFrom:
+        secretKeyRef:
+          name: langfuse-init-user
+          key: LANGFUSE_INIT_USER_NAME
+    - name: LANGFUSE_INIT_USER_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: langfuse-init-user
+          key: LANGFUSE_INIT_USER_PASSWORD
+  web:
+    service:
+      type: ClusterIP
+      port: 3000
+  ingress:
+    enabled: false
+
+# Langfuse uses dedicated stores; do not share gateway databases with tracing data.
+postgresql:
+  deploy: true
+  auth:
+    existingSecret: langfuse-postgresql
+    secretKeys:
+      userPasswordKey: password
+      adminPasswordKey: password
+
+redis:
+  deploy: true
+  host: langfuse-redis-primary
+  auth:
+    username: null
+    existingSecret: langfuse-redis
+    existingSecretPasswordKey: password
+
+clickhouse:
+  deploy: true
+  replicaCount: 1
+  resourcesPreset: none
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+      ephemeral-storage: 50Mi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+      ephemeral-storage: 4Gi
+  auth:
+    existingSecret: langfuse-clickhouse
+    existingSecretKey: password
+
+s3:
+  deploy: true
+  bucket: langfuse
+  accessKeyId:
+    secretKeyRef:
+      name: langfuse-s3
+      key: root-user
+  secretAccessKey:
+    secretKeyRef:
+      name: langfuse-s3
+      key: root-password
+  auth:
+    existingSecret: langfuse-s3
+    rootUserSecretKey: root-user
+    rootPasswordSecretKey: root-password

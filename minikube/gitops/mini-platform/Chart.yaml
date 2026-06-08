@@ -1,0 +1,7 @@
+apiVersion: v2
+name: mini-platform-apps
+description: Argo CD applications for the Mini Platform vendored Helm charts.
+type: application
+version: 0.1.0
+appVersion: "1.0"
+

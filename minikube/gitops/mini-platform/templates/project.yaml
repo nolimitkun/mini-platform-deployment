@@ -1,0 +1,22 @@
+{{- $chartsRepo := required "Set chartsRepo to the Git repository containing the vendored Helm charts." .Values.chartsRepo -}}
+{{- $deployRepo := required "Set deployRepo to the Git repository containing this deployment overlay." .Values.deployRepo -}}
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: mini-platform
+  namespace: {{ .Values.argoNamespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  description: Mini Platform applications managed by Argo CD.
+  sourceRepos:
+    - {{ $chartsRepo | quote }}
+    - {{ $deployRepo | quote }}
+  destinations:
+    - namespace: {{ .Values.destination.namespace }}
+      server: {{ .Values.destination.server }}
+    - namespace: {{ .Values.argoNamespace }}
+      server: {{ .Values.destination.server }}
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"

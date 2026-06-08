@@ -1,0 +1,17 @@
+mode: standalone
+replicas: 1
+existingSecret: minio-root-credentials
+
+persistence:
+  enabled: true
+
+service:
+  type: ClusterIP
+
+consoleService:
+  type: ClusterIP
+
+metrics:
+  serviceMonitor:
+    enabled: false
+

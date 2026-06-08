@@ -1,0 +1,15 @@
+ollama:
+  enabled: false
+
+pipelines:
+  enabled: false
+
+tika:
+  enabled: true
+
+websocket:
+  enabled: false
+
+openaiBaseApiUrl: http://litellm.mini-platform.svc.cluster.local:4000/v1
+openaiApiKeyExistingSecret: litellm-master-key
+openaiApiKeyExistingSecretKey: PROXY_MASTER_KEY

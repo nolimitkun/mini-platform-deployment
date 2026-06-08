@@ -1,0 +1,47 @@
+global:
+  security:
+    allowInsecureImages: true
+
+image:
+  repository: bitnamilegacy/mlflow
+
+waitContainer:
+  image:
+    repository: bitnamilegacy/os-shell
+
+tracking:
+  service:
+    type: ClusterIP
+  auth:
+    enabled: true
+    existingSecret: mlflow-auth
+    existingSecretUserKey: admin-user
+    existingSecretPasswordKey: admin-password
+    existingSecretFlaskServerSecretKey: flask-server-secret-key
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+postgresql:
+  enabled: true
+  image:
+    repository: bitnamilegacy/postgresql
+  auth:
+    existingSecret: mlflow-postgresql
+
+minio:
+  enabled: true
+  image:
+    repository: bitnamilegacy/minio
+  clientImage:
+    repository: bitnamilegacy/minio-client
+  defaultInitContainers:
+    volumePermissions:
+      image:
+        repository: bitnamilegacy/os-shell
+  auth:
+    existingSecret: mlflow-minio
+  defaultBuckets: mlflow
+  provisioning:
+    enabled: true

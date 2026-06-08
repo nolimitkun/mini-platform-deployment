@@ -1,0 +1,28 @@
+vaultSecrets:
+  mount: mini-platform
+  vaultAuthRef: default
+  refreshAfter: 1m
+  names:
+    - postgresql-credentials
+    - litellm-dbcredentials
+    - redis-credentials
+    - litellm-redis
+    - litellm-master-key
+    - langfuse-app-secrets
+    - langfuse-postgresql
+    - langfuse-redis
+    - langfuse-clickhouse
+    - langfuse-s3
+    - litellm-langfuse
+    - langfuse-init-user
+    - vllm-hf-token
+    - mlflow-auth
+    - mlflow-postgresql
+    - mlflow-minio
+    - grafana-admin
+    - superset-postgresql
+    - superset-redis
+    - superset-env
+    - keycloak-admin
+    - keycloak-postgresql
+    - minio-root-credentials

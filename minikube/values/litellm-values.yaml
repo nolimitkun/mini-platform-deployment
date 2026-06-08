@@ -1,0 +1,53 @@
+nameOverride: litellm
+
+image:
+  tag: main-latest
+
+masterkeySecretName: litellm-master-key
+masterkeySecretKey: PROXY_MASTER_KEY
+
+# Langfuse headless initialization and LiteLLM use the same Vault-managed project keys.
+environmentSecrets:
+  - litellm-langfuse
+  - litellm-redis
+
+proxy_config:
+  model_list:
+    - model_name: qwen3.6-27b
+      litellm_params:
+        model: openai/qwen3.6-27b
+        api_base: http://vllm-router-service.mini-platform.svc.cluster.local/v1
+        api_key: none
+  general_settings:
+    master_key: os.environ/PROXY_MASTER_KEY
+    store_model_in_db: true
+    store_prompts_in_spend_logs: true
+  litellm_settings:
+    cache: true
+    callbacks:
+      - prometheus
+    success_callback:
+      - langfuse
+    failure_callback:
+      - langfuse
+
+db:
+  useExisting: true
+  endpoint: postgresql.mini-platform.svc.cluster.local
+  database: litellm
+  secret:
+    name: litellm-dbcredentials
+    usernameKey: username
+    passwordKey: password
+  deployStandalone: false
+
+redis:
+  enabled: false
+  deployStandalone: false
+
+migrationJob:
+  enabled: true
+  # Retry the PreSync schema migration long enough to outlast a database or
+  # credential dependency that is still coming up, instead of giving up after
+  # the chart default of 4 attempts and leaving an empty schema.
+  backoffLimit: 20

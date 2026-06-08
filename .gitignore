@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+
+# Helm
+/charts/**/tmp/
+
+# Kubernetes
+*.swp
+*.bak
+*.tmp
+
+# Logs
+*.log
+logs/
+
+# Local overrides
+*-local.yaml
+
+# Temporary files
+*.sql~
+*.yaml~
+
+.env

@@ -1,0 +1,122 @@
+# Two Git sources back this overlay (see scripts/set-repo.sh to change them):
+#   chartsRepo  - vendored upstream Helm charts (the charts/ tree).
+#   deployRepo  - this deployment repo (minikube/ overlay + gitops wiring).
+# Each generated Argo CD Application is multi-source: it pulls its chart from
+# the relevant repo and its values file from deployRepo via the $deploy ref.
+chartsRepo: https://github.com/nolimitkun/mini-platform.git
+chartsRevision: main
+deployRepo: https://github.com/nolimitkun/mini-platform-deployment.git
+deployRevision: main
+
+argoNamespace: argocd
+destination:
+  server: https://kubernetes.default.svc
+  namespace: mini-platform
+
+applications:
+  argocd:
+    chartPath: charts/argo-cd
+    valuesFile: minikube/values/argo-cd-values.yaml
+    namespace: argocd
+    releaseName: argocd
+    wave: "-5"
+  vault:
+    chartPath: charts/vault
+    valuesFile: minikube/values/vault-values.yaml
+    wave: "-4"
+  vault-secrets-operator:
+    chartPath: charts/vault-secrets-operator
+    valuesFile: minikube/values/vault-secrets-operator-values.yaml
+    wave: "-4"
+  vault-resources:
+    chartPath: minikube/gitops/vault-resources
+    valuesFile: minikube/gitops/vault-resources/values.yaml
+    releaseName: vault-resources
+    wave: "-3"
+  postgresql:
+    chartPath: charts/postgresql
+    valuesFile: minikube/values/postgresql-values.yaml
+    wave: "-3"
+  redis:
+    chartPath: charts/redis
+    valuesFile: minikube/values/redis-values.yaml
+    wave: "-3"
+  qdrant:
+    chartPath: charts/qdrant
+    valuesFile: minikube/values/qdrant-values.yaml
+    wave: "-3"
+    ignoreDifferences:
+      - group: apps
+        kind: StatefulSet
+        jsonPointers:
+          - /spec/persistentVolumeClaimRetentionPolicy
+          - /spec/volumeClaimTemplates
+  minio:
+    chartPath: charts/minio
+    valuesFile: minikube/values/minio-values.yaml
+    wave: "-3"
+  spark-operator:
+    chartPath: charts/spark-operator
+    valuesFile: minikube/values/spark-operator-values.yaml
+    wave: "-3"
+  keycloak:
+    chartPath: charts/keycloak
+    valuesFile: minikube/values/keycloak-values.yaml
+    wave: "-2"
+  langfuse:
+    chartPath: charts/langfuse
+    valuesFile: minikube/values/langfuse-values.yaml
+    wave: "-2"
+  mlflow:
+    chartPath: charts/mlflow
+    valuesFile: minikube/values/mlflow-values.yaml
+    wave: "-2"
+  trino:
+    chartPath: charts/trino
+    valuesFile: minikube/values/trino-values.yaml
+    wave: "-2"
+  vllm:
+    chartPath: charts/vllm-stack
+    valuesFile: minikube/values/vllm-values.yaml
+    wave: "-2"
+  prometheus:
+    chartPath: charts/prometheus
+    valuesFile: minikube/values/prometheus-values.yaml
+    wave: "-1"
+    ignoreDifferences:
+      - group: apps
+        kind: StatefulSet
+        jsonPointers:
+          - /spec/persistentVolumeClaimRetentionPolicy
+          - /spec/volumeClaimTemplates
+  grafana:
+    chartPath: charts/grafana
+    valuesFile: minikube/values/grafana-values.yaml
+    wave: "0"
+  jupyterhub:
+    chartPath: charts/jupyterhub
+    valuesFile: minikube/values/jupyterhub-values.yaml
+    wave: "0"
+  superset:
+    chartPath: charts/superset
+    valuesFile: minikube/values/superset-values.yaml
+    wave: "0"
+    ignoreDifferences:
+      - group: apps
+        kind: StatefulSet
+        jsonPointers:
+          - /spec/persistentVolumeClaimRetentionPolicy
+          - /spec/volumeClaimTemplates
+  litellm:
+    chartPath: charts/litellm-helm
+    valuesFile: minikube/values/litellm-values.yaml
+    wave: "1"
+  open-webui:
+    chartPath: charts/open-webui
+    valuesFile: minikube/values/open-webui-values.yaml
+    wave: "2"
+  ingress-resources:
+    chartPath: minikube/gitops/ingress-resources
+    valuesFile: minikube/gitops/ingress-resources/values.yaml
+    releaseName: ingress-resources
+    wave: "3"

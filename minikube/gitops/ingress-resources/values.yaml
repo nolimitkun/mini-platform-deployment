@@ -1,0 +1,41 @@
+ingressClassName: nginx
+
+# Only entry points intended for local user access are exposed. Stateful
+# dependencies, Vault, Trino, Prometheus, and vLLM remain cluster-internal.
+routes:
+  - name: open-webui
+    host: open-webui.test
+    service: open-webui
+    port: 80
+  - name: litellm
+    host: litellm.test
+    service: litellm
+    port: 4000
+  - name: langfuse
+    host: langfuse.test
+    service: langfuse-web
+    port: 3000
+  - name: mlflow
+    host: mlflow.test
+    service: mlflow-tracking
+    port: 80
+  - name: grafana
+    host: grafana.test
+    service: grafana
+    port: 80
+  - name: jupyterhub
+    host: jupyterhub.test
+    service: proxy-public
+    port: 80
+  - name: superset
+    host: superset.test
+    service: superset
+    port: 8088
+  - name: minio
+    host: minio.test
+    service: minio-console
+    port: 9001
+  - name: keycloak
+    host: keycloak.test
+    service: keycloak
+    port: 80

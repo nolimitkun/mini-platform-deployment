@@ -1,0 +1,54 @@
+{{- $chartsRepo := required "Set chartsRepo to the Git repository containing the vendored Helm charts (charts/)." .Values.chartsRepo -}}
+{{- $chartsRevision := required "Set chartsRevision to the revision of the charts repository." .Values.chartsRevision -}}
+{{- $deployRepo := required "Set deployRepo to the Git repository containing this deployment overlay (minikube/)." .Values.deployRepo -}}
+{{- $deployRevision := required "Set deployRevision to the revision of the deployment repository." .Values.deployRevision -}}
+{{- range $name, $app := .Values.applications }}
+{{- /*
+  charts/* paths are vendored upstream charts served from the charts repo;
+  every other chartPath (the first-party gitops/* charts) lives alongside the
+  values in the deployment repo. Either way the values file is always pulled
+  from the deployment repo through the $deploy ref, so valueFiles are written
+  repo-root-relative ($deploy/...) and never depend on chart-path depth.
+*/}}
+{{- $chartRepo := $deployRepo -}}
+{{- $chartRevision := $deployRevision -}}
+{{- if hasPrefix "charts/" $app.chartPath }}
+{{- $chartRepo = $chartsRepo -}}
+{{- $chartRevision = $chartsRevision -}}
+{{- end }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mini-platform-{{ $name }}
+  namespace: {{ $.Values.argoNamespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $app.wave | quote }}
+spec:
+  project: mini-platform
+  sources:
+    - repoURL: {{ $chartRepo | quote }}
+      targetRevision: {{ $chartRevision | quote }}
+      path: {{ $app.chartPath | quote }}
+      helm:
+        releaseName: {{ default $name $app.releaseName | quote }}
+        valueFiles:
+          - {{ printf "$deploy/%s" $app.valuesFile | quote }}
+    - repoURL: {{ $deployRepo | quote }}
+      targetRevision: {{ $deployRevision | quote }}
+      ref: deploy
+  destination:
+    server: {{ $.Values.destination.server }}
+    namespace: {{ default $.Values.destination.namespace $app.namespace }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+{{- with $app.ignoreDifferences }}
+  ignoreDifferences:
+{{ toYaml . | nindent 4 }}
+{{- end }}
+{{- end }}

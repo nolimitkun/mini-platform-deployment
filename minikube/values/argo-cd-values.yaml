@@ -1,0 +1,24 @@
+crds:
+  install: true
+  keep: true
+
+global:
+  domain: argocd.test
+
+configs:
+  cm:
+    url: http://argocd.test
+  params:
+    server.insecure: true
+
+server:
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hostname: argocd.test
+    tls: false
+
+notifications:
+  argocdUrl: http://argocd.test

@@ -1,0 +1,62 @@
+service:
+  type: ClusterIP
+
+# Superset expects this Secret to be created before Helm installation.
+secretEnv:
+  create: false
+envFromSecret: superset-env
+
+# Installing at container startup is suitable for a starter platform. Build
+# an image with this dependency preinstalled for repeatable production rollout.
+bootstrapScript: |
+  #!/bin/bash
+  set -e
+  pip install --no-cache-dir --target /app/.venv/lib/python3.10/site-packages trino psycopg2-binary
+  if [ ! -f ~/bootstrap ]; then echo "Running Superset with uid {{ .Values.runAsUser }}" > ~/bootstrap; fi
+
+configOverrides:
+  application_secret: |
+    SECRET_KEY = os.environ["SUPERSET_SECRET_KEY"]
+
+extraConfigs:
+  import_datasources.yaml: |
+    databases:
+      - database_name: Trino TPCH
+        sqlalchemy_uri: trino://superset@trino.mini-platform.svc.cluster.local:8080/tpch
+        expose_in_sqllab: true
+        allow_ctas: false
+        allow_cvas: false
+        allow_dml: false
+
+supersetNode:
+  connections:
+    redis_password: external-secret
+
+init:
+  adminUser:
+    username: admin
+    firstname: Platform
+    lastname: Admin
+    email: admin@platform.local
+    password: "${SUPERSET_ADMIN_PASSWORD}"
+
+postgresql:
+  enabled: true
+  auth:
+    username: superset
+    database: superset
+    existingSecret: superset-postgresql
+    secretKeys:
+      adminPasswordKey: postgres-password
+      userPasswordKey: password
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: true
+    existingSecret: superset-redis
+    existingSecretPasswordKey: redis-password
+  master:
+    persistence:
+      enabled: true

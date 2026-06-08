@@ -1,0 +1,30 @@
+server:
+  workers: 1
+  config:
+    query:
+      maxMemory: 1GB
+
+service:
+  type: ClusterIP
+
+# The starter catalog permits an immediate BI connectivity test from Superset.
+# Replace or extend it with Iceberg, Hive, PostgreSQL, or object-store catalogs.
+catalogs:
+  tpch: |
+    connector.name=tpch
+    tpch.splits-per-node=4
+
+jmx:
+  enabled: true
+  exporter:
+    enabled: true
+    configProperties: |-
+      hostPort: localhost:{{ .Values.jmx.registryPort }}
+      lowercaseOutputName: true
+      lowercaseOutputLabelNames: true
+      rules:
+        - pattern: ".*"
+
+serviceMonitor:
+  enabled: false
+

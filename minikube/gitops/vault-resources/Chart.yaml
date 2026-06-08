@@ -1,0 +1,6 @@
+apiVersion: v2
+name: mini-platform-vault-resources
+description: Vault Secrets Operator resources for Mini Platform application secrets.
+type: application
+version: 0.1.0
+appVersion: "1.0"

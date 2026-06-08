@@ -1,0 +1,76 @@
+servingEngineSpec:
+  runtimeClassName: ""
+  # The node has a single GPU. The chart's default rollout strategy
+  # (maxSurge=100%, maxUnavailable=0) tries to schedule the new pod before
+  # tearing down the old one, but the new pod can never get the GPU the old
+  # pod still holds — so any config change deadlocks as Pending forever.
+  # Recreate stops the old pod first, freeing the GPU for the replacement.
+  strategy:
+    type: Recreate
+  modelSpec:
+    - name: qwen
+      repository: vllm/vllm-openai
+      tag: latest
+      # NVFP4 (compressed-tensors) build of Qwen3.6-27B. vLLM's GGUF loader does
+      # not support the qwen3_5 arch, so we use this native-format 4-bit quant
+      # instead (auto-detected from the model's quantization_config).
+      modelURL: unsloth/Qwen3.6-27B-NVFP4
+      replicaCount: 1
+      requestCPU: 4
+      requestMemory: 32Gi
+      requestGPU: 1
+      # Token provisioned via Vault (covers gated/private pulls + HF rate limits).
+      hf_token:
+        secretName: vllm-hf-token
+        secretKey: HF_TOKEN
+      # Persistent HF cache (mounted at /data, HF_HOME) so the ~14GB weights
+      # survive pod restarts instead of re-downloading each time.
+      pvcStorage: "40Gi"
+      vllmConfig:
+        dtype: "auto"
+        maxModelLen: 8192
+        # 24GB of NVFP4 weights dominate the 32GB card; push utilization up so
+        # the KV cache gets every spare byte (0.95 measured ~31.2/32.6 GB).
+        gpuMemoryUtilization: 0.95
+        # Reuse shared system-prompt / multi-turn history prefixes — large TTFT
+        # win for the Open WebUI chat workload (was 0% hit rate when disabled).
+        enablePrefixCaching: true
+        extraArgs:
+          # Stable served name for LiteLLM / router to target.
+          - "--served-model-name"
+          - "qwen3.6-27b"
+          # FP8 KV cache halves bytes/token, roughly doubling concurrent capacity
+          # (the engine reported only 1.93GB / 23k tokens of KV at fp16). The
+          # chart has no dedicated key, so pass it through directly.
+          - "--kv-cache-dtype"
+          - "fp8"
+          # Keep eager mode. With 24GB of weights on a 32GB card there is no room
+          # for CUDA-graph capture: dropping this flag OOMs during
+          # profile_cudagraph_memory (FULL_AND_PIECEWISE tried to allocate
+          # ~1.5GB with <1GB free). The decode-throughput gain from graphs is
+          # not reachable at this model/card ratio.
+          - "--enforce-eager"
+  # Large model loads slowly; give the startup probe ~30 min
+  # (failureThreshold * periodSeconds) before giving up.
+  startupProbe:
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    failureThreshold: 180
+    httpGet:
+      path: /health
+      port: 8000
+  serviceMonitor:
+    enabled: false
+
+routerSpec:
+  enableRouter: true
+  serviceType: ClusterIP
+  servicePort: 80
+  resources:
+    requests:
+      cpu: 500m
+      memory: 500Mi
+  routingLogic: session
+  sessionKey: x-user-id
+  serviceMonitor:
+    enabled: false

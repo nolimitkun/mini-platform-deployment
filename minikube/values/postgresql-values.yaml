@@ -1,0 +1,16 @@
+auth:
+  username: litellm
+  database: litellm
+  existingSecret: postgresql-credentials
+  secretKeys:
+    adminPasswordKey: postgres-password
+    userPasswordKey: password
+    metricsPasswordKey: metrics-password
+
+architecture: standalone
+
+volumePermissions:
+  enabled: true
+
+metrics:
+  enabled: true
