@@ -15,10 +15,7 @@ servingEngineSpec:
       # not support the qwen3_5 arch, so we use this native-format 4-bit quant
       # instead (auto-detected from the model's quantization_config).
       modelURL: unsloth/Qwen3.6-27B-NVFP4
-      # Temporarily 0 for the llm-d benchmark window: the single GPU is handed
-      # to the llm-d decode pod. Restore to 1 (and disable the llm-d apps) to
-      # return to the production-stack serving path.
-      replicaCount: 0
+      replicaCount: 1
       requestCPU: 4
       requestMemory: 32Gi
       requestGPU: 1

@@ -85,13 +85,13 @@ applications:
   # enabled: true here AND servingEngineSpec.modelSpec[0].replicaCount: 0 in
   # minikube/values/vllm-values.yaml (or the reverse), then commit and push.
   llm-d-modelserver:
-    enabled: true
+    enabled: false
     chartPath: minikube/gitops/llm-d-modelserver
     valuesFile: minikube/gitops/llm-d-modelserver/values.yaml
     releaseName: llm-d-modelserver
     wave: "-2"
   llm-d-scheduler:
-    enabled: true
+    enabled: false
     chartPath: charts/llm-d-scheduler
     valuesFile: minikube/values/llm-d-scheduler-values.yaml
     releaseName: llm-d
