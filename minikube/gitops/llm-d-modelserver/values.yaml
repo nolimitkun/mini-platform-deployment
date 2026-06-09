@@ -1,0 +1,55 @@
+# vLLM decode pods for the llm-d serving path.
+#
+# The engine configuration deliberately mirrors minikube/values/vllm-values.yaml
+# (production-stack) — same image, model, and flags — so benchmarks compare the
+# routing layers, not divergent engine setups. The single node GPU cannot host
+# both stacks at once: scale production-stack's replicas to 0 before raising
+# replicas here (see docs/benchmarks).
+replicas: 1
+
+# Label used by the llm-d scheduler's InferencePool to select these pods. Must
+# match inferencePool.modelServers.matchLabels in
+# minikube/values/llm-d-scheduler-values.yaml.
+poolLabel: mini-platform
+
+image: vllm/vllm-openai:latest
+imagePullPolicy: IfNotPresent
+
+model: unsloth/Qwen3.6-27B-NVFP4
+servedModelName: qwen3.6-27b
+
+# Mirrors the production-stack engine flags (see vllm-values.yaml for the
+# rationale behind fp8 KV cache and --enforce-eager on this 32GB card).
+engineArgs:
+  - "--enable-prefix-caching"
+  - "--max-model-len"
+  - "8192"
+  - "--dtype"
+  - "auto"
+  - "--gpu_memory_utilization"
+  - "0.95"
+  - "--kv-cache-dtype"
+  - "fp8"
+  - "--enforce-eager"
+
+# Reuses production-stack's HF cache PVC so the ~16GB of weights are not
+# re-downloaded. RWO is node-scoped and this is a single-node cluster, so the
+# claim mounts fine even while the production-stack pod still exists.
+hfCacheClaim: vllm-qwen-storage-claim
+hfTokenSecret:
+  name: vllm-hf-token
+  key: HF_TOKEN
+
+resources:
+  requests:
+    cpu: "4"
+    memory: 32Gi
+    nvidia.com/gpu: "1"
+  limits:
+    nvidia.com/gpu: "1"
+
+# Large model loads slowly; same startup budget as production-stack (~30 min).
+startupProbe:
+  initialDelaySeconds: 15
+  periodSeconds: 10
+  failureThreshold: 180

@@ -1,0 +1,93 @@
+# Overlay for charts/llm-d-scheduler (GAIE "standalone" chart v1.5.0).
+#
+# Configures the released llm-d inference scheduler as the endpoint picker with
+# llm-d's optimized-baseline scoring profile (prefix-cache aware + load aware),
+# following guides/optimized-baseline in llm-d v0.7.0. Standalone mode bundles
+# an Envoy sidecar, so the EPP Service is the client entrypoint — no Gateway
+# API provider is required.
+#
+# Resources are shrunk drastically from upstream defaults (4 CPU / 8Gi per
+# container, sized for high-QPS production): this single-node cluster serves a
+# 27B model on one GPU, so scheduler QPS is tiny.
+inferenceExtension:
+  replicas: 1
+  image:
+    registry: ghcr.io
+    repository: llm-d/llm-d-inference-scheduler
+    tag: v0.8.0
+    pullPolicy: IfNotPresent
+
+  flags:
+    v: 2
+
+  failureMode: "FailOpen"
+
+  # Expose port 80 like the other in-cluster service entrypoints; 8081 is the
+  # Envoy sidecar listener.
+  extraServicePorts:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 8081
+
+  pluginsConfigFile: "optimized-baseline-plugins.yaml"
+  pluginsCustomConfig:
+    optimized-baseline-plugins.yaml: |
+      apiVersion: inference.networking.x-k8s.io/v1alpha1
+      kind: EndpointPickerConfig
+      plugins:
+      - type: queue-scorer
+      - type: kv-cache-utilization-scorer
+      - type: prefix-cache-scorer
+      - type: no-hit-lru-scorer
+      schedulingProfiles:
+      - name: default
+        plugins:
+        - pluginRef: queue-scorer
+          weight: 2
+        - pluginRef: kv-cache-utilization-scorer
+          weight: 2
+        - pluginRef: prefix-cache-scorer
+          weight: 3
+        - pluginRef: no-hit-lru-scorer
+          weight: 2
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 4Gi
+
+  sidecar:
+    # Override the chart's default `--log-level trace` (very expensive under
+    # load) and cap Envoy worker threads instead of spawning one per host CPU.
+    args:
+      - "--service-node"
+      - "envoy-sidecar"
+      - "--log-level"
+      - "warn"
+      - "--concurrency"
+      - "4"
+      - "--drain-strategy"
+      - "immediate"
+      - "--drain-time-s"
+      - "60"
+      - "-c"
+      - "/etc/envoy/envoy.yaml"
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        memory: 2Gi
+
+# Selects the llm-d-modelserver decode pods; must match poolLabel in
+# minikube/gitops/llm-d-modelserver/values.yaml.
+inferencePool:
+  targetPorts:
+    - number: 8000
+  modelServerType: vllm
+  modelServers:
+    matchLabels:
+      llm-d.ai/pool: mini-platform

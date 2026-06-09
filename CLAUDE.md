@@ -78,6 +78,15 @@ here means rendering and schema-checking.
 Default AI request path: `Open WebUI → LiteLLM → vLLM Router → vLLM`, with
 LiteLLM emitting traces to Langfuse. LiteLLM is an OpenAI-compatible gateway.
 
+An alternative **llm-d serving path** exists behind `enabled: false` app-of-apps
+toggles (`llm-d-scheduler` + `llm-d-modelserver`): the GAIE standalone endpoint
+picker with llm-d's prefix-cache/load-aware scorers in front of a vLLM decode
+deployment that mirrors the production-stack engine flags (entrypoint
+`llm-d-epp.mini-platform.svc:80`). The single GPU cannot host both inference
+paths at once — flip the llm-d toggles and the `vllm` overlay's `replicaCount`
+together, in one commit. Both decode paths share the HF-cache PVC
+(`vllm-qwen-storage-claim`), so swapping does not re-download weights.
+
 Supporting subsystems: Vault + VSO (secrets), Ingress NGINX (`.test`
 hostnames), Prometheus + Grafana (metrics), MLflow (experiments), Qdrant
 (vectors), Spark Operator, Superset → Trino (analytics), Keycloak (identity),

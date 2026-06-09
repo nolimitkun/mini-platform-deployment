@@ -4,6 +4,13 @@
 {{- $deployRevision := required "Set deployRevision to the revision of the deployment repository." .Values.deployRevision -}}
 {{- range $name, $app := .Values.applications }}
 {{- /*
+  enabled: false skips the Application entirely; the app-of-apps then prunes it
+  (and its workloads) from the cluster. Used for components that cannot run
+  alongside their alternative, e.g. llm-d vs production-stack on one GPU.
+  Note: sprig's `default` treats false as empty, so test the key explicitly.
+*/}}
+{{- if or (not (hasKey $app "enabled")) $app.enabled }}
+{{- /*
   charts/* paths are vendored upstream charts served from the charts repo;
   every other chartPath (the first-party gitops/* charts) lives alongside the
   values in the deployment repo. Either way the values file is always pulled
@@ -50,5 +57,6 @@ spec:
 {{- with $app.ignoreDifferences }}
   ignoreDifferences:
 {{ toYaml . | nindent 4 }}
+{{- end }}
 {{- end }}
 {{- end }}

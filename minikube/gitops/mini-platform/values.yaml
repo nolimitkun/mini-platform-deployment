@@ -79,6 +79,23 @@ applications:
     chartPath: charts/vllm-stack
     valuesFile: minikube/values/vllm-values.yaml
     wave: "-2"
+  # Alternative inference path: llm-d (GAIE standalone scheduler + vLLM decode
+  # pods). Disabled by default — the node's single GPU cannot host llm-d and
+  # production-stack (vllm) at the same time. To switch paths, set
+  # enabled: true here AND servingEngineSpec.modelSpec[0].replicaCount: 0 in
+  # minikube/values/vllm-values.yaml (or the reverse), then commit and push.
+  llm-d-modelserver:
+    enabled: false
+    chartPath: minikube/gitops/llm-d-modelserver
+    valuesFile: minikube/gitops/llm-d-modelserver/values.yaml
+    releaseName: llm-d-modelserver
+    wave: "-2"
+  llm-d-scheduler:
+    enabled: false
+    chartPath: charts/llm-d-scheduler
+    valuesFile: minikube/values/llm-d-scheduler-values.yaml
+    releaseName: llm-d
+    wave: "-1"
   prometheus:
     chartPath: charts/prometheus
     valuesFile: minikube/values/prometheus-values.yaml
