@@ -31,6 +31,12 @@ metadata:
   namespace: {{ $.Values.argoNamespace }}
   annotations:
     argocd.argoproj.io/sync-wave: {{ $app.wave | quote }}
+  # Cascade deletion: when the app-of-apps prunes a child Application (e.g. an
+  # entry flips to enabled: false), delete its deployed workloads too instead
+  # of orphaning them. Without this, a disabled inference path keeps holding
+  # the GPU.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
   project: mini-platform
   sources:
