@@ -386,6 +386,8 @@ The app-of-apps reconciles these applications (and the `vault-resources` and
 | `mini-platform-mlflow` | `charts/mlflow` | `minikube/values/mlflow-values.yaml` |
 | `mini-platform-trino` | `charts/trino` | `minikube/values/trino-values.yaml` |
 | `mini-platform-vllm` | `charts/vllm-stack` | `minikube/values/vllm-values.yaml` |
+| `mini-platform-llm-d-modelserver`† | `minikube/gitops/llm-d-modelserver` | `minikube/gitops/llm-d-modelserver/values.yaml` |
+| `mini-platform-llm-d-scheduler`† | `charts/llm-d-scheduler` | `minikube/values/llm-d-scheduler-values.yaml` |
 | `mini-platform-prometheus` | `charts/prometheus` | `minikube/values/prometheus-values.yaml` |
 | `mini-platform-grafana` | `charts/grafana` | `minikube/values/grafana-values.yaml` |
 | `mini-platform-jupyterhub` | `charts/jupyterhub` | `minikube/values/jupyterhub-values.yaml` |
@@ -393,6 +395,15 @@ The app-of-apps reconciles these applications (and the `vault-resources` and
 | `mini-platform-litellm` | `charts/litellm-helm` | `minikube/values/litellm-values.yaml` |
 | `mini-platform-open-webui` | `charts/open-webui` | `minikube/values/open-webui-values.yaml` |
 | `mini-platform-ingress-resources` | `minikube/gitops/ingress-resources` | `minikube/gitops/ingress-resources/values.yaml` |
+
+† **llm-d serving path** (disabled by default): an alternative to the
+production-stack router, using the Gateway API Inference Extension standalone
+scheduler with llm-d's prefix-cache/load-aware scoring plus a vLLM decode
+deployment that mirrors the production-stack engine configuration. The node's
+single GPU cannot host both inference paths simultaneously — to switch, set
+`enabled: true` on the two llm-d apps **and** scale the `vllm` overlay's
+`replicaCount` to 0 (or the reverse), then commit and push. The llm-d client
+entrypoint is `llm-d-epp.mini-platform.svc` port 80.
 
 ## Accessing Services
 

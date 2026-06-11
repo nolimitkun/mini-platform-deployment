@@ -1,0 +1,51 @@
+# Ephemeral in-cluster benchmark client for the inference serving paths.
+# Applied manually (not GitOps-managed), like net-tools.yaml:
+#
+#   kubectl -n mini-platform apply -f tools/vllm-bench.yaml
+#   kubectl -n mini-platform cp ShareGPT_V3_unfiltered_cleaned_split.json vllm-bench:/bench/sharegpt.json
+#   kubectl -n mini-platform exec vllm-bench -- vllm bench serve \
+#     --backend openai-chat --endpoint /v1/chat/completions \
+#     --base-url http://<target-service> --model qwen3.6-27b ...
+#   kubectl -n mini-platform delete pod vllm-bench
+#
+# Uses the same vllm/vllm-openai image as the serving pods (already cached on
+# the node) for the `vllm bench serve` CLI, and shares the HF-cache PVC so the
+# tokenizer needs no fresh download. RWO is node-scoped: on this single-node
+# cluster the claim can be mounted alongside the engine pod.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vllm-bench
+  labels:
+    app: vllm-bench
+spec:
+  restartPolicy: Never
+  containers:
+    - name: bench
+      image: vllm/vllm-openai:latest
+      imagePullPolicy: IfNotPresent
+      command: ["sleep", "infinity"]
+      env:
+        - name: HF_HOME
+          value: /data
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: vllm-hf-token
+              key: HF_TOKEN
+      resources:
+        requests:
+          cpu: "4"
+          memory: 8Gi
+      volumeMounts:
+        - name: hf-cache
+          mountPath: /data
+        - name: bench
+          mountPath: /bench
+  volumes:
+    - name: hf-cache
+      persistentVolumeClaim:
+        claimName: vllm-qwen-storage-claim
+    - name: bench
+      emptyDir:
+        sizeLimit: 4Gi

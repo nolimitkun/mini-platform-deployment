@@ -4,6 +4,13 @@
 {{- $deployRevision := required "Set deployRevision to the revision of the deployment repository." .Values.deployRevision -}}
 {{- range $name, $app := .Values.applications }}
 {{- /*
+  enabled: false skips the Application entirely; the app-of-apps then prunes it
+  (and its workloads) from the cluster. Used for components that cannot run
+  alongside their alternative, e.g. llm-d vs production-stack on one GPU.
+  Note: sprig's `default` treats false as empty, so test the key explicitly.
+*/}}
+{{- if or (not (hasKey $app "enabled")) $app.enabled }}
+{{- /*
   charts/* paths are vendored upstream charts served from the charts repo;
   every other chartPath (the first-party gitops/* charts) lives alongside the
   values in the deployment repo. Either way the values file is always pulled
@@ -24,6 +31,12 @@ metadata:
   namespace: {{ $.Values.argoNamespace }}
   annotations:
     argocd.argoproj.io/sync-wave: {{ $app.wave | quote }}
+  # Cascade deletion: when the app-of-apps prunes a child Application (e.g. an
+  # entry flips to enabled: false), delete its deployed workloads too instead
+  # of orphaning them. Without this, a disabled inference path keeps holding
+  # the GPU.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
   project: mini-platform
   sources:
@@ -50,5 +63,6 @@ spec:
 {{- with $app.ignoreDifferences }}
   ignoreDifferences:
 {{ toYaml . | nindent 4 }}
+{{- end }}
 {{- end }}
 {{- end }}

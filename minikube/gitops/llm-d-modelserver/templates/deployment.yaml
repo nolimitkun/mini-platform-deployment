@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-d-decode
+  labels:
+    app.kubernetes.io/name: llm-d-modelserver
+    llm-d.ai/role: decode
+spec:
+  replicas: {{ .Values.replicas }}
+  # Single-GPU node: the replacement pod can never schedule while the old pod
+  # holds the GPU, so stop the old one first (same as production-stack).
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      llm-d.ai/role: decode
+      llm-d.ai/pool: {{ .Values.poolLabel | quote }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: llm-d-modelserver
+        llm-d.ai/role: decode
+        llm-d.ai/pool: {{ .Values.poolLabel | quote }}
+    spec:
+      serviceAccountName: llm-d-decode
+      containers:
+        - name: modelserver
+          image: {{ .Values.image | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command:
+            - vllm
+            - serve
+            - {{ .Values.model | quote }}
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+            - "--served-model-name"
+            - {{ .Values.servedModelName | quote }}
+            {{- range .Values.engineArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          env:
+            - name: HF_HOME
+              value: /data
+            - name: PROMETHEUS_MULTIPROC_DIR
+              value: /tmp
+            - name: PYTHONHASHSEED
+              value: "123"
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.hfTokenSecret.name | quote }}
+                  key: {{ .Values.hfTokenSecret.key | quote }}
+          ports:
+            - name: modelserver
+              containerPort: 8000
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: modelserver
+            {{- toYaml .Values.startupProbe | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: modelserver
+          readinessProbe:
+            httpGet:
+              path: /v1/models
+              port: modelserver
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /data
+      volumes:
+        - name: hf-cache
+          persistentVolumeClaim:
+            claimName: {{ .Values.hfCacheClaim | quote }}

@@ -1,0 +1,11 @@
+apiVersion: v2
+name: llm-d-modelserver
+description: >-
+  vLLM decode deployment for the llm-d inference path. Pods are selected by the
+  llm-d scheduler's InferencePool via labels; the InferencePool CRD (Gateway API
+  Inference Extension v1.5.0) is installed from crds/. Mirrors the
+  production-stack engine configuration so the two serving paths stay
+  benchmark-comparable.
+type: application
+version: 0.1.0
+appVersion: "1.0"
