@@ -59,6 +59,18 @@ inferenceExtension:
     limits:
       memory: 4Gi
 
+  monitoring:
+    prometheus:
+      enabled: false
+      auth:
+        enabled: true
+        # Upstream defect in the vendored standalone chart (GAIE v1.5.0, still
+        # present on upstream main): auth.secretName has no default, so
+        # enabling prometheus renders the SA-token Secret and the
+        # ServiceMonitor credential with an empty name. Defaulting it here
+        # makes flipping enabled: true above actually work.
+        secretName: llm-d-epp-metrics-reader-token
+
   sidecar:
     # Override the chart's default `--log-level trace` (very expensive under
     # load) and cap Envoy worker threads instead of spawning one per host CPU.
