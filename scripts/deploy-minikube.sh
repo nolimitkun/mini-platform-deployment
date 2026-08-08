@@ -484,11 +484,13 @@ spec:
       port: 9418
       targetPort: git
 EOF
+  # `kubectl wait` fails outright when nothing matches the selector yet, so wait
+  # on the Deployment first — that gives the ReplicaSet time to create the pod.
+  kubectl -n gitops-source rollout status deployment/git-source --timeout=300s
   kubectl -n gitops-source wait --for=condition=Ready pod -l app=git-source --timeout=300s
   git_pod="$(kubectl -n gitops-source get pod -l app=git-source -o jsonpath='{.items[0].metadata.name}')"
   kubectl -n gitops-source cp "$CHARTS_DIR/." "$git_pod:/repos/mini-platform"
   kubectl -n gitops-source cp "$ROOT/." "$git_pod:/repos/mini-platform-deployment"
-  kubectl -n gitops-source rollout status deployment/git-source --timeout=300s
   source_ready=false
   for _ in {1..30}; do
     if kubectl -n gitops-source exec "$git_pod" -- \
