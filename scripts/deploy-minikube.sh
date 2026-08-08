@@ -397,7 +397,16 @@ start_args=(
   -p "$PROFILE"
   --driver=docker
   --container-runtime=docker
-  --kubernetes-version=v1.28.0
+  --kubernetes-version=v1.34.4
+  # kube-proxy's default iptables mode cannot program this platform. It pushes
+  # the whole ruleset through one `iptables-restore`, and every kube-proxy image
+  # up to v1.34 bundles iptables 1.8.9, which sends that as a single netlink
+  # message and hits the 64 KiB limit -- the platform's ~70 Services render to
+  # roughly 85 KiB, so every sync fails with EMSGSIZE and no Service VIP, cluster
+  # DNS included, is ever programmed. The nftables proxier talks to nf_tables
+  # directly and has no such batch. It is GA since v1.33 but still not the
+  # default, so it has to be asked for.
+  --extra-config=kube-proxy.mode=nftables
   --cpus=8
   --memory=16384
   --disk-size=100g

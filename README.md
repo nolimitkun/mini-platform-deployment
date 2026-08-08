@@ -106,7 +106,9 @@ All commands run from the repository root.
 
 ### Prerequisites
 
-- Kubernetes `1.28` or newer (required by the current JupyterHub chart).
+- Kubernetes `1.33` or newer. The JupyterHub chart needs `1.28`; the floor is
+  `1.33` because that is where kube-proxy's nftables mode went GA, and this
+  platform has too many Services for the iptables mode to program.
 - `helm` 3, `kubectl`, `git`, `jq`, and `openssl` for the automated workflow.
   The manual Vault steps additionally need the Vault CLI.
 - Network access from Argo CD to **both** the charts repo and this deployment
@@ -182,9 +184,16 @@ cluster:
 ```bash
 minikube start -p mini-platform \
   --driver=docker \
-  --kubernetes-version=v1.28.0 \
+  --kubernetes-version=v1.34.4 \
+  --extra-config=kube-proxy.mode=nftables \
   --cpus=8 --memory=16384 --disk-size=100g
 ```
+
+`kube-proxy.mode=nftables` is not optional. In its default iptables mode
+kube-proxy pushes the whole ruleset through a single `iptables-restore`, and the
+bundled iptables 1.8.9 sends that as one netlink message; this platform's ~70
+Services exceed the 64 KiB message limit, so every sync fails and no Service
+VIP — cluster DNS included — is ever programmed.
 
 The default
 [`minikube/values/vllm-values.yaml`](minikube/values/vllm-values.yaml) requests
@@ -194,7 +203,8 @@ passthrough instead:
 ```bash
 minikube start -p mini-platform \
   --driver=docker --container-runtime=docker --gpus=nvidia \
-  --kubernetes-version=v1.28.0 \
+  --kubernetes-version=v1.34.4 \
+  --extra-config=kube-proxy.mode=nftables \
   --cpus=8 --memory=16384 --disk-size=100g
 ```
 
