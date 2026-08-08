@@ -72,8 +72,16 @@ datasources:
             datasourceUid: prometheus
           nodeGraph:
             enabled: true
+          # Off deliberately. Streaming search makes Grafana open a gRPC stream
+          # against Tempo's HTTP port, which Tempo only accepts when
+          # `stream_over_http_enabled` is set -- a top-level config key the chart
+          # renders no slot for, reachable only by replacing its whole `config`
+          # template. Enabled against a Tempo that has it off, Grafana logs
+          # "frame too large ... looked like an HTTP/1.1 header" instead of
+          # returning results. Non-streaming search returns the same data, just
+          # in one response rather than incrementally.
           streamingEnabled:
-            search: true
+            search: false
 
 dashboardProviders:
   dashboardproviders.yaml:
