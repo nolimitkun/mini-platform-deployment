@@ -50,6 +50,12 @@ servingEngineSpec:
           # ~1.5GB with <1GB free). The decode-throughput gain from graphs is
           # not reachable at this model/card ratio.
           - "--enforce-eager"
+          # Per-request spans (queue time, prefill, decode) exported over OTLP
+          # gRPC to the Alloy gateway. The image already carries the
+          # opentelemetry SDK and OTLP exporter — vLLM refuses to start with
+          # this flag when they are missing, so that was checked first.
+          - "--otlp-traces-endpoint"
+          - "grpc://alloy.mini-platform.svc.cluster.local:4317"
   # Large model loads slowly; give the startup probe ~30 min
   # (failureThreshold * periodSeconds) before giving up.
   startupProbe:

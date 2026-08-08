@@ -1,6 +1,13 @@
-# Grafana Alloy is the log shipper for Loki (Promtail's successor). It runs as
-# a DaemonSet, discovers pods on its own node, tails their logs through the
-# Kubernetes API, and pushes them to the Loki single binary.
+# Grafana Alloy plays two roles here. It is the log shipper for Loki
+# (Promtail's successor) — a DaemonSet that discovers pods on its own node,
+# tails their logs through the Kubernetes API, and pushes them to the Loki
+# single binary. It is also the cluster's OTLP gateway: workloads emit spans
+# and OTel metrics to it, and it fans them out to Tempo and Prometheus.
+#
+# The gateway is what makes OTLP metrics possible at all. Open WebUI, for one,
+# serves no Prometheus endpoint and can only report through OTLP, so without a
+# collector that speaks OTLP and remote-writes, its metrics have nowhere to go.
+# Routing traces through the same hop keeps one endpoint for every producer.
 alloy:
   configMap:
     content: |
@@ -58,6 +65,74 @@ alloy:
           url = "http://loki.mini-platform.svc.cluster.local:3100/loki/api/v1/push"
         }
       }
+
+      // ---------------------------------------------------------------------
+      // OTLP gateway. Every instrumented workload points its
+      // OTEL_EXPORTER_OTLP_ENDPOINT here rather than at Tempo directly, so one
+      // address covers both signals and only this file decides where each ends
+      // up.
+      //
+      // Logs are deliberately not accepted: Alloy already tails every
+      // container's stdout above, so an OTLP log pipeline would write each line
+      // to Loki twice.
+      // ---------------------------------------------------------------------
+      otelcol.receiver.otlp "default" {
+        grpc {
+          endpoint = "0.0.0.0:4317"
+        }
+        http {
+          endpoint = "0.0.0.0:4318"
+        }
+
+        output {
+          traces  = [otelcol.processor.batch.default.input]
+          metrics = [otelcol.processor.batch.default.input]
+        }
+      }
+
+      // Amortises the per-request overhead of both exporters, and keeps a burst
+      // of spans from a busy LLM request path from being sent one at a time.
+      otelcol.processor.batch "default" {
+        output {
+          traces  = [otelcol.exporter.otlp.tempo.input]
+          metrics = [otelcol.exporter.prometheus.default.input]
+        }
+      }
+
+      otelcol.exporter.otlp "tempo" {
+        client {
+          endpoint = "tempo.mini-platform.svc.cluster.local:4317"
+          // In-cluster plaintext; Tempo's OTLP receiver serves no TLS here.
+          tls {
+            insecure = true
+          }
+        }
+      }
+
+      // Converts OTel delta/cumulative metrics into Prometheus series and
+      // remote-writes them. Needs --web.enable-remote-write-receiver on the
+      // Prometheus server (set in prometheus-values.yaml).
+      otelcol.exporter.prometheus "default" {
+        forward_to = [prometheus.remote_write.otlp.receiver]
+      }
+
+      prometheus.remote_write "otlp" {
+        endpoint {
+          url = "http://prometheus-server.mini-platform.svc.cluster.local/api/v1/write"
+        }
+      }
+
+  # OTLP listeners. The chart wires extraPorts into both the container and the
+  # Service, which is what makes alloy:4317/4318 resolvable cluster-wide.
+  extraPorts:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
 
   # Consumed by the discovery selector above.
   extraEnv:

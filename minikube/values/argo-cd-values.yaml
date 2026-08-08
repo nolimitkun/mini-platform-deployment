@@ -10,8 +10,22 @@ configs:
     url: http://argocd.test
   params:
     server.insecure: true
+    # Argo CD's components emit OTLP spans for reconciliation, repo operations
+    # and API calls. Pointed at the Alloy gateway, which forwards to Tempo.
+    otlp.address: alloy.mini-platform.svc.cluster.local:4317
+    otlp.insecure: "true"
+
+# Every Argo CD component already serves Prometheus metrics on its own port;
+# `metrics.enabled` only decides whether a Service exists to reach them. Turn
+# them on so Prometheus has a stable DNS name per component instead of having
+# to discover pod IPs.
+controller:
+  metrics:
+    enabled: true
 
 server:
+  metrics:
+    enabled: true
   service:
     type: ClusterIP
   ingress:
@@ -20,5 +34,15 @@ server:
     hostname: argocd.test
     tls: false
 
+repoServer:
+  metrics:
+    enabled: true
+
+applicationSet:
+  metrics:
+    enabled: true
+
 notifications:
   argocdUrl: http://argocd.test
+  metrics:
+    enabled: true

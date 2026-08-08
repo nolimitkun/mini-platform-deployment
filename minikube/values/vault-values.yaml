@@ -10,6 +10,31 @@ server:
   enabled: true
   standalone:
     enabled: true
+    # The chart default, with telemetry added. Vault's /v1/sys/metrics is a
+    # normal authenticated API path, so an anonymous scrape gets 403 unless the
+    # listener opts out — hence the telemetry stanza inside `listener`. The
+    # top-level one keeps samples alive across a 30s scrape interval and drops
+    # the per-host label, which on a single node only adds cardinality.
+    config: |-
+      ui = true
+
+      listener "tcp" {
+        tls_disable = 1
+        address = "[::]:8200"
+        cluster_address = "[::]:8201"
+        telemetry {
+          unauthenticated_metrics_access = "true"
+        }
+      }
+
+      storage "file" {
+        path = "/vault/data"
+      }
+
+      telemetry {
+        prometheus_retention_time = "30s"
+        disable_hostname = true
+      }
   dataStorage:
     enabled: true
     size: 10Gi

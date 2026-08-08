@@ -37,7 +37,10 @@ proxy_config:
 
 envVars:
   OTEL_EXPORTER: otlp_http
-  OTEL_ENDPOINT: http://tempo.mini-platform.svc.cluster.local:4318/v1/traces
+  # Through the Alloy gateway rather than Tempo directly, so every OTLP producer
+  # on the platform shares one endpoint and only alloy-values.yaml decides where
+  # each signal lands.
+  OTEL_ENDPOINT: http://alloy.mini-platform.svc.cluster.local:4318/v1/traces
   # Becomes the Tempo service name, and matches the `app` label Alloy derives
   # from app.kubernetes.io/instance, so Grafana's trace-to-logs jump lands on
   # LiteLLM's own log stream.

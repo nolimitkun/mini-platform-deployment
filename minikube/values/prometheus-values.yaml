@@ -10,6 +10,12 @@ extraScrapeConfigs: |
     static_configs:
       - targets: ["qdrant:6333"]
   - job_name: litellm
+    # /metrics sits behind the same auth as the rest of the proxy API, so an
+    # anonymous scrape is rejected with 401. The master key doubles as the
+    # bearer token; Prometheus strips the trailing newline from the file.
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/litellm-master-key/PROXY_MASTER_KEY
     static_configs:
       - targets: ["litellm:4000"]
   - job_name: mlflow
@@ -59,6 +65,12 @@ extraScrapeConfigs: |
     metrics_path: /metrics
     static_configs:
       - targets: ["trino:5556"]
+  # The `trino` Service selects only the coordinator. Workers run the same JMX
+  # exporter and hold the numbers that matter for query execution.
+  - job_name: trino-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["trino-worker:5556"]
   - job_name: loki
     metrics_path: /metrics
     static_configs:
@@ -72,6 +84,76 @@ extraScrapeConfigs: |
     static_configs:
       - targets: ["alloy:12345"]
 
+  # ---------------------------------------------------------------------------
+  # Platform infrastructure outside the mini-platform namespace, plus the
+  # in-namespace endpoints that need credentials. Everything below is reachable
+  # only by FQDN or with auth, which is why none of it is picked up by the
+  # chart's built-in annotation-driven discovery.
+  # ---------------------------------------------------------------------------
+
+  # Vault exposes Prometheus format on its normal API port. The listener is
+  # configured for anonymous metrics access in vault-values.yaml.
+  - job_name: vault
+    metrics_path: /v1/sys/metrics
+    params:
+      format: ["prometheus"]
+    static_configs:
+      - targets: ["vault:8200"]
+
+  # VSO puts kube-rbac-proxy in front of its metrics, so the scrape has to be
+  # HTTPS and carry a token. Prometheus's own ServiceAccount already holds the
+  # `get /metrics` non-resource permission the proxy checks. The proxy serves a
+  # self-signed cert, hence the skip.
+  - job_name: vault-secrets-operator
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    authorization:
+      type: Bearer
+      credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    static_configs:
+      - targets: ["vault-secrets-operator-metrics-service:8443"]
+
+  # Argo CD components each serve their own metrics port; the Services in front
+  # of them are created by argo-cd-values.yaml.
+  - job_name: argocd-application-controller
+    static_configs:
+      - targets: ["argocd-application-controller-metrics.argocd.svc.cluster.local:8082"]
+  - job_name: argocd-server
+    static_configs:
+      - targets: ["argocd-server-metrics.argocd.svc.cluster.local:8083"]
+  - job_name: argocd-repo-server
+    static_configs:
+      - targets: ["argocd-repo-server-metrics.argocd.svc.cluster.local:8084"]
+  - job_name: argocd-applicationset-controller
+    static_configs:
+      - targets: ["argocd-applicationset-controller-metrics.argocd.svc.cluster.local:8080"]
+  - job_name: argocd-notifications-controller
+    static_configs:
+      - targets: ["argocd-notifications-controller-metrics.argocd.svc.cluster.local:9001"]
+
+  # The ingress controller comes from the Minikube addon, not from a chart in
+  # this repo, so there is no Service in front of its metrics port and no way to
+  # annotate it from here. Discover the pod and scrape 10254 directly.
+  - job_name: ingress-nginx
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ["ingress-nginx"]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+        action: keep
+        regex: controller
+      - source_labels: [__address__]
+        action: replace
+        regex: '([^:]+)(?::\d+)?'
+        replacement: '$1:10254'
+        target_label: __address__
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+
 server:
   extraFlags:
     - web.enable-lifecycle
@@ -82,5 +164,12 @@ server:
     - name: mlflow-auth
       secretName: mlflow-auth
       mountPath: /etc/prometheus/secrets/mlflow-auth
+      subPath: ""
+      readOnly: true
+    # Bearer token for the litellm job above. Vault-managed, same Secret the
+    # proxy itself reads.
+    - name: litellm-master-key
+      secretName: litellm-master-key
+      mountPath: /etc/prometheus/secrets/litellm-master-key
       subPath: ""
       readOnly: true
