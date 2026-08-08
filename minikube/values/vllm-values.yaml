@@ -26,6 +26,13 @@ servingEngineSpec:
       # Persistent HF cache (mounted at /data, HF_HOME) so the ~14GB weights
       # survive pod restarts instead of re-downloading each time.
       pvcStorage: "40Gi"
+      env:
+        # vLLM sets no service name of its own, so its spans arrive under
+        # `unknown_service` and cannot be told apart from any other
+        # uninstrumented Python process. Matches the `app` label Alloy derives
+        # from app.kubernetes.io/instance.
+        - name: OTEL_SERVICE_NAME
+          value: vllm
       vllmConfig:
         dtype: "auto"
         maxModelLen: 8192

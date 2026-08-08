@@ -32,6 +32,12 @@ extraEnvVars:
     value: "false"
   - name: OTEL_EXPORTER_OTLP_ENDPOINT
     value: http://alloy.mini-platform.svc.cluster.local:4317
+  # Required. Open WebUI passes `insecure` to the gRPC exporter explicitly and
+  # defaults it to False, so it negotiates TLS regardless of the http:// scheme
+  # on the endpoint above and every export fails with StatusCode.UNAVAILABLE.
+  # The metrics and logs exporters inherit this value.
+  - name: OTEL_EXPORTER_OTLP_INSECURE
+    value: "true"
   # Matches the `app` label Alloy derives from app.kubernetes.io/instance, so
   # Grafana's trace-to-logs jump lands on Open WebUI's own log stream.
   - name: OTEL_SERVICE_NAME
