@@ -49,6 +49,12 @@ Options:
                           waiting for platform pods to become ready.
   --help                   Show this help.
 
+Environment:
+  WORKLOAD_TIMEOUT        Seconds to wait for platform pods (default: 1800).
+                          Raise it for a --reset run: that empties Minikube's
+                          image store, and pulling the whole platform back over
+                          a home connection takes well over the default.
+
 The local-source mode requires a clean Git working tree in both this repo and
 the charts repo, because Argo CD reads Git commits, not uncommitted files.
 EOF
