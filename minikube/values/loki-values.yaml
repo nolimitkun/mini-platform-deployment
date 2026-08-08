@@ -12,11 +12,12 @@ loki:
   storage:
     type: filesystem
     # `type: filesystem` only skips the object-store branch of the chart's
-    # storage helper; the directories still have to be named explicitly.
+    # storage helper; the directories still have to be named explicitly. Only
+    # these two keys exist on common.FilesystemConfig — admin_api_directory is
+    # GEL-only and OSS Loki refuses to parse it.
     filesystem:
       chunks_directory: /var/loki/chunks
       rules_directory: /var/loki/rules
-      admin_api_directory: /var/loki/admin
   # A real install must pin its own schema (the chart ships none). v13/tsdb is
   # the current recommendation.
   schemaConfig:
