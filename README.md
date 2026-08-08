@@ -46,8 +46,10 @@ Ingress NGINX ──▶ Open WebUI, LiteLLM, Langfuse, MLflow, Grafana,
                   JupyterHub, Superset, MinIO Console, Keycloak, Argo CD
 
 Prometheus     ──▶ Grafana            (metrics + dashboards)
-Alloy ──▶ Loki ──▶ Grafana            (pod logs)
-LiteLLM ─OTLP─▶ Tempo ──▶ Grafana     (request traces)
+Alloy ──▶ Loki ──▶ Grafana            (pod logs, every pod in every namespace)
+Keycloak, Trino, vLLM, LiteLLM, Open WebUI, Argo CD
+      ─OTLP─▶ Alloy ─┬─▶ Tempo        (traces)
+                     └─▶ Prometheus   (OTLP metrics, remote write)
 MLflow                                (experiment + artifact tracking)
 Qdrant                                (vector store for notebook/RAG examples)
 Spark Operator ──▶ Spark batch jobs
@@ -528,6 +530,44 @@ configure TLS and authentication before exposing it.
 
 **Spark.** Submit `SparkApplication` resources into `mini-platform` with
 `serviceAccount: spark-operator-spark`.
+
+**Observability.** All three signals are read through Grafana, which ships
+provisioned `prometheus`, `loki` and `tempo` data sources with fixed uids so
+the cross-links between them resolve. To check coverage without leaving the
+cluster:
+
+```bash
+kubectl -n "$NS" exec deploy/grafana -- wget -qO- 'http://prometheus-server/api/v1/query?query=count(up==0)'
+```
+
+That should report `0` — every scrape target healthy. Logs cover every pod in
+every namespace, since Alloy discovers them rather than being told about them:
+
+```bash
+kubectl -n "$NS" exec deploy/grafana -- wget -qO- 'http://loki:3100/loki/api/v1/label/namespace/values'
+```
+
+Traces come from the components that ship an OTel SDK — Keycloak, Trino, vLLM,
+LiteLLM, Open WebUI and Argo CD. They export to Alloy rather than to Tempo
+directly, so one endpoint covers every producer and Alloy decides where each
+signal lands:
+
+```bash
+kubectl -n "$NS" exec deploy/grafana -- wget -qO- 'http://tempo:3200/api/search/tag/service.name/values'
+```
+
+A service appears here only once it has served traffic; an idle component
+reports nothing, which is not a fault. Two things are worth knowing when
+reading traces: Argo CD names its services `argocd-controller` and
+`argocd-repo-server`, so the trace-to-logs jump does not line up with Loki's
+single `argocd` app label, and vLLM spans emitted before its
+`OTEL_SERVICE_NAME` was set stay under `unknown_service` until they age out of
+the 168h retention window.
+
+Some components report less than the rest, for lack of an endpoint rather than
+lack of wiring: Superset speaks statsd only, Open WebUI has no Prometheus
+endpoint and reports through OTLP alone, and Langfuse's bundled OpenTelemetry
+is wired to Sentry rather than to a generic OTLP exporter.
 
 **General health:**
 
