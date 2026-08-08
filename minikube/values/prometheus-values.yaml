@@ -59,8 +59,25 @@ extraScrapeConfigs: |
     metrics_path: /metrics
     static_configs:
       - targets: ["trino:5556"]
+  - job_name: loki
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["loki:3100"]
+  - job_name: tempo
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["tempo:3200"]
+  - job_name: alloy
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["alloy:12345"]
 
 server:
+  extraFlags:
+    - web.enable-lifecycle
+    # Tempo's metrics generator remote-writes span metrics and the service
+    # graph here; without this receiver those pushes are rejected.
+    - web.enable-remote-write-receiver
   extraSecretMounts:
     - name: mlflow-auth
       secretName: mlflow-auth

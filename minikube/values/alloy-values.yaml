@@ -1,0 +1,85 @@
+# Grafana Alloy is the log shipper for Loki (Promtail's successor). It runs as
+# a DaemonSet, discovers pods on its own node, tails their logs through the
+# Kubernetes API, and pushes them to the Loki single binary.
+alloy:
+  configMap:
+    content: |
+      logging {
+        level  = "info"
+        format = "logfmt"
+      }
+
+      // Only pods scheduled on this node — each DaemonSet member owns its own
+      // slice, so lines are not shipped twice on a multi-node cluster.
+      discovery.kubernetes "pods" {
+        role = "pod"
+
+        selectors {
+          role  = "pod"
+          field = "spec.nodeName=" + sys.env("NODE_NAME")
+        }
+      }
+
+      // Promote the Kubernetes metadata that queries actually filter on into
+      // Loki stream labels. Keep this list short: every label is a new stream.
+      discovery.relabel "pod_logs" {
+        targets = discovery.kubernetes.pods.targets
+
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_instance"]
+          target_label  = "app"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_container_name"]
+          separator     = "/"
+          target_label  = "job"
+        }
+      }
+
+      loki.source.kubernetes "pod_logs" {
+        targets    = discovery.relabel.pod_logs.output
+        forward_to = [loki.write.default.receiver]
+      }
+
+      loki.write "default" {
+        endpoint {
+          url = "http://loki.mini-platform.svc.cluster.local:3100/loki/api/v1/push"
+        }
+      }
+
+  # Consumed by the discovery selector above.
+  extraEnv:
+    - name: NODE_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.nodeName
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+controller:
+  type: daemonset
+
+# Logs are read through the API server, not from hostPath, so Alloy needs no
+# privileged mounts here. The chart's default RBAC already grants pods/log.
+
+# The bundled config-reload sidecar is only useful when the ConfigMap changes
+# out of band; Argo CD rolls the DaemonSet on change anyway.
+configReloader:
+  enabled: false

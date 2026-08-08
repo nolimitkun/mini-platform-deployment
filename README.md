@@ -46,6 +46,8 @@ Ingress NGINX ──▶ Open WebUI, LiteLLM, Langfuse, MLflow, Grafana,
                   JupyterHub, Superset, MinIO Console, Keycloak, Argo CD
 
 Prometheus     ──▶ Grafana            (metrics + dashboards)
+Alloy ──▶ Loki ──▶ Grafana            (pod logs)
+LiteLLM ─OTLP─▶ Tempo ──▶ Grafana     (request traces)
 MLflow                                (experiment + artifact tracking)
 Qdrant                                (vector store for notebook/RAG examples)
 Spark Operator ──▶ Spark batch jobs
@@ -389,7 +391,10 @@ The app-of-apps reconciles these applications (and the `vault-resources` and
 | `mini-platform-llm-d-modelserver`† | `minikube/gitops/llm-d-modelserver` | `minikube/gitops/llm-d-modelserver/values.yaml` |
 | `mini-platform-llm-d-scheduler`† | `charts/llm-d-scheduler` | `minikube/values/llm-d-scheduler-values.yaml` |
 | `mini-platform-prometheus` | `charts/prometheus` | `minikube/values/prometheus-values.yaml` |
+| `mini-platform-loki` | `charts/loki` | `minikube/values/loki-values.yaml` |
+| `mini-platform-tempo` | `charts/tempo` | `minikube/values/tempo-values.yaml` |
 | `mini-platform-grafana` | `charts/grafana` | `minikube/values/grafana-values.yaml` |
+| `mini-platform-alloy` | `charts/alloy` | `minikube/values/alloy-values.yaml` |
 | `mini-platform-jupyterhub` | `charts/jupyterhub` | `minikube/values/jupyterhub-values.yaml` |
 | `mini-platform-superset` | `charts/superset` | `minikube/values/superset-values.yaml` |
 | `mini-platform-litellm` | `charts/litellm-helm` | `minikube/values/litellm-values.yaml` |
@@ -433,8 +438,9 @@ Then open the service hostnames:
 | MinIO Console | `http://minio.test` |
 | Keycloak | `http://keycloak.test` |
 
-Vault, Prometheus, Trino, the databases, and vLLM stay cluster-internal by
-default. For Vault administration, use a targeted port-forward:
+Vault, Prometheus, Loki, Tempo, Trino, the databases, and vLLM stay
+cluster-internal by default — logs and traces are read through Grafana, not
+their own UIs. For Vault administration, use a targeted port-forward:
 
 ```bash
 kubectl -n "$NS" port-forward svc/vault-ui 8200:8200

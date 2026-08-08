@@ -88,9 +88,27 @@ together, in one commit. Both decode paths share the HF-cache PVC
 (`vllm-qwen-storage-claim`), so swapping does not re-download weights.
 
 Supporting subsystems: Vault + VSO (secrets), Ingress NGINX (`.test`
-hostnames), Prometheus + Grafana (metrics), MLflow (experiments), Qdrant
+hostnames), MLflow (experiments), Qdrant
 (vectors), Spark Operator, Superset → Trino (analytics), Keycloak (identity),
 MinIO (S3 object store), all reconciled by Argo CD.
+
+**Observability is three signals behind one Grafana.** Prometheus scrapes
+metrics; Grafana Alloy (a DaemonSet, Promtail's successor) tails pod logs
+through the Kubernetes API into Loki; LiteLLM's `otel` callback pushes spans
+over OTLP/HTTP into Tempo. All three backends are cluster-internal — Grafana is
+the only UI, and its provisioned data sources carry fixed uids (`prometheus`,
+`loki`, `tempo`) precisely so the cross-links between them can reference each
+other by name: Loki `derivedFields` → Tempo, Tempo `tracesToLogsV2` → Loki,
+Tempo `serviceMap` → Prometheus. Changing a uid breaks those links, and —
+because `persistence.enabled` keeps the old datasource row — needs a matching
+`deleteDatasources` entry. Two coupling points worth knowing: the trace→logs
+jump matches the span's `service.name` against Loki's `app` label, which Alloy
+derives from `app.kubernetes.io/instance` (hence `OTEL_SERVICE_NAME: litellm`);
+and Tempo's metrics generator remote-writes span metrics into Prometheus, which
+is why the Prometheus overlay must keep `--web.enable-remote-write-receiver`.
+Loki and Tempo both run single-binary against a filesystem PVC — neither is
+sized for real volume, and the vendored `tempo` chart is deprecated upstream in
+favour of `tempo-distributed` (kept deliberately; see `tempo-values.yaml`).
 
 **Vault must be initialized and unsealed before dependent apps go healthy.**
 Early Argo CD syncs intentionally show missing-secret failures until Vault is
@@ -117,7 +135,7 @@ wave** that orders rollout:
 | `-4` | Vault, VSO |
 | `-3` | Vault secret mappings, stateful deps (postgres, redis, qdrant, minio, spark-operator) |
 | `-2` | Keycloak, Langfuse, MLflow, Trino, vLLM |
-| `-1` → `0` | Prometheus, Grafana, JupyterHub, Superset |
+| `-1` → `0` | Prometheus, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset |
 | `1` → `3` | LiteLLM, then Open WebUI, then ingress routes |
 
 All generated Applications use `automated` sync with `prune: true`,
