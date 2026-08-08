@@ -1,0 +1,71 @@
+# Tempo in single-binary mode with local block storage — one pod, one PVC.
+# Traces arrive over OTLP (gRPC 4317 / HTTP 4318) from LiteLLM.
+#
+# NOTE: upstream marks this chart `deprecated: true` in favour of
+# `tempo-distributed`. It is kept here deliberately: the distributed chart needs
+# object storage plus six or so components, which buys nothing on a one-node
+# Minikube. Revisit if this stack ever grows a real trace volume.
+#
+# The chart's Service template dereferences the Jaeger receiver keys
+# unconditionally, so the default receiver set (Jaeger/OpenCensus alongside
+# OTLP) is left as-is rather than trimmed to OTLP only.
+replicas: 1
+
+tempo:
+  reportingEnabled: false
+  retention: 168h
+
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /var/tempo/traces
+      wal:
+        path: /var/tempo/wal
+
+  # The metrics generator turns spans into RED metrics and a service graph and
+  # remote-writes them to Prometheus, which is what backs the Tempo data
+  # source's "Service Graph" tab in Grafana. Prometheus must be started with
+  # --web.enable-remote-write-receiver for this to land (see
+  # prometheus-values.yaml).
+  metricsGenerator:
+    enabled: true
+    remoteWriteUrl: http://prometheus-server.mini-platform.svc.cluster.local/api/v1/write
+    storage:
+      path: /var/tempo/generator/wal
+    traces_storage:
+      path: /var/tempo/generator/traces
+    registry:
+      external_labels:
+        source: tempo
+        cluster: mini-platform
+    processor:
+      # Backs TraceQL metrics (`rate()`, `quantile_over_time()`, and friends).
+      # Grafana's Traces Drilldown is built entirely on those queries, so without
+      # this processor every panel in it fails with "localblocks processor not
+      # found" even though the traces themselves are stored and searchable.
+      # Flushing to storage lets those queries see more than the generator's own
+      # in-memory window.
+      local_blocks:
+        flush_to_storage: true
+
+  # Generators only run for tenants that ask for them; single-tenant install,
+  # so enable every processor by default.
+  overrides:
+    defaults:
+      metrics_generator:
+        processors:
+          - service-graphs
+          - span-metrics
+          - local-blocks
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+persistence:
+  enabled: true
+  size: 10Gi

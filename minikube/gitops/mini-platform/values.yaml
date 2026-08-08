@@ -106,9 +106,35 @@ applications:
         jsonPointers:
           - /spec/persistentVolumeClaimRetentionPolicy
           - /spec/volumeClaimTemplates
+  loki:
+    chartPath: charts/loki
+    valuesFile: minikube/values/loki-values.yaml
+    wave: "-1"
+    ignoreDifferences:
+      - group: apps
+        kind: StatefulSet
+        jsonPointers:
+          - /spec/persistentVolumeClaimRetentionPolicy
+          - /spec/volumeClaimTemplates
+  tempo:
+    chartPath: charts/tempo
+    valuesFile: minikube/values/tempo-values.yaml
+    wave: "-1"
+    ignoreDifferences:
+      - group: apps
+        kind: StatefulSet
+        jsonPointers:
+          - /spec/persistentVolumeClaimRetentionPolicy
+          - /spec/volumeClaimTemplates
   grafana:
     chartPath: charts/grafana
     valuesFile: minikube/values/grafana-values.yaml
+    wave: "0"
+  # Log shipper for Loki. Ordered after Loki so its first push has somewhere to
+  # land.
+  alloy:
+    chartPath: charts/alloy
+    valuesFile: minikube/values/alloy-values.yaml
     wave: "0"
   jupyterhub:
     chartPath: charts/jupyterhub

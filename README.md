@@ -46,6 +46,8 @@ Ingress NGINX ──▶ Open WebUI, LiteLLM, Langfuse, MLflow, Grafana,
                   JupyterHub, Superset, MinIO Console, Keycloak, Argo CD
 
 Prometheus     ──▶ Grafana            (metrics + dashboards)
+Alloy ──▶ Loki ──▶ Grafana            (pod logs)
+LiteLLM ─OTLP─▶ Tempo ──▶ Grafana     (request traces)
 MLflow                                (experiment + artifact tracking)
 Qdrant                                (vector store for notebook/RAG examples)
 Spark Operator ──▶ Spark batch jobs
@@ -104,7 +106,9 @@ All commands run from the repository root.
 
 ### Prerequisites
 
-- Kubernetes `1.28` or newer (required by the current JupyterHub chart).
+- Kubernetes `1.33` or newer. The JupyterHub chart needs `1.28`; the floor is
+  `1.33` because that is where kube-proxy's nftables mode went GA, and this
+  platform has too many Services for the iptables mode to program.
 - `helm` 3, `kubectl`, `git`, `jq`, and `openssl` for the automated workflow.
   The manual Vault steps additionally need the Vault CLI.
 - Network access from Argo CD to **both** the charts repo and this deployment
@@ -180,9 +184,16 @@ cluster:
 ```bash
 minikube start -p mini-platform \
   --driver=docker \
-  --kubernetes-version=v1.28.0 \
+  --kubernetes-version=v1.34.4 \
+  --extra-config=kube-proxy.mode=nftables \
   --cpus=8 --memory=16384 --disk-size=100g
 ```
+
+`kube-proxy.mode=nftables` is not optional. In its default iptables mode
+kube-proxy pushes the whole ruleset through a single `iptables-restore`, and the
+bundled iptables 1.8.9 sends that as one netlink message; this platform's ~70
+Services exceed the 64 KiB message limit, so every sync fails and no Service
+VIP — cluster DNS included — is ever programmed.
 
 The default
 [`minikube/values/vllm-values.yaml`](minikube/values/vllm-values.yaml) requests
@@ -192,7 +203,8 @@ passthrough instead:
 ```bash
 minikube start -p mini-platform \
   --driver=docker --container-runtime=docker --gpus=nvidia \
-  --kubernetes-version=v1.28.0 \
+  --kubernetes-version=v1.34.4 \
+  --extra-config=kube-proxy.mode=nftables \
   --cpus=8 --memory=16384 --disk-size=100g
 ```
 
@@ -389,7 +401,10 @@ The app-of-apps reconciles these applications (and the `vault-resources` and
 | `mini-platform-llm-d-modelserver`† | `minikube/gitops/llm-d-modelserver` | `minikube/gitops/llm-d-modelserver/values.yaml` |
 | `mini-platform-llm-d-scheduler`† | `charts/llm-d-scheduler` | `minikube/values/llm-d-scheduler-values.yaml` |
 | `mini-platform-prometheus` | `charts/prometheus` | `minikube/values/prometheus-values.yaml` |
+| `mini-platform-loki` | `charts/loki` | `minikube/values/loki-values.yaml` |
+| `mini-platform-tempo` | `charts/tempo` | `minikube/values/tempo-values.yaml` |
 | `mini-platform-grafana` | `charts/grafana` | `minikube/values/grafana-values.yaml` |
+| `mini-platform-alloy` | `charts/alloy` | `minikube/values/alloy-values.yaml` |
 | `mini-platform-jupyterhub` | `charts/jupyterhub` | `minikube/values/jupyterhub-values.yaml` |
 | `mini-platform-superset` | `charts/superset` | `minikube/values/superset-values.yaml` |
 | `mini-platform-litellm` | `charts/litellm-helm` | `minikube/values/litellm-values.yaml` |
@@ -433,8 +448,9 @@ Then open the service hostnames:
 | MinIO Console | `http://minio.test` |
 | Keycloak | `http://keycloak.test` |
 
-Vault, Prometheus, Trino, the databases, and vLLM stay cluster-internal by
-default. For Vault administration, use a targeted port-forward:
+Vault, Prometheus, Loki, Tempo, Trino, the databases, and vLLM stay
+cluster-internal by default — logs and traces are read through Grafana, not
+their own UIs. For Vault administration, use a targeted port-forward:
 
 ```bash
 kubectl -n "$NS" port-forward svc/vault-ui 8200:8200

@@ -26,10 +26,22 @@ proxy_config:
     cache: true
     callbacks:
       - prometheus
+      # Emits OpenTelemetry spans for every request; the exporter target comes
+      # from the OTEL_* env vars below. Langfuse stays as the LLM-specific
+      # view — Tempo adds the request-path view next to it.
+      - otel
     success_callback:
       - langfuse
     failure_callback:
       - langfuse
+
+envVars:
+  OTEL_EXPORTER: otlp_http
+  OTEL_ENDPOINT: http://tempo.mini-platform.svc.cluster.local:4318/v1/traces
+  # Becomes the Tempo service name, and matches the `app` label Alloy derives
+  # from app.kubernetes.io/instance, so Grafana's trace-to-logs jump lands on
+  # LiteLLM's own log stream.
+  OTEL_SERVICE_NAME: litellm
 
 db:
   useExisting: true

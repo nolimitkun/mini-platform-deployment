@@ -26,6 +26,62 @@ datasources:
         access: proxy
         url: http://prometheus-server
         isDefault: true
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://loki:3100
+        jsonData:
+          # Pull a trace id out of a log line and offer a jump into Tempo.
+          # Covers both `trace_id=<hex>` (logfmt) and `"trace_id":"<hex>"`
+          # (JSON), which is what the OTel SDKs in this stack emit.
+          derivedFields:
+            - name: TraceID
+              matcherType: regex
+              matcherRegex: '[tT]race[_-]?[iI][dD]"?[:=]\s*"?([a-f0-9]{32})'
+              url: '${__value.raw}'
+              urlDisplayLabel: View trace
+              datasourceUid: tempo
+      - name: Tempo
+        type: tempo
+        uid: tempo
+        access: proxy
+        url: http://tempo:3200
+        jsonData:
+          # Trace -> logs: narrow the Loki query to the same workload and time
+          # window as the span, then filter to the span's trace id.
+          tracesToLogsV2:
+            datasourceUid: loki
+            spanStartTimeShift: -5m
+            spanEndTimeShift: 5m
+            filterByTraceID: true
+            filterBySpanID: false
+            # `app` is the Loki label Alloy derives from
+            # app.kubernetes.io/instance, which matches the OTel service name
+            # for workloads in this stack.
+            tags:
+              - key: service.name
+                value: app
+          tracesToMetrics:
+            datasourceUid: prometheus
+            spanStartTimeShift: -5m
+            spanEndTimeShift: 5m
+          # Backed by the RED metrics Tempo's metrics generator remote-writes
+          # into Prometheus (see tempo-values.yaml).
+          serviceMap:
+            datasourceUid: prometheus
+          nodeGraph:
+            enabled: true
+          # Off deliberately. Streaming search makes Grafana open a gRPC stream
+          # against Tempo's HTTP port, which Tempo only accepts when
+          # `stream_over_http_enabled` is set -- a top-level config key the chart
+          # renders no slot for, reachable only by replacing its whole `config`
+          # template. Enabled against a Tempo that has it off, Grafana logs
+          # "frame too large ... looked like an HTTP/1.1 header" instead of
+          # returning results. Non-streaming search returns the same data, just
+          # in one response rather than incrementally.
+          streamingEnabled:
+            search: false
 
 dashboardProviders:
   dashboardproviders.yaml:

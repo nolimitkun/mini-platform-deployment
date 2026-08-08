@@ -49,6 +49,12 @@ Options:
                           waiting for platform pods to become ready.
   --help                   Show this help.
 
+Environment:
+  WORKLOAD_TIMEOUT        Seconds to wait for platform pods (default: 1800).
+                          Raise it for a --reset run: that empties Minikube's
+                          image store, and pulling the whole platform back over
+                          a home connection takes well over the default.
+
 The local-source mode requires a clean Git working tree in both this repo and
 the charts repo, because Argo CD reads Git commits, not uncommitted files.
 EOF
@@ -69,6 +75,57 @@ fail() {
 
 need() {
   command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
+}
+
+# Number of `dnat to` rules in the nftables endpoint chain that backs the
+# default/kubernetes Service. Should be 1; 0 means kube-proxy created the chain
+# but never populated it. Prints nothing readable as 0 so callers can compare.
+kubernetes_service_dnat_rules() {
+  local count
+  count="$(minikube -p "$PROFILE" ssh -- \
+    "sudo nft list table ip kube-proxy 2>/dev/null \
+      | awk '/chain endpoint-.*default\/kubernetes\/tcp\/https/,/^\t}/' \
+      | grep -c 'dnat to'" 2>/dev/null | tr -d '\r' || true)"
+  [[ "$count" =~ ^[0-9]+$ ]] || count=0
+  printf '%s' "$count"
+}
+
+# Restarting kube-proxy with the nftables proxier can leave the
+# default/kubernetes endpoint chain created but empty -- every other Service
+# keeps its `dnat to` rule, only this one comes back blank. Pods then cannot
+# reach the API server through 10.96.0.1, so CoreDNS never becomes ready,
+# kube-dns lands in the no-endpoints reject set, and every pod loses DNS. A
+# plain kube-proxy restart does not fix it; the chain is only rebuilt correctly
+# when the whole table is absent.
+#
+# `minikube start` restarts kube-proxy, so a rerun against an existing profile
+# hits this. Fresh clusters come up correct and skip the repair entirely.
+repair_kube_proxy_nftables() {
+  local attempt
+
+  # Give kube-proxy a chance to write its table before judging it.
+  for attempt in {1..24}; do
+    [[ "$(kubernetes_service_dnat_rules)" == 0 ]] || return 0
+    sleep 5
+  done
+
+  warn "kube-proxy left the default/kubernetes chain empty; rebuilding its nftables state"
+  minikube -p "$PROFILE" ssh -- "sudo nft delete table ip kube-proxy" >/dev/null 2>&1 || true
+  kubectl -n kube-system delete pod -l k8s-app=kube-proxy --wait=false >/dev/null 2>&1 || true
+
+  for attempt in {1..24}; do
+    [[ "$(kubernetes_service_dnat_rules)" == 0 ]] || break
+    sleep 5
+  done
+  [[ "$(kubernetes_service_dnat_rules)" != 0 ]] ||
+    fail "kube-proxy did not program the default/kubernetes Service; cluster DNS will not work"
+
+  # CoreDNS backs off after failing to reach the API server, so it can sit
+  # not-ready for a while after the path is repaired.
+  kubectl -n kube-system rollout restart deployment/coredns >/dev/null 2>&1 || true
+  kubectl -n kube-system rollout status deployment/coredns --timeout=300s >/dev/null 2>&1 ||
+    warn "CoreDNS did not report ready; cluster DNS may still be settling"
+  log "Cluster DNS path repaired"
 }
 
 cleanup() {
@@ -397,7 +454,16 @@ start_args=(
   -p "$PROFILE"
   --driver=docker
   --container-runtime=docker
-  --kubernetes-version=v1.28.0
+  --kubernetes-version=v1.34.4
+  # kube-proxy's default iptables mode cannot program this platform. It pushes
+  # the whole ruleset through one `iptables-restore`, and every kube-proxy image
+  # up to v1.34 bundles iptables 1.8.9, which sends that as a single netlink
+  # message and hits the 64 KiB limit -- the platform's ~70 Services render to
+  # roughly 85 KiB, so every sync fails with EMSGSIZE and no Service VIP, cluster
+  # DNS included, is ever programmed. The nftables proxier talks to nf_tables
+  # directly and has no such batch. It is GA since v1.33 but still not the
+  # default, so it has to be asked for.
+  --extra-config=kube-proxy.mode=nftables
   --cpus=8
   --memory=16384
   --disk-size=100g
@@ -409,6 +475,7 @@ fi
 log "Starting Minikube profile $PROFILE"
 minikube start "${start_args[@]}"
 kubectl config use-context "$PROFILE" >/dev/null
+repair_kube_proxy_nftables
 
 log "Enabling storage and ingress addons"
 minikube addons enable storage-provisioner -p "$PROFILE" >/dev/null
@@ -484,11 +551,13 @@ spec:
       port: 9418
       targetPort: git
 EOF
+  # `kubectl wait` fails outright when nothing matches the selector yet, so wait
+  # on the Deployment first — that gives the ReplicaSet time to create the pod.
+  kubectl -n gitops-source rollout status deployment/git-source --timeout=300s
   kubectl -n gitops-source wait --for=condition=Ready pod -l app=git-source --timeout=300s
   git_pod="$(kubectl -n gitops-source get pod -l app=git-source -o jsonpath='{.items[0].metadata.name}')"
   kubectl -n gitops-source cp "$CHARTS_DIR/." "$git_pod:/repos/mini-platform"
   kubectl -n gitops-source cp "$ROOT/." "$git_pod:/repos/mini-platform-deployment"
-  kubectl -n gitops-source rollout status deployment/git-source --timeout=300s
   source_ready=false
   for _ in {1..30}; do
     if kubectl -n gitops-source exec "$git_pod" -- \
