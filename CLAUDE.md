@@ -132,11 +132,11 @@ wave** that orders rollout:
 | Wave | Tier |
 | --- | --- |
 | `-5` | Argo CD |
-| `-4` | Vault, VSO |
+| `-4` | Vault, VSO, kagent CRDs |
 | `-3` | Vault secret mappings, stateful deps (postgres, redis, qdrant, minio, spark-operator) |
 | `-2` | Keycloak, Langfuse, MLflow, Trino, vLLM |
 | `-1` → `0` | Prometheus, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset |
-| `1` → `3` | LiteLLM, then Open WebUI, then ingress routes |
+| `1` → `3` | LiteLLM, then Open WebUI and kagent, then ingress routes |
 
 All generated Applications use `automated` sync with `prune: true`,
 `selfHeal: true`, `CreateNamespace=true`, and `ServerSideApply=true`.

@@ -39,3 +39,9 @@ routes:
     host: keycloak.test
     service: keycloak
     port: 80
+  # kagent's chat UI. The controller and MCP tool servers behind it stay
+  # cluster-internal.
+  - name: kagent
+    host: kagent.test
+    service: kagent-ui
+    port: 8080

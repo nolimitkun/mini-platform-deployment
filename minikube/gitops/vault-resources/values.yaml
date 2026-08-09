@@ -26,3 +26,9 @@ vaultSecrets:
     - keycloak-admin
     - keycloak-postgresql
     - minio-root-credentials
+    # DeepSeek key for the LiteLLM model_list entry kagent points at.
+    - litellm-deepseek
+    # kagent's credential for calling LiteLLM, and its Grafana basic-auth pair
+    # (consumed with envFrom, hence the env-var-shaped keys).
+    - kagent-litellm
+    - kagent-grafana

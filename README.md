@@ -43,13 +43,16 @@ Supporting subsystems:
 Vault ──▶ Vault Secrets Operator ──▶ Kubernetes Secrets ──▶ workloads
 
 Ingress NGINX ──▶ Open WebUI, LiteLLM, Langfuse, MLflow, Grafana,
-                  JupyterHub, Superset, MinIO Console, Keycloak, Argo CD
+                  JupyterHub, Superset, MinIO Console, Keycloak, kagent,
+                  Argo CD
 
 Prometheus     ──▶ Grafana            (metrics + dashboards)
 Alloy ──▶ Loki ──▶ Grafana            (pod logs, every pod in every namespace)
-Keycloak, Trino, vLLM, LiteLLM, Open WebUI, Argo CD
+Keycloak, Trino, vLLM, LiteLLM, Open WebUI, kagent, Argo CD
       ─OTLP─▶ Alloy ─┬─▶ Tempo        (traces)
                      └─▶ Prometheus   (OTLP metrics, remote write)
+kagent ──▶ LiteLLM                    (agents; DeepSeek through the gateway)
+       └─▶ Grafana MCP ──▶ Prometheus, Loki, Tempo
 MLflow                                (experiment + artifact tracking)
 Qdrant                                (vector store for notebook/RAG examples)
 Spark Operator ──▶ Spark batch jobs
@@ -244,7 +247,7 @@ Once the tunnel assigns an external IP, map the local hostnames:
 export INGRESS_IP="$(kubectl -n ingress-nginx get service ingress-nginx-controller \
   -o jsonpath='{.status.loadBalancer.ingress[0].ip}')"
 printf '%s %s\n' "$INGRESS_IP" \
-  'argocd.test open-webui.test litellm.test langfuse.test mlflow.test grafana.test jupyterhub.test superset.test minio.test keycloak.test' \
+  'argocd.test open-webui.test litellm.test langfuse.test mlflow.test grafana.test jupyterhub.test superset.test minio.test keycloak.test kagent.test' \
   | sudo tee -a /etc/hosts
 ```
 
@@ -333,6 +336,9 @@ export VAULT_TOKEN='<initial-root-token-from-init-output>'
 # tokenizer (Qwen/Qwen3.6-27B). Accept any gated-model licenses at
 # huggingface.co with this account first, or the vLLM pull will 401.
 export HF_TOKEN='hf_xxxxxxxxxxxxxxxxxxxx'
+# DeepSeek key for the hosted `deepseek-chat` model LiteLLM serves. kagent's
+# agents run on it; nothing else on the platform requires it.
+export DEEPSEEK_API_KEY='sk-xxxxxxxxxxxxxxxxxxxx'
 
 vault secrets enable -path=mini-platform kv-v2
 vault auth enable kubernetes
@@ -361,7 +367,13 @@ vault audit enable file file_path=/vault/audit/audit.log
 
 `bootstrap-vault-secrets.sh` generates random credentials for every component
 and writes them under `mini-platform/`. It also writes the `HF_TOKEN` you export
-to `mini-platform/vllm-hf-token`, which vLLM uses to pull the model weights.
+to `mini-platform/vllm-hf-token`, which vLLM uses to pull the model weights, and
+the `DEEPSEEK_API_KEY` to `mini-platform/litellm-deepseek` for the hosted model
+kagent runs on. Two of the secrets it writes are copies rather than fresh
+credentials — `mini-platform/kagent-litellm` mirrors the LiteLLM master key and
+`mini-platform/kagent-grafana` mirrors the Grafana admin login — so on a
+`SEED_MISSING_ONLY=true` upgrade the script reads the existing values back out
+of Vault instead of generating new ones that the owning service would reject.
 Notably, it writes shared Langfuse
 project keys to `mini-platform/litellm-langfuse`: Langfuse's headless init
 provisions the starter organization and project from those keys, and LiteLLM
@@ -411,6 +423,8 @@ The app-of-apps reconciles these applications (and the `vault-resources` and
 | `mini-platform-superset` | `charts/superset` | `minikube/values/superset-values.yaml` |
 | `mini-platform-litellm` | `charts/litellm-helm` | `minikube/values/litellm-values.yaml` |
 | `mini-platform-open-webui` | `charts/open-webui` | `minikube/values/open-webui-values.yaml` |
+| `mini-platform-kagent-crds` | `charts/kagent-crds` | `minikube/values/kagent-crds-values.yaml` |
+| `mini-platform-kagent` | `charts/kagent` | `minikube/values/kagent-values.yaml` |
 | `mini-platform-ingress-resources` | `minikube/gitops/ingress-resources` | `minikube/gitops/ingress-resources/values.yaml` |
 
 † **llm-d serving path** (disabled by default): an alternative to the
@@ -449,6 +463,7 @@ Then open the service hostnames:
 | Superset | `http://superset.test` |
 | MinIO Console | `http://minio.test` |
 | Keycloak | `http://keycloak.test` |
+| kagent | `http://kagent.test` |
 
 Vault, Prometheus, Loki, Tempo, Trino, the databases, and vLLM stay
 cluster-internal by default — logs and traces are read through Grafana, not
@@ -530,6 +545,26 @@ configure TLS and authentication before exposing it.
 
 **Spark.** Submit `SparkApplication` resources into `mini-platform` with
 `serviceAccount: spark-operator-spark`.
+
+**kagent.** The chat UI is at `http://kagent.test`. Four agents ship enabled —
+`k8s-agent`, `helm-agent`, `promql-agent`, and `observability-agent` — all
+running on `deepseek-chat` through LiteLLM, so their turns appear in Langfuse
+alongside every other LLM call. The agents that target components this platform
+does not run (Istio, kgateway, Cilium, Argo Rollouts) are disabled in the
+overlay. `observability-agent` is the one wired to live telemetry: it reaches
+Prometheus, Loki, and Tempo through `grafana-mcp`, which proxies Grafana's
+datasource API using the same admin credentials Grafana itself enforces.
+
+```bash
+kubectl -n "$NS" get agents
+kubectl -n "$NS" get modelconfig default-model-config -o yaml
+# Should report Accepted; a failure here is usually the LiteLLM key or baseUrl.
+kubectl -n "$NS" get remotemcpservers
+```
+
+Note that `promql-agent` only writes and explains PromQL — it holds no
+Prometheus connection of its own. Ask `observability-agent` when you want a
+query actually executed.
 
 **Observability.** All three signals are read through Grafana, which ships
 provisioned `prometheus`, `loki` and `tempo` data sources with fixed uids so
