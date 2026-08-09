@@ -44,7 +44,7 @@ Vault ──▶ Vault Secrets Operator ──▶ Kubernetes Secrets ──▶ wo
 
 Ingress NGINX ──▶ Open WebUI, LiteLLM, Langfuse, MLflow, Grafana,
                   JupyterHub, Superset, MinIO Console, Keycloak, kagent,
-                  Argo CD
+                  HolmesGPT, Argo CD
 
 Prometheus     ──▶ Grafana            (metrics + dashboards)
 Alloy ──▶ Loki ──▶ Grafana            (pod logs, every pod in every namespace)
@@ -53,6 +53,10 @@ Keycloak, Trino, vLLM, LiteLLM, Open WebUI, kagent, Argo CD
                      └─▶ Prometheus   (OTLP metrics, remote write)
 kagent ──▶ LiteLLM                    (agents; DeepSeek through the gateway)
        └─▶ Grafana MCP ──▶ Prometheus, Loki, Tempo
+HolmesGPT ──▶ LiteLLM                 (root-cause analysis; same gateway)
+          ├─▶ Kubernetes API          (read-only ClusterRole)
+          ├─▶ Prometheus              (direct)
+          └─▶ Grafana ──▶ Loki, Tempo (datasource proxy)
 MLflow                                (experiment + artifact tracking)
 Qdrant                                (vector store for notebook/RAG examples)
 Spark Operator ──▶ Spark batch jobs
@@ -270,7 +274,7 @@ Once the tunnel assigns an external IP, map the local hostnames:
 export INGRESS_IP="$(kubectl -n ingress-nginx get service ingress-nginx-controller \
   -o jsonpath='{.status.loadBalancer.ingress[0].ip}')"
 printf '%s %s\n' "$INGRESS_IP" \
-  'argocd.test open-webui.test litellm.test langfuse.test mlflow.test grafana.test jupyterhub.test superset.test minio.test keycloak.test kagent.test' \
+  'argocd.test open-webui.test litellm.test langfuse.test mlflow.test grafana.test jupyterhub.test superset.test minio.test keycloak.test kagent.test holmes.test' \
   | sudo tee -a /etc/hosts
 ```
 
@@ -392,9 +396,10 @@ vault audit enable file file_path=/vault/audit/audit.log
 and writes them under `mini-platform/`. It also writes the `HF_TOKEN` you export
 to `mini-platform/vllm-hf-token`, which vLLM uses to pull the model weights, and
 the `DEEPSEEK_API_KEY` to `mini-platform/litellm-deepseek` for the hosted model
-kagent runs on. Two of the secrets it writes are copies rather than fresh
-credentials — `mini-platform/kagent-litellm` mirrors the LiteLLM master key and
-`mini-platform/kagent-grafana` mirrors the Grafana admin login — so on a
+kagent runs on. Four of the secrets it writes are copies rather than fresh
+credentials — `mini-platform/kagent-litellm` and `mini-platform/holmes-litellm`
+mirror the LiteLLM master key, `mini-platform/kagent-grafana` and
+`mini-platform/holmes-grafana` the Grafana admin login — so on a
 `SEED_MISSING_ONLY=true` upgrade the script reads the existing values back out
 of Vault instead of generating new ones that the owning service would reject.
 Notably, it writes shared Langfuse
@@ -448,6 +453,7 @@ The app-of-apps reconciles these applications (and the `vault-resources` and
 | `mini-platform-open-webui` | `charts/open-webui` | `minikube/values/open-webui-values.yaml` |
 | `mini-platform-kagent-crds` | `charts/kagent-crds` | `minikube/values/kagent-crds-values.yaml` |
 | `mini-platform-kagent` | `charts/kagent` | `minikube/values/kagent-values.yaml` |
+| `mini-platform-holmes` | `charts/holmes` | `minikube/values/holmes-values.yaml` |
 | `mini-platform-ingress-resources` | `minikube/gitops/ingress-resources` | `minikube/gitops/ingress-resources/values.yaml` |
 
 † **llm-d serving path** (disabled by default): an alternative to the
@@ -484,9 +490,12 @@ service hostnames:
 | MinIO Console | `http://minio.test` |
 | Keycloak | `http://keycloak.test` |
 | kagent | `http://kagent.test` |
+| HolmesGPT API | `http://holmes.test` |
 
-All of these log in through Keycloak; see [Single Sign-On](#single-sign-on) for
-the realm users and what each group grants.
+All of these log in through Keycloak — except HolmesGPT, which has no browser UI
+and authenticates with its own API key. See
+[Single Sign-On](#single-sign-on) for the realm users and what each group
+grants.
 
 Vault, Prometheus, Loki, Tempo, Trino, the databases, and vLLM stay
 cluster-internal by default — logs and traces are read through Grafana, not
@@ -542,7 +551,7 @@ works instead if you would rather not change it. Then point every hosts entry at
 `127.0.0.1`:
 
 ```bash
-echo "127.0.0.1 argocd.test grafana.test jupyterhub.test kagent.test keycloak.test langfuse.test litellm.test minio.test mlflow.test open-webui.test superset.test" | sudo tee -a /etc/hosts
+echo "127.0.0.1 argocd.test grafana.test holmes.test jupyterhub.test kagent.test keycloak.test langfuse.test litellm.test minio.test mlflow.test open-webui.test superset.test" | sudo tee -a /etc/hosts
 ```
 
 **From other machines on the LAN.** Bind the same forward to all interfaces:
@@ -696,6 +705,13 @@ Three cannot, and sit behind **oauth2-proxy** as ingress-nginx forward-auth
   `/v1` stays open because LiteLLM authenticates API traffic itself with the
   master key and virtual keys.
 
+**HolmesGPT** is outside this scheme entirely. It has no browser UI — every
+route is API — so there is no interactive login to federate, and it
+authenticates each request itself against `HOLMES_API_KEY` from
+`mini-platform/holmes-api`. Putting forward-auth in front of it would 302 every
+caller for no gain, which is the same reasoning that keeps MLflow's `/api` and
+LiteLLM's `/v1` exempt.
+
 The pattern in both exceptions is the same: a route lists the prefixes it wants
 behind Keycloak in `protectedPaths`, and carves back out any path whose clients
 authenticate themselves with `openPaths`. nginx matches the longest prefix, so
@@ -802,6 +818,38 @@ kubectl -n "$NS" get remotemcpservers
 Note that `promql-agent` only writes and explains PromQL — it holds no
 Prometheus connection of its own. Ask `observability-agent` when you want a
 query actually executed.
+
+**HolmesGPT.** An investigation API at `http://holmes.test`, on the same
+`deepseek-chat` model through LiteLLM. Where kagent is a chat UI you drive, this
+is one HTTP call that reads the cluster and its telemetry and answers with what
+it found and how it got there. Its toolsets cover the Kubernetes API (over a
+read-only ClusterRole with no access to Secrets), Prometheus directly, and Loki
+and Tempo through Grafana's datasource proxy — so an answer can cite a metric, a
+log line, and a trace in the same breath, with links back into Grafana.
+
+There is no UI and no SSO. Every request carries the API key instead:
+
+```bash
+export HOLMES_API_KEY="$(kubectl -n "$NS" get secret holmes-api \
+  -o jsonpath='{.data.HOLMES_API_KEY}' | base64 -d)"
+
+curl -sS http://holmes.test/api/chat \
+  -H "X-API-Key: $HOLMES_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"ask": "are any pods in mini-platform unhealthy, and why?"}' | jq -r .analysis
+```
+
+`GET /api/model` lists the models it will accept, and `GET /api/info` reports
+which toolsets loaded — the quickest way to see that the Grafana credentials and
+the Prometheus URL actually resolved:
+
+```bash
+curl -sS http://holmes.test/api/info -H "X-API-Key: $HOLMES_API_KEY" | jq
+```
+
+Investigations are slow (tens of seconds to minutes) and cost tokens on every
+turn; they show up in Langfuse like any other LiteLLM traffic, and Holmes' own
+spans go to Tempo under the service name `holmes`.
 
 **Observability.** All three signals are read through Grafana, which ships
 provisioned `prometheus`, `loki` and `tempo` data sources with fixed uids so

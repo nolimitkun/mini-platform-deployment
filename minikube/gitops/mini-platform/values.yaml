@@ -173,6 +173,15 @@ applications:
     valuesFile: minikube/values/kagent-values.yaml
     releaseName: kagent
     wave: "2"
+  # LLM root-cause analysis over the cluster and its telemetry. Ordered
+  # alongside kagent and for the same reasons: it calls LiteLLM for its model
+  # and Grafana's datasource proxy for Loki and Tempo, and its toolsets run a
+  # health check against both when the pod starts.
+  holmes:
+    chartPath: charts/holmes
+    valuesFile: minikube/values/holmes-values.yaml
+    releaseName: holmes
+    wave: "2"
   # Forward-auth for MLflow, kagent and the LiteLLM UI. Fails its OIDC discovery
   # call and restarts until Keycloak (wave -2) has finished importing the realm,
   # so it is ordered late and ahead of the ingress routes that reference it.

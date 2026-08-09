@@ -83,3 +83,14 @@ routes:
     # reach the ingress.
     protectedPaths:
       - /
+  # HolmesGPT's investigation API. The Service name carries the release name
+  # twice because the chart builds it as `<release>-holmes`.
+  - name: holmes
+    host: holmes.test
+    service: holmes-holmes
+    port: 80
+    # Deliberately not protected. Holmes has no browser UI — every route is
+    # API, and it authenticates each request itself against HOLMES_API_KEY (see
+    # minikube/values/holmes-values.yaml). Forward-auth here would 302 every
+    # caller, exactly as it did to MLflow's tracking API, while adding no
+    # protection the key does not already give.

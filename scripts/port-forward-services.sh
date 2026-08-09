@@ -166,6 +166,8 @@ init_services() {
     # 8081 locally because Argo CD already holds 8080; the UI itself listens on
     # 8080 in-cluster.
     "kagent|$NS|svc/kagent-ui|8081|8080"
+    # The chart names its Service <release>-holmes, hence the doubled name.
+    "HolmesGPT|$NS|svc/holmes-holmes|5050|80"
   )
 }
 
@@ -192,6 +194,9 @@ init_credentials() {
     "MLflow|vault|mini-platform/mlflow-auth|@admin-user|admin-password"
     "Keycloak|vault|mini-platform/keycloak-admin|admin|admin-password"
     "MinIO Console|vault|mini-platform/minio-root-credentials|@rootUser|rootPassword"
+    # Not a break-glass account -- this key is the whole of HolmesGPT's
+    # authentication, over the ingress and over this forward alike.
+    "HolmesGPT|vault|mini-platform/holmes-api|(X-API-Key)|HOLMES_API_KEY"
   )
 }
 
@@ -269,6 +274,7 @@ print_credentials() {
   printf '  %-14s %s\n' "JupyterHub" "Keycloak SSO only"
   printf '  %-14s %s\n' "Superset" "Keycloak SSO only (Flask-AppBuilder has one auth type)"
   printf '  %-14s %s\n' "MLflow, kagent" "Keycloak SSO via oauth2-proxy, at the ingress"
+  printf '  %-14s %s\n' "HolmesGPT" "no SSO -- API key above, on every route but /healthz"
   printf '  %-14s %s\n' "Open WebUI" "Keycloak SSO, or the first account to sign up"
 }
 
