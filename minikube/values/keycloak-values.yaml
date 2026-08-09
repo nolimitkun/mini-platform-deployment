@@ -13,6 +13,10 @@ auth:
 service:
   type: ClusterIP
 
+# The ingress terminates plain HTTP, so Keycloak has to take the scheme and
+# client address from the forwarded headers rather than from the socket.
+proxyHeaders: xforwarded
+
 metrics:
   enabled: true
   serviceMonitor:
@@ -24,6 +28,22 @@ metrics:
 # boot and picks these up. That costs extra startup time on the first roll.
 # `--features` only adds to the default set, so nothing else is turned off.
 extraEnvVars:
+  # One issuer URL for everybody. Browsers reach Keycloak through the ingress at
+  # keycloak.test, and so do the in-cluster OIDC clients — deploy-minikube.sh
+  # adds a CoreDNS rewrite so `keycloak.test` resolves to this Service from
+  # inside the cluster. Without a single hostname, a pod redeeming an
+  # authorization code against keycloak.mini-platform.svc would be handed an
+  # `iss` of the internal name while the browser was issued one for
+  # keycloak.test, and every client that validates the issuer (Argo CD,
+  # oauth2-proxy, Langfuse) would reject the token.
+  #
+  # The chart only renders KC_HOSTNAME when its own ingress is enabled, and
+  # routes here live in the ingress-resources chart instead — so set it
+  # directly. Container `env` wins over the chart's `envFrom` ConfigMap.
+  # Consequence worth knowing: Keycloak now issues redirects to keycloak.test
+  # unconditionally, so the admin console is not reachable over a port-forward.
+  - name: KC_HOSTNAME
+    value: http://keycloak.test
   - name: KC_FEATURES
     value: opentelemetry
   - name: KC_TRACING_ENABLED
@@ -41,6 +61,305 @@ extraEnvVars:
     value: parentbased_traceidratio
   - name: KC_TRACING_SAMPLER_RATIO
     value: "1.0"
+
+# The `mini-platform` realm is provisioned declaratively by keycloak-config-cli,
+# which the chart runs as a post-install/post-upgrade Job. Argo CD maps those
+# Helm hooks onto its own PostSync hooks, so the realm is re-imported on every
+# sync and converges on whatever this file says — clients edited by hand in the
+# admin console are reverted. The `master` realm is untouched; the break-glass
+# Keycloak admin (auth.adminUser above) still lives there.
+keycloakConfigCli:
+  enabled: true
+  # Same redirect as image.repository above: Bitnami retired the public
+  # `bitnami/*` tags, so the chart default pulls a manifest that no longer
+  # exists and the import Job never starts.
+  image:
+    repository: bitnamilegacy/keycloak-config-cli
+  # Keycloak re-runs its build step on first boot to pick up KC_FEATURES above,
+  # which pushes the first ready check well past the 120s chart default.
+  availabilityCheck:
+    enabled: true
+    timeout: 600s
+  # A failed import is nearly always "Keycloak was not up yet". Retry rather
+  # than leaving the realm half-created.
+  backoffLimit: 5
+  # The chart defaults to deleting the Job the moment it succeeds, which throws
+  # away the one log that says what the import actually did. before-hook-creation
+  # alone still clears the previous run before each sync, so the most recent
+  # import stays inspectable with `kubectl logs job/keycloak-keycloak-config-cli`.
+  annotations:
+    helm.sh/hook-delete-policy: before-hook-creation
+  extraEnvVars:
+    # Turns on `$(env:NAME)` interpolation in the realm file below, which is how
+    # client secrets reach Keycloak without ever being written to Git.
+    - name: IMPORT_VARSUBSTITUTION_ENABLED
+      value: "true"
+  # Vault-managed, via VSO. Supplies every *_CLIENT_SECRET and the two seed user
+  # passwords interpolated below. Written by scripts/bootstrap-vault-secrets.sh.
+  extraEnvVarsSecret: keycloak-sso
+  configuration:
+    mini-platform-realm.yaml: |
+      realm: mini-platform
+      displayName: Mini Platform
+      enabled: true
+      # Plain HTTP everywhere in this stack; requiring TLS would lock out every
+      # .test hostname. See the hardening notes in the README before reusing.
+      sslRequired: none
+      registrationAllowed: false
+      resetPasswordAllowed: true
+      loginWithEmailAllowed: true
+      duplicateEmailsAllowed: false
+      verifyEmail: false
+      accessTokenLifespan: 300
+      ssoSessionIdleTimeout: 1800
+      ssoSessionMaxLifespan: 36000
+
+      # Two roles carry the whole authorization model. Each component maps them
+      # onto its own notion of admin and read-only; nothing maps per-component
+      # roles, deliberately — this is a reference stack, not an RBAC exercise.
+      roles:
+        realm:
+          - name: platform-admin
+            description: Administrative access to Mini Platform components.
+          - name: platform-viewer
+            description: Read-only access to Mini Platform components.
+
+      groups:
+        - name: platform-admins
+          path: /platform-admins
+          realmRoles:
+            - platform-admin
+        - name: platform-users
+          path: /platform-users
+          realmRoles:
+            - platform-viewer
+
+      # Keycloak emits no group claim by default. Argo CD's RBAC, Grafana's
+      # role_attribute_path, Superset's AUTH_ROLES_MAPPING and oauth2-proxy's
+      # --allowed-group all read the same flat `groups` claim this scope adds.
+      clientScopes:
+        - name: groups
+          description: Group membership as a flat `groups` claim.
+          protocol: openid-connect
+          attributes:
+            include.in.token.scope: "true"
+            display.on.consent.screen: "false"
+          protocolMappers:
+            - name: groups
+              protocol: openid-connect
+              protocolMapper: oidc-group-membership-mapper
+              config:
+                claim.name: groups
+                # Names, not /paths — the consumers above match on bare names.
+                full.path: "false"
+                id.token.claim: "true"
+                access.token.claim: "true"
+                userinfo.token.claim: "true"
+
+      clients:
+        - clientId: grafana
+          name: Grafana
+          enabled: true
+          protocol: openid-connect
+          publicClient: false
+          standardFlowEnabled: true
+          directAccessGrantsEnabled: false
+          secret: $(env:GRAFANA_CLIENT_SECRET)
+          rootUrl: http://grafana.test
+          baseUrl: http://grafana.test
+          redirectUris:
+            - http://grafana.test/login/generic_oauth
+          webOrigins:
+            - +
+          attributes:
+            post.logout.redirect.uris: http://grafana.test/*
+          # The realm defaults plus the `groups` scope above. Listed explicitly
+          # rather than relying on the realm's default-default scopes, whose
+          # membership shifts between Keycloak releases.
+          defaultClientScopes: &platformScopes
+            - acr
+            - basic
+            - email
+            - profile
+            - roles
+            - web-origins
+            - groups
+
+        - clientId: open-webui
+          name: Open WebUI
+          enabled: true
+          protocol: openid-connect
+          publicClient: false
+          standardFlowEnabled: true
+          directAccessGrantsEnabled: false
+          secret: $(env:OPEN_WEBUI_CLIENT_SECRET)
+          rootUrl: http://open-webui.test
+          baseUrl: http://open-webui.test
+          redirectUris:
+            - http://open-webui.test/oauth/oidc/callback
+          webOrigins:
+            - +
+          attributes:
+            post.logout.redirect.uris: http://open-webui.test/*
+          defaultClientScopes: *platformScopes
+
+        - clientId: superset
+          name: Superset
+          enabled: true
+          protocol: openid-connect
+          publicClient: false
+          standardFlowEnabled: true
+          directAccessGrantsEnabled: false
+          secret: $(env:SUPERSET_CLIENT_SECRET)
+          rootUrl: http://superset.test
+          baseUrl: http://superset.test
+          # Flask-AppBuilder derives the callback path from the provider name,
+          # which superset-values.yaml sets to `keycloak`.
+          redirectUris:
+            - http://superset.test/oauth-authorized/keycloak
+          webOrigins:
+            - +
+          attributes:
+            post.logout.redirect.uris: http://superset.test/*
+          defaultClientScopes: *platformScopes
+
+        - clientId: jupyterhub
+          name: JupyterHub
+          enabled: true
+          protocol: openid-connect
+          publicClient: false
+          standardFlowEnabled: true
+          directAccessGrantsEnabled: false
+          secret: $(env:JUPYTERHUB_CLIENT_SECRET)
+          rootUrl: http://jupyterhub.test
+          baseUrl: http://jupyterhub.test
+          redirectUris:
+            - http://jupyterhub.test/hub/oauth_callback
+          webOrigins:
+            - +
+          attributes:
+            post.logout.redirect.uris: http://jupyterhub.test/*
+          defaultClientScopes: *platformScopes
+
+        - clientId: argocd
+          name: Argo CD
+          enabled: true
+          protocol: openid-connect
+          publicClient: false
+          standardFlowEnabled: true
+          directAccessGrantsEnabled: false
+          secret: $(env:ARGOCD_CLIENT_SECRET)
+          rootUrl: http://argocd.test
+          baseUrl: http://argocd.test
+          redirectUris:
+            - http://argocd.test/auth/callback
+            # `argocd login --sso` spawns a loopback listener on this port.
+            - http://localhost:8085/auth/callback
+          webOrigins:
+            - +
+          attributes:
+            post.logout.redirect.uris: http://argocd.test/*
+          defaultClientScopes: *platformScopes
+
+        - clientId: minio
+          name: MinIO Console
+          enabled: true
+          protocol: openid-connect
+          publicClient: false
+          standardFlowEnabled: true
+          directAccessGrantsEnabled: false
+          secret: $(env:MINIO_CLIENT_SECRET)
+          rootUrl: http://minio.test
+          baseUrl: http://minio.test
+          redirectUris:
+            - http://minio.test/oauth_callback
+          webOrigins:
+            - +
+          attributes:
+            post.logout.redirect.uris: http://minio.test/*
+          defaultClientScopes: *platformScopes
+          # MinIO reads its authorization out of a claim rather than a group
+          # list: whatever `policy` holds must name an existing MinIO policy.
+          # Mapped from the realm role so platform-admins land on consoleAdmin.
+          protocolMappers:
+            - name: minio-policy
+              protocol: openid-connect
+              protocolMapper: oidc-hardcoded-claim-mapper
+              config:
+                claim.name: policy
+                claim.value: consoleAdmin
+                jsonType.label: String
+                id.token.claim: "true"
+                access.token.claim: "true"
+                userinfo.token.claim: "true"
+
+        - clientId: langfuse
+          name: Langfuse
+          enabled: true
+          protocol: openid-connect
+          publicClient: false
+          standardFlowEnabled: true
+          directAccessGrantsEnabled: false
+          secret: $(env:LANGFUSE_CLIENT_SECRET)
+          rootUrl: http://langfuse.test
+          baseUrl: http://langfuse.test
+          # NextAuth builds the callback from the provider id, and Langfuse
+          # registers its generic OIDC provider under the id `custom`.
+          redirectUris:
+            - http://langfuse.test/api/auth/callback/custom
+          webOrigins:
+            - +
+          attributes:
+            post.logout.redirect.uris: http://langfuse.test/*
+          defaultClientScopes: *platformScopes
+
+        # One client for all three forward-auth hosts. oauth2-proxy runs as a
+        # single deployment fronting MLflow, kagent and the LiteLLM UI, so the
+        # callback differs only by host.
+        - clientId: oauth2-proxy
+          name: oauth2-proxy (MLflow, kagent, LiteLLM)
+          enabled: true
+          protocol: openid-connect
+          publicClient: false
+          standardFlowEnabled: true
+          directAccessGrantsEnabled: false
+          secret: $(env:OAUTH2_PROXY_CLIENT_SECRET)
+          redirectUris:
+            - http://mlflow.test/oauth2/callback
+            - http://kagent.test/oauth2/callback
+            - http://litellm.test/oauth2/callback
+          webOrigins:
+            - +
+          defaultClientScopes: *platformScopes
+
+      # Seed identities so a fresh cluster has something to log in with. Both
+      # passwords come from Vault. Add real users in the admin console — the
+      # import below does not delete users it did not create.
+      users:
+        - username: platform-admin
+          enabled: true
+          emailVerified: true
+          email: platform-admin@mini-platform.test
+          firstName: Platform
+          lastName: Admin
+          credentials:
+            - type: password
+              value: $(env:SSO_ADMIN_PASSWORD)
+              temporary: false
+          groups:
+            - /platform-admins
+        - username: platform-user
+          enabled: true
+          emailVerified: true
+          email: platform-user@mini-platform.test
+          firstName: Platform
+          lastName: User
+          credentials:
+            - type: password
+              value: $(env:SSO_USER_PASSWORD)
+              temporary: false
+          groups:
+            - /platform-users
 
 postgresql:
   enabled: true

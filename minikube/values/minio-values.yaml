@@ -11,6 +11,25 @@ service:
 consoleService:
   type: ClusterIP
 
+# Keycloak SSO for the console. The root credentials above keep working, both
+# as break-glass and for the S3 API clients (MLflow, Langfuse) that have no
+# browser to run an OIDC flow in.
+oidc:
+  enabled: true
+  configUrl: http://keycloak.test/realms/mini-platform/.well-known/openid-configuration
+  clientId: minio
+  existingClientSecretName: keycloak-sso
+  existingClientSecretKey: MINIO_CLIENT_SECRET
+  # MinIO authorizes from a claim naming one of its own policies rather than
+  # from a group list, so the realm client hardcodes `policy: consoleAdmin`.
+  # Narrowing this means adding a MinIO policy and mapping the realm role onto
+  # it in the keycloak overlay.
+  claimName: policy
+  scopes: openid,profile,email,groups
+  redirectUri: http://minio.test/oauth_callback
+  displayName: Keycloak
+
+
 metrics:
   serviceMonitor:
     enabled: false

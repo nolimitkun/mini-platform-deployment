@@ -57,7 +57,7 @@ MLflow                                (experiment + artifact tracking)
 Qdrant                                (vector store for notebook/RAG examples)
 Spark Operator ──▶ Spark batch jobs
 Superset       ──▶ Trino ──▶ analytics sources
-Keycloak                              (identity provider)
+Keycloak                              (identity provider; SSO for every UI)
 MinIO                                 (shared S3-compatible object store)
 Argo CD        ──▶ reconciles every release + secret mapping from Git
 ```
@@ -67,6 +67,9 @@ dependencies so their upgrades stay independent of the LiteLLM gateway. Vault
 runs as a single persistent standalone server in this starter configuration and
 **must be initialized and unsealed before dependent applications turn healthy.**
 
+Every browser-facing service authenticates against Keycloak — see
+[Single Sign-On](#single-sign-on).
+
 ## Repository Layout
 
 | Path | Purpose |
@@ -74,7 +77,7 @@ runs as a single persistent standalone server in this starter configuration and
 | `minikube/values/` | Mini Platform integration overlays — no committed credentials |
 | `minikube/gitops/mini-platform/` | Argo CD app-of-apps chart defining every managed release and its sync wave |
 | `minikube/gitops/vault-resources/` | `VaultStaticSecret` mappings and the VSO auth service account |
-| `minikube/gitops/ingress-resources/` | Browser-facing `.test` ingress routes |
+| `minikube/gitops/ingress-resources/` | Browser-facing `.test` ingress routes, including the oauth2-proxy forward-auth wiring |
 | `minikube/gitops/root-application.yaml` | Root Argo CD Application that bootstraps the app-of-apps |
 | `scripts/deploy-minikube.sh` | Creates/resets Minikube and automates the Argo CD + Vault bootstrap |
 | `scripts/bootstrap-vault-secrets.sh` | Generates and writes initial credentials into Vault |
@@ -170,6 +173,15 @@ Useful flags:
 
 Re-running an initialized deployment keeps existing credentials; pass
 `--rotate-secrets` only when you intend to replace them.
+
+Rotation is a coordinated operation for the SSO credentials in particular:
+Keycloak holds whatever the last realm import wrote, and each component reads
+its client secret from an environment variable fixed when its pod started, so
+neither side notices a new value in Vault. The script therefore re-runs the
+realm import and restarts every consumer as part of the same
+`--rotate-secrets` run. Rotating by writing to Vault directly, without that
+pass, leaves the two sides disagreeing and SSO fails at the next unrelated pod
+restart.
 
 **Deploying from a local checkout.** When the repos live only on the Minikube
 host, or are private and Argo CD has no credential, use `--local-source`. Both
@@ -451,16 +463,13 @@ entrypoint is `llm-d-epp.mini-platform.svc` port 80.
 
 ### Via ingress
 
-With ingress running, add the `.test` hosts to your local resolver or
-`/etc/hosts` using the Minikube node IP (`minikube ip -p mini-platform`). On
-Docker-driver clusters where the ingress `LoadBalancer` remains pending, keep a
-tunnel open in another terminal:
+Every browser-facing service is reached by hostname, and **single sign-on only
+works this way** — see [Reaching the ingress](#reaching-the-ingress) for how to
+get there from your machine, and the note on port 80 in particular.
 
-```bash
-minikube tunnel -p mini-platform
-```
-
-Then open the service hostnames:
+Map the `.test` hosts in your local resolver or `/etc/hosts`, pointed at
+whichever address reaches the ingress controller (see below), then open the
+service hostnames:
 
 | Service | Endpoint |
 | --- | --- |
@@ -476,6 +485,9 @@ Then open the service hostnames:
 | Keycloak | `http://keycloak.test` |
 | kagent | `http://kagent.test` |
 
+All of these log in through Keycloak; see [Single Sign-On](#single-sign-on) for
+the realm users and what each group grants.
+
 Vault, Prometheus, Loki, Tempo, Trino, the databases, and vLLM stay
 cluster-internal by default — logs and traces are read through Grafana, not
 their own UIs. For Vault administration, use a targeted port-forward:
@@ -484,7 +496,80 @@ their own UIs. For Vault administration, use a targeted port-forward:
 kubectl -n "$NS" port-forward svc/vault-ui 8200:8200
 ```
 
+### Reaching the ingress
+
+**Everything below must land on port 80.** Each OIDC client in the Keycloak
+realm registers an exact redirect URI — `http://grafana.test/login/generic_oauth`
+and so on — with no port, and Keycloak rejects anything that does not match
+character for character. Reach a service on `http://grafana.test:8080` and the
+page loads, but the login bounces to a port nothing is listening on. The same
+applies to `http://keycloak.test` itself, which is the issuer.
+
+Pick whichever of these matches your Docker setup.
+
+**Routable node IP.** Where the Minikube node IP is reachable from the host —
+the usual case with rootful Docker or the KVM driver — point the hosts entries
+straight at it:
+
+```bash
+minikube ip -p mini-platform
+```
+
+If the ingress `LoadBalancer` stays `<pending>`, keep a tunnel open in another
+terminal:
+
+```bash
+minikube tunnel -p mini-platform
+```
+
+**Rootless Docker, or any setup where the node IP is not routable.** Rootless
+Docker runs the cluster inside a user network namespace: the node IP has no
+route from the host at all, and neither the node port nor `minikube tunnel`
+helps. Check with `ip route get $(minikube ip -p mini-platform)` — if it
+resolves via your default gateway rather than a `br-*` interface, you are in
+this case. Forward the ingress controller to localhost instead:
+
+```bash
+sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+```
+
+```bash
+kubectl -n ingress-nginx port-forward svc/ingress-nginx-controller 80:80
+```
+
+The `sysctl` is what lets a non-root process bind port 80; `sudo -E kubectl …`
+works instead if you would rather not change it. Then point every hosts entry at
+`127.0.0.1`:
+
+```bash
+echo "127.0.0.1 argocd.test grafana.test jupyterhub.test kagent.test keycloak.test langfuse.test litellm.test minio.test mlflow.test open-webui.test superset.test" | sudo tee -a /etc/hosts
+```
+
+**From other machines on the LAN.** Bind the same forward to all interfaces:
+
+```bash
+kubectl -n ingress-nginx port-forward --address 0.0.0.0 svc/ingress-nginx-controller 80:80
+```
+
+Then give each client the same hosts line with the *host's* LAN address in place
+of `127.0.0.1`; on Windows the file is `C:\Windows\System32\drivers\etc\hosts`,
+edited as Administrator. Nothing in the platform changes — the realm, its
+clients and oauth2-proxy are all keyed on hostnames, so only the client's name
+resolution moves. Open port 80 if a host firewall is enabled, and remember the
+whole session, passwords included, crosses the network in cleartext; see
+[Production Hardening](#production-hardening).
+
 ### Via port-forward
+
+This path reaches each Service directly on its own high port, bypassing the
+ingress. **Single sign-on does not work through it** — the redirect URIs in the
+realm are `http://<host>/…` on port 80, so a UI served at
+`http://127.0.0.1:3000` cannot complete a login. Use it for the break-glass
+local accounts (see [Break-glass logins](#break-glass-logins)), for the services
+that have no ingress route at all, and as a fallback when host-to-ingress
+routing is unavailable. Note that it also bypasses oauth2-proxy: forwarding
+MLflow or kagent exposes them unauthenticated, because the forward-auth lives on
+the ingress, not on the Service.
 
 Run the port-forward script on the host running Minikube. For host-local access
 on `127.0.0.1`:
@@ -509,8 +594,8 @@ If LAN IP autodetection picks the wrong interface, pass it explicitly:
 Services are then reachable at endpoints like `http://192.168.1.54:8080`. Stop
 the forwards with `./scripts/port-forward-services.sh stop`.
 
-Port-forwarding is also the quickest fallback when host-to-Minikube ingress
-routing is unavailable but the in-cluster services are healthy.
+For LAN access *with* SSO, forward the ingress controller on port 80 instead —
+see [Reaching the ingress](#reaching-the-ingress).
 
 ### Retrieving credentials
 
@@ -536,6 +621,8 @@ To query Vault directly instead, with `VAULT_ADDR` and an authorized
 `VAULT_TOKEN` set:
 
 ```bash
+vault kv get -field=SSO_ADMIN_PASSWORD mini-platform/keycloak-sso
+vault kv get -field=SSO_USER_PASSWORD mini-platform/keycloak-sso
 vault kv get -field=admin-password mini-platform/grafana-admin
 vault kv get -field=admin-password mini-platform/mlflow-auth
 vault kv get -field=SUPERSET_ADMIN_PASSWORD mini-platform/superset-env
@@ -545,10 +632,124 @@ vault kv get -field=LANGFUSE_INIT_USER_PASSWORD mini-platform/langfuse-init-user
 vault kv get -field=PROXY_MASTER_KEY mini-platform/litellm-master-key
 ```
 
-JupyterHub, Open WebUI, and kagent have no stored credential: JupyterHub uses
-z2jh's dummy authenticator (any username, no password), Open WebUI makes the
-first account to sign up its admin, and kagent runs without authentication in
-this configuration.
+The first two are the Keycloak realm logins that work across every UI. The rest
+are per-component break-glass accounts — see
+[Single Sign-On](#single-sign-on) for which ones still accept a form login.
+
+## Single Sign-On
+
+Keycloak is the identity provider for every browser-facing service. The
+`mini-platform` realm, its clients, roles, groups and two seed users are
+provisioned declaratively by `keycloak-config-cli`, which the Keycloak chart
+runs as a post-sync Job — the realm lives in
+`minikube/values/keycloak-values.yaml` and is re-imported on every Argo CD sync,
+so clients edited by hand in the admin console are reverted. Client secrets are
+generated into Vault by `scripts/bootstrap-vault-secrets.sh` and interpolated
+into the realm at import time; none of them are in Git.
+
+### Logging in
+
+| Realm user | Group | Password |
+| --- | --- | --- |
+| `platform-admin` | `platform-admins` | `vault kv get -field=SSO_ADMIN_PASSWORD mini-platform/keycloak-sso` |
+| `platform-user` | `platform-users` | `vault kv get -field=SSO_USER_PASSWORD mini-platform/keycloak-sso` |
+
+Add more users in the Keycloak admin console at `http://keycloak.test` (the
+`master`-realm admin from `mini-platform/keycloak-admin`), and put them in one
+of the two groups — the import does not delete users it did not create.
+
+Authorization everywhere derives from those two groups, carried in a `groups`
+claim:
+
+| Component | `platform-admins` | `platform-users` |
+| --- | --- | --- |
+| Grafana | Admin | Viewer |
+| Superset | Admin | Gamma |
+| Open WebUI | admin | user |
+| JupyterHub | admin | user |
+| Argo CD | `role:admin` | `role:readonly` |
+| MinIO Console | `consoleAdmin` | `consoleAdmin` |
+| MLflow, kagent, LiteLLM UI | access | access |
+
+MinIO authorizes from a claim naming one of its own policies rather than from a
+group list, so both groups currently map to `consoleAdmin`; narrowing that means
+adding a MinIO policy and mapping the realm role onto it. MLflow, kagent and the
+LiteLLM UI sit behind oauth2-proxy, which admits both groups and cannot express
+a role distinction downstream.
+
+### How each component is wired
+
+Seven components speak OIDC themselves and are configured in their own overlay:
+Grafana, Open WebUI, Superset, JupyterHub, Argo CD, MinIO Console and Langfuse.
+
+Three cannot, and sit behind **oauth2-proxy** as ingress-nginx forward-auth
+(`minikube/values/oauth2-proxy-values.yaml`, with the routes in
+`minikube/gitops/ingress-resources/values.yaml`):
+
+- **MLflow** — the Bitnami chart offers a single basic-auth account and no OIDC.
+  The browser UI is protected; `/api` is not, because the MLflow SDK and CLI
+  send basic-auth credentials and cannot follow an interactive SSO redirect.
+  MLflow authenticates those routes itself with the account in
+  `mini-platform/mlflow-auth`.
+- **kagent** — ships no authentication at all.
+- **LiteLLM** — its built-in SSO is license-gated. Only `/ui` is protected;
+  `/v1` stays open because LiteLLM authenticates API traffic itself with the
+  master key and virtual keys.
+
+The pattern in both exceptions is the same: a route lists the prefixes it wants
+behind Keycloak in `protectedPaths`, and carves back out any path whose clients
+authenticate themselves with `openPaths`. nginx matches the longest prefix, so
+the exemption wins over the broader protected path.
+
+### Break-glass logins
+
+Local accounts are deliberately left enabled, so a broken realm import does not
+lock you out: Grafana, Argo CD, MinIO, Langfuse, MLflow and Keycloak's own
+`master` realm all still accept their Vault-managed password.
+
+**Superset is the exception.** Flask-AppBuilder supports one `AUTH_TYPE` at a
+time, so switching it to `AUTH_OAUTH` retires the username/password form
+outright. The `admin` account still exists in the database and its password is
+still in Vault, but reaching it means temporarily removing the `keycloak_oauth`
+block from `minikube/values/superset-values.yaml`. JupyterHub previously used
+z2jh's dummy authenticator, which was not a credential to preserve.
+
+### One issuer URL
+
+Browsers reach Keycloak at `http://keycloak.test` through the ingress, and so do
+the in-cluster OIDC clients: `deploy-minikube.sh` adds a CoreDNS `rewrite` so
+`keycloak.test` resolves to the Keycloak Service from inside the cluster.
+
+This matters because the issuer has to be identical on both sides. A pod
+redeeming an authorization code against `keycloak.mini-platform.svc` would be
+handed an `iss` of the internal name while the browser was issued one for
+`keycloak.test`, and Argo CD, oauth2-proxy and Langfuse all reject that
+mismatch. CoreDNS lives in `kube-system`, outside Argo CD's reconciliation, so
+the rewrite is applied imperatively during bring-up; it is idempotent.
+
+Two consequences worth knowing:
+
+- Keycloak issues redirects to `keycloak.test` unconditionally, so its admin
+  console is **not** reachable over a port-forward. Use the ingress.
+- The registered redirect URIs are all `.test` hostnames, so SSO logins only
+  work through the ingress. Port-forwarded UIs still offer their local login
+  (where one exists), and port-forwarding MLflow or kagent bypasses
+  oauth2-proxy entirely — it protects the ingress path, not the Service.
+
+### Adding a component to SSO
+
+1. Add a client to the realm in `minikube/values/keycloak-values.yaml`, with
+   `secret: $(env:<NAME>_CLIENT_SECRET)` and its exact callback URL.
+2. Add that same key to the `mini-platform/keycloak-sso` write in
+   `scripts/bootstrap-vault-secrets.sh`. The names must match — an unresolved
+   variable is imported literally and produces a client secret nothing can
+   authenticate with.
+3. Point the component's overlay at `secretKeyRef: {name: keycloak-sso, key: …}`
+   and the issuer `http://keycloak.test/realms/mini-platform`.
+
+If the component has no OIDC support, skip steps 1–3 and instead add
+`protectedPaths` to its route in `minikube/gitops/ingress-resources/values.yaml`
+and a callback URL on the existing `oauth2-proxy` client.
 
 ## Verifying the Stack
 
@@ -644,6 +845,39 @@ lack of wiring: Superset speaks statsd only, Open WebUI has no Prometheus
 endpoint and reports through OTLP alone, and Langfuse's bundled OpenTelemetry
 is wired to Sentry rather than to a generic OTLP exporter.
 
+**Single sign-on.** The realm import is the part most likely to fail, and it
+fails quietly — components come up healthy and only reject logins. Check the
+import job first, then confirm the realm is discoverable under the same hostname
+a pod would use:
+
+```bash
+kubectl -n "$NS" logs job/keycloak-keycloak-config-cli --tail=20
+```
+
+```bash
+kubectl -n "$NS" run oidc-check --rm -it --restart=Never --image=curlimages/curl -- \
+  curl -sS http://keycloak.test/realms/mini-platform/.well-known/openid-configuration
+```
+
+The second command exercises the CoreDNS rewrite as well as Keycloak: a DNS
+failure means the rewrite did not apply, and an `issuer` that is anything other
+than `http://keycloak.test/realms/mini-platform` means `KC_HOSTNAME` is not
+taking effect — either one breaks every login. To confirm forward-auth is in
+place, an unauthenticated request to a protected host should redirect to
+Keycloak rather than return the app. Sending it from inside the cluster keeps
+the check independent of whether the ingress is reachable from your machine:
+
+```bash
+kubectl -n "$NS" run authcheck --rm -it --restart=Never --image=curlimages/curl -- \
+  curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' \
+  -H 'Host: mlflow.test' http://ingress-nginx-controller.ingress-nginx.svc.cluster.local/
+```
+
+Expect `302 http://mlflow.test/oauth2/start?rd=%2F`. Swapping the host header
+for `litellm.test` with path `/v1/models` should instead return `401` and no
+redirect — LiteLLM authenticates API traffic itself, and only `/ui` sits behind
+oauth2-proxy.
+
 **General health:**
 
 ```bash
@@ -680,5 +914,16 @@ installed and skipped otherwise; CI installs both.
 
 This repository is a local reference stack. Before any non-development use, at
 minimum: enable in-cluster TLS, replace Vault manual unseal with an auto-unseal
-mechanism and HA storage, scope administrative tokens tightly, add backups, and
-put authentication in front of Argo CD, Trino, and the other exposed services.
+mechanism and HA storage, scope administrative tokens tightly, and add backups.
+
+Single sign-on is wired for every browser-facing service, but it is configured
+for a plain-HTTP local cluster and needs revisiting alongside TLS:
+
+- The realm sets `sslRequired: none` and oauth2-proxy runs with
+  `--cookie-secure=false`, so session cookies travel in the clear. Both change
+  once the `.test` hostnames are served over HTTPS.
+- Break-glass local accounts are left enabled on purpose. Disable them once
+  Keycloak itself is highly available.
+- Trino, Prometheus, Loki, Tempo, vLLM and the databases have no authentication
+  at all; they are only cluster-internal. Exposing any of them means putting
+  something in front of it — oauth2-proxy already provides the pattern.

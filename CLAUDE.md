@@ -110,6 +110,43 @@ Loki and Tempo both run single-binary against a filesystem PVC — neither is
 sized for real volume, and the vendored `tempo` chart is deprecated upstream in
 favour of `tempo-distributed` (kept deliberately; see `tempo-values.yaml`).
 
+**Keycloak is the identity provider for every browser-facing service.** The
+`mini-platform` realm — clients, the two realm roles, the two groups, and two
+seed users — is declared inline in `minikube/values/keycloak-values.yaml` under
+`keycloakConfigCli.configuration` and imported by a post-sync Job, so it is
+re-applied on every Argo CD sync and console edits are reverted. Client secrets
+live in the single Vault secret `keycloak-sso`: keycloak-config-cli reads the
+whole thing with `envFrom` and interpolates `$(env:NAME)` into the realm, while
+each component mounts only its own key. **The key names in that realm and in
+`bootstrap-vault-secrets.sh` must match** — an unresolved variable is imported
+literally, producing a client secret nothing can authenticate with.
+
+The design turns on **one issuer URL, `http://keycloak.test`, for browsers and
+pods alike**: `deploy-minikube.sh` adds a CoreDNS rewrite so `keycloak.test`
+resolves in-cluster, and `KC_HOSTNAME` pins what Keycloak stamps into `iss`.
+Splitting frontchannel and backchannel hostnames is not an option — Argo CD,
+oauth2-proxy and Langfuse all validate the issuer, and none of them accept a
+separate internal URL. The cost is that Keycloak's admin console is unreachable
+over a port-forward.
+
+Seven components speak OIDC natively (Grafana, Open WebUI, Superset,
+JupyterHub, Argo CD, MinIO, Langfuse). Three cannot and sit behind a shared
+**oauth2-proxy** as ingress-nginx forward-auth: MLflow, kagent, and LiteLLM's
+`/ui` only. A route opts in with `protectedPaths` in
+`minikube/gitops/ingress-resources/values.yaml`, which renders a second Ingress
+carrying the auth annotations plus an unauthenticated `/oauth2` Ingress; the
+split matters because nginx applies those annotations to every path in an
+Ingress, and a protected `/oauth2/start` would loop. **Any path whose clients
+authenticate themselves must be exempted** — LiteLLM's `/v1` and MLflow's
+`/api` both are (via `openPaths`, or by not being listed at all), because an
+SDK or CLI sending its own credentials cannot follow an interactive SSO
+redirect and just receives a 302. Local break-glass logins
+are kept everywhere they exist — Superset is the sole exception, since
+Flask-AppBuilder has a single `AUTH_TYPE`. Argo CD is the one consumer outside
+the `mini-platform` namespace, so `vault-resources` renders it a
+`VaultStaticSecret`, `VaultAuth` and ServiceAccount in `argocd`, and the Vault
+Kubernetes auth role binds that namespace too.
+
 **Vault must be initialized and unsealed before dependent apps go healthy.**
 Early Argo CD syncs intentionally show missing-secret failures until Vault is
 seeded and the `VaultStaticSecret` resources synchronize — this is expected, not
@@ -136,7 +173,7 @@ wave** that orders rollout:
 | `-3` | Vault secret mappings, stateful deps (postgres, redis, qdrant, minio, spark-operator) |
 | `-2` | Keycloak, Langfuse, MLflow, Trino, vLLM |
 | `-1` → `0` | Prometheus, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset |
-| `1` → `3` | LiteLLM, then Open WebUI and kagent, then ingress routes |
+| `1` → `3` | LiteLLM, then Open WebUI, kagent and oauth2-proxy, then ingress routes |
 
 All generated Applications use `automated` sync with `prune: true`,
 `selfHeal: true`, `CreateNamespace=true`, and `ServerSideApply=true`.
@@ -163,7 +200,9 @@ appropriate `wave` (`chartPath: charts/<name>`,
 `valuesFile: minikube/values/<name>-values.yaml`), and (if it needs credentials)
 add a secret to `bootstrap-vault-secrets.sh` and its name to
 `minikube/gitops/vault-resources/values.yaml`. To expose it in a browser, add a
-route in `minikube/gitops/ingress-resources/values.yaml`.
+route in `minikube/gitops/ingress-resources/values.yaml` — and put it behind
+Keycloak while you are there, either as a realm client (see the SSO notes above)
+or, if it has no OIDC support, with `protectedPaths` on that route.
 
 **Pointing at forks/branches:** the two source URLs/revisions appear in several
 files that must stay in sync. Never hand-edit them — run:

@@ -180,12 +180,16 @@ init_services() {
 # there instead.
 init_credentials() {
   credentials=(
+    # Keycloak SSO first: these two log in to every browser UI on the platform.
+    # Everything below them is a local, per-component break-glass account that
+    # SSO is meant to replace day to day.
+    "SSO admin|vault|mini-platform/keycloak-sso|platform-admin|SSO_ADMIN_PASSWORD"
+    "SSO user|vault|mini-platform/keycloak-sso|platform-user|SSO_USER_PASSWORD"
     "Argo CD|k8s|$ARGO_NS/argocd-initial-admin-secret|admin|password"
     "Langfuse|vault|mini-platform/langfuse-init-user|@LANGFUSE_INIT_USER_EMAIL|LANGFUSE_INIT_USER_PASSWORD"
     "Grafana|vault|mini-platform/grafana-admin|@admin-user|admin-password"
     "LiteLLM|vault|mini-platform/litellm-master-key|(bearer token)|PROXY_MASTER_KEY"
     "MLflow|vault|mini-platform/mlflow-auth|@admin-user|admin-password"
-    "Superset|vault|mini-platform/superset-env|admin|SUPERSET_ADMIN_PASSWORD"
     "Keycloak|vault|mini-platform/keycloak-admin|admin|admin-password"
     "MinIO Console|vault|mini-platform/minio-root-credentials|@rootUser|rootPassword"
   )
@@ -262,9 +266,10 @@ print_credentials() {
   done
 
   # Services with no stored credential to look up.
-  printf '  %-14s %s\n' "JupyterHub" "any username, no password (dummy authenticator)"
-  printf '  %-14s %s\n' "Open WebUI" "first account to sign up becomes admin"
-  printf '  %-14s %s\n' "kagent" "no authentication configured"
+  printf '  %-14s %s\n' "JupyterHub" "Keycloak SSO only"
+  printf '  %-14s %s\n' "Superset" "Keycloak SSO only (Flask-AppBuilder has one auth type)"
+  printf '  %-14s %s\n' "MLflow, kagent" "Keycloak SSO via oauth2-proxy, at the ingress"
+  printf '  %-14s %s\n' "Open WebUI" "Keycloak SSO, or the first account to sign up"
 }
 
 detect_lan_ip() {

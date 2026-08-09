@@ -3,6 +3,38 @@ admin:
   userKey: admin-user
   passwordKey: admin-password
 
+# Keycloak SSO. The local admin above stays enabled as break-glass, so
+# `disable_login_form` is deliberately left off.
+grafana.ini:
+  server:
+    # Grafana builds the OAuth redirect_uri from root_url, and Keycloak refuses
+    # anything that is not an exact match for the registered callback.
+    root_url: http://grafana.test
+  auth.generic_oauth:
+    enabled: true
+    name: Keycloak
+    # New Keycloak identities become Grafana users on first login; without this
+    # every SSO login fails until someone pre-creates the account by hand.
+    allow_sign_up: true
+    client_id: grafana
+    scopes: openid profile email groups
+    auth_url: http://keycloak.test/realms/mini-platform/protocol/openid-connect/auth
+    token_url: http://keycloak.test/realms/mini-platform/protocol/openid-connect/token
+    api_url: http://keycloak.test/realms/mini-platform/protocol/openid-connect/userinfo
+    # JMESPath over the `groups` claim the realm's groups client scope adds.
+    role_attribute_path: contains(groups[*], 'platform-admins') && 'Admin' || 'Viewer'
+    use_pkce: true
+    use_refresh_token: true
+
+# Kept out of grafana.ini so the client secret never reaches a ConfigMap: the
+# chart renders grafana.ini verbatim, while env vars can carry a secret ref.
+# Grafana reads GF_<SECTION>_<KEY> over the file.
+envValueFrom:
+  GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:
+    secretKeyRef:
+      name: keycloak-sso
+      key: GRAFANA_CLIENT_SECRET
+
 persistence:
   enabled: true
 

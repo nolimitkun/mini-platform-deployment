@@ -1,0 +1,62 @@
+# Forward-auth for the three components that cannot speak OIDC themselves:
+# MLflow (the Bitnami chart offers basic auth only), kagent (no auth layer at
+# all), and the LiteLLM admin UI (its built-in SSO is license-gated). Rather
+# than proxying their traffic, oauth2-proxy only answers ingress-nginx's
+# subrequest — see the `protectedPaths` routes in
+# minikube/gitops/ingress-resources/values.yaml.
+#
+# One deployment serves all three hosts. `redirect-url` is deliberately left
+# unset so oauth2-proxy derives the callback from the forwarded Host of each
+# request, which is why the realm's oauth2-proxy client registers a callback per
+# host.
+
+service:
+  type: ClusterIP
+  portNumber: 80
+
+# client-id / client-secret / cookie-secret, materialized from Vault by VSO.
+# The cookie secret has to stay 16, 24, or 32 bytes — oauth2-proxy uses it as
+# an AES key — which is why bootstrap-vault-secrets.sh generates it separately
+# from the other credentials.
+config:
+  existingSecret: oauth2-proxy-oidc
+
+# A list, not a map: --allowed-group is repeated, which a map cannot express.
+extraArgs:
+  - --provider=oidc
+  - --provider-display-name=Keycloak
+  - --oidc-issuer-url=http://keycloak.test/realms/mini-platform
+  - --scope=openid email profile groups
+  - --oidc-groups-claim=groups
+  # Authorization happens here rather than in each component. A Keycloak account
+  # on its own opens nothing; membership in a platform group is what grants
+  # access. Neither MLflow nor kagent can distinguish the two roles downstream,
+  # so both groups are simply admitted.
+  - --allowed-group=platform-admins
+  - --allowed-group=platform-users
+  # Trust the ingress controller's X-Forwarded-* headers. Without this,
+  # oauth2-proxy reads its own Service address as the request host and builds a
+  # callback URL that Keycloak has never heard of.
+  - --reverse-proxy=true
+  # The stack terminates plain HTTP, so a Secure cookie would never be sent
+  # back and every login would loop. See the hardening notes in the README.
+  - --cookie-secure=false
+  # Cookies stay host-scoped rather than shared across *.test: a cookie domain
+  # that short risks being treated as a public suffix by the browser. The cost
+  # is one redirect per host on first visit, which Keycloak's own session makes
+  # invisible.
+  - --whitelist-domain=.test
+  # Hand the authenticated identity back to ingress-nginx, which forwards it
+  # via auth-response-headers.
+  - --set-xauthrequest=true
+  # There is one provider; the interstitial "Sign in with Keycloak" page adds a
+  # click and nothing else.
+  - --skip-provider-button=true
+  - --code-challenge-method=S256
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 128Mi

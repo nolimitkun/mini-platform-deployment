@@ -7,16 +7,77 @@ secretEnv:
 envFromSecret: superset-env
 
 # Installing at container startup is suitable for a starter platform. Build
-# an image with this dependency preinstalled for repeatable production rollout.
+# an image with these dependencies preinstalled for repeatable production
+# rollout.
+#
+# authlib is required by the Keycloak SSO block below, not by Superset itself:
+# Flask-AppBuilder imports it unconditionally as soon as AUTH_TYPE is
+# AUTH_OAUTH, and the upstream Superset image does not ship it. Without it the
+# web and worker pods crash on boot with ModuleNotFoundError before serving
+# anything.
 bootstrapScript: |
   #!/bin/bash
   set -e
-  pip install --no-cache-dir --target /app/.venv/lib/python3.10/site-packages trino psycopg2-binary
+  pip install --no-cache-dir --target /app/.venv/lib/python3.10/site-packages trino psycopg2-binary authlib
   if [ ! -f ~/bootstrap ]; then echo "Running Superset with uid {{ .Values.runAsUser }}" > ~/bootstrap; fi
+
+extraEnvRaw:
+  # Only the one key, rather than adding keycloak-sso to envFromSecrets, which
+  # would put every other component's client secret into the Superset pods.
+  - name: KEYCLOAK_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: keycloak-sso
+        key: SUPERSET_CLIENT_SECRET
 
 configOverrides:
   application_secret: |
     SECRET_KEY = os.environ["SUPERSET_SECRET_KEY"]
+  # Keycloak SSO. Note the exception to the platform's break-glass rule:
+  # Flask-AppBuilder has a single AUTH_TYPE, so switching to AUTH_OAUTH retires
+  # the username/password form outright. The `admin` account below still exists
+  # in the database and its password is still in Vault, but reaching it means
+  # temporarily removing this block. Every other component keeps a local login.
+  keycloak_oauth: |
+    import os
+    from flask_appbuilder.security.manager import AUTH_OAUTH
+
+    AUTH_TYPE = AUTH_OAUTH
+    # Superset sits behind ingress-nginx over plain HTTP; without the proxy fix
+    # it builds the redirect_uri from the pod's own scheme and host and
+    # Keycloak rejects the mismatch.
+    ENABLE_PROXY_FIX = True
+
+    AUTH_USER_REGISTRATION = True
+    AUTH_USER_REGISTRATION_ROLE = "Gamma"
+    # Re-read group membership on every login, so revoking a Keycloak group
+    # takes effect without touching Superset.
+    AUTH_ROLES_SYNC_AT_LOGIN = True
+    AUTH_ROLES_MAPPING = {
+        "platform-admins": ["Admin"],
+        "platform-users": ["Gamma"],
+    }
+
+    # The provider name matters twice: Flask-AppBuilder ships a built-in
+    # userinfo parser keyed on "keycloak" (it is what maps the `groups` claim
+    # onto role_keys for AUTH_ROLES_MAPPING above), and it derives the callback
+    # path /oauth-authorized/keycloak registered on the realm client.
+    OAUTH_PROVIDERS = [
+        {
+            "name": "keycloak",
+            "icon": "fa-key",
+            "token_key": "access_token",
+            "remote_app": {
+                "client_id": "superset",
+                "client_secret": os.environ["KEYCLOAK_CLIENT_SECRET"],
+                "server_metadata_url": "http://keycloak.test/realms/mini-platform/.well-known/openid-configuration",
+                # Trailing slash required: the built-in parser resolves
+                # "openid-connect/userinfo" relative to this.
+                "api_base_url": "http://keycloak.test/realms/mini-platform/protocol/",
+                "client_kwargs": {"scope": "openid email profile groups"},
+            },
+        }
+    ]
 
 extraConfigs:
   import_datasources.yaml: |

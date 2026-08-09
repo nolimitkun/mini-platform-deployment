@@ -17,6 +17,30 @@ langfuse:
     telemetryEnabled: false
   # Provision the tracing project using the same Vault-managed keys consumed by LiteLLM.
   additionalEnv:
+    # ---- Keycloak SSO ------------------------------------------------------
+    # AUTH_DISABLE_USERNAME_PASSWORD is left unset, so the headless init user
+    # below remains a working local login. Langfuse registers a generic OIDC
+    # provider under the fixed id `custom`, which is what fixes the callback
+    # path to /api/auth/callback/custom on the realm client.
+    - name: AUTH_CUSTOM_NAME
+      value: Keycloak
+    - name: AUTH_CUSTOM_CLIENT_ID
+      value: langfuse
+    - name: AUTH_CUSTOM_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: keycloak-sso
+          key: LANGFUSE_CLIENT_SECRET
+    - name: AUTH_CUSTOM_ISSUER
+      value: http://keycloak.test/realms/mini-platform
+    - name: AUTH_CUSTOM_SCOPE
+      value: openid email profile
+    # Lets the Keycloak identity attach to the init user's existing account
+    # when the email matches, instead of failing as a duplicate — which is what
+    # keeps the seeded org and project visible after the first SSO login.
+    - name: AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING
+      value: "true"
+    # ---- Project bootstrap -------------------------------------------------
     - name: LANGFUSE_INIT_ORG_ID
       value: mini-platform
     - name: LANGFUSE_INIT_ORG_NAME
