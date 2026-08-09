@@ -118,6 +118,19 @@ querydoc:
 # grafana-values.yaml, instead of three separate connections.
 grafana-mcp:
   enabled: true
+  # Without this the integration cannot work at all: mcp-grafana validates the
+  # Host header and, per `--allowed-hosts`, defaults the allowlist to "loopback
+  # variants of --address". The chart binds 0.0.0.0:8000 but the RemoteMCPServer
+  # it generates connects over Service DNS, so every request the kagent
+  # controller makes is rejected with `403 forbidden: host not allowed` and the
+  # tool server reconciles to Accepted=False with zero tools discovered.
+  # Upstream kagent 0.9.12 ships no value for this, so it is broken out of the
+  # box on any cluster; the allowlist below is the Service DNS the controller
+  # actually dials. Kept explicit rather than "*", which upstream documents as
+  # safe only behind a Host-rewriting reverse proxy.
+  args:
+    - --allowed-hosts
+    - kagent-grafana-mcp.mini-platform:8000,kagent-grafana-mcp.mini-platform.svc.cluster.local:8000,kagent-grafana-mcp:8000
   grafana:
     # mcp-grafana appends its own paths under /api.
     url: http://grafana.mini-platform.svc.cluster.local:80/api
