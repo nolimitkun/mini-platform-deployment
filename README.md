@@ -187,6 +187,11 @@ realm import and restarts every consumer as part of the same
 pass, leaves the two sides disagreeing and SSO fails at the next unrelated pod
 restart.
 
+The same restart covers every other workload holding a rotated secret in its
+pod spec, not just the SSO consumers — `holmes-holmes`, whose `HOLMES_API_KEY`
+*is* its authentication, and `kagent-grafana-mcp`. Without it, Holmes would keep
+honouring the old key while the lookup below hands out the new one.
+
 **Deploying from a local checkout.** When the repos live only on the Minikube
 host, or are private and Argo CD has no credential, use `--local-source`. Both
 the deployment repo and the sibling charts checkout must have a clean tree:
