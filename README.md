@@ -174,6 +174,15 @@ Useful flags:
 Re-running an initialized deployment keeps existing credentials; pass
 `--rotate-secrets` only when you intend to replace them.
 
+Rotation is a coordinated operation for the SSO credentials in particular:
+Keycloak holds whatever the last realm import wrote, and each component reads
+its client secret from an environment variable fixed when its pod started, so
+neither side notices a new value in Vault. The script therefore re-runs the
+realm import and restarts every consumer as part of the same
+`--rotate-secrets` run. Rotating by writing to Vault directly, without that
+pass, leaves the two sides disagreeing and SSO fails at the next unrelated pod
+restart.
+
 **Deploying from a local checkout.** When the repos live only on the Minikube
 host, or are private and Argo CD has no credential, use `--local-source`. Both
 the deployment repo and the sibling charts checkout must have a clean tree:
@@ -678,10 +687,19 @@ Three cannot, and sit behind **oauth2-proxy** as ingress-nginx forward-auth
 `minikube/gitops/ingress-resources/values.yaml`):
 
 - **MLflow** — the Bitnami chart offers a single basic-auth account and no OIDC.
+  The browser UI is protected; `/api` is not, because the MLflow SDK and CLI
+  send basic-auth credentials and cannot follow an interactive SSO redirect.
+  MLflow authenticates those routes itself with the account in
+  `mini-platform/mlflow-auth`.
 - **kagent** — ships no authentication at all.
 - **LiteLLM** — its built-in SSO is license-gated. Only `/ui` is protected;
   `/v1` stays open because LiteLLM authenticates API traffic itself with the
   master key and virtual keys.
+
+The pattern in both exceptions is the same: a route lists the prefixes it wants
+behind Keycloak in `protectedPaths`, and carves back out any path whose clients
+authenticate themselves with `openPaths`. nginx matches the longest prefix, so
+the exemption wins over the broader protected path.
 
 ### Break-glass logins
 

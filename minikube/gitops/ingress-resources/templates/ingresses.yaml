@@ -3,6 +3,7 @@
 {{- $namespace := .Release.Namespace }}
 {{- range $route := .Values.routes }}
 {{- $protected := $route.protectedPaths | default list }}
+{{- $open := $route.openPaths | default list }}
 {{- /*
   A route whose protectedPaths contains "/" is covered end to end by the
   authenticated Ingress below, so emitting an unauthenticated "/" here as well
@@ -69,6 +70,36 @@ spec:
                 port:
                   number: {{ $route.port }}
           {{- end }}
+{{- if $open }}
+---
+{{- /*
+  Exemptions carved out of the protected prefixes above, for API paths whose
+  clients authenticate themselves and cannot follow an interactive redirect.
+  Their own Ingress, again because the auth annotations are per-object; nginx
+  matches the longest prefix, so a more specific path listed here wins over the
+  broader protected one.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $route.name }}-open
+  namespace: {{ $namespace }}
+spec:
+  ingressClassName: {{ $ingressClassName }}
+  rules:
+    - host: {{ $route.host }}
+      http:
+        paths:
+          {{- range $path := $open }}
+          - path: {{ $path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $route.service }}
+                port:
+                  number: {{ $route.port }}
+          {{- end }}
+{{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress

@@ -182,6 +182,74 @@ install_keycloak_dns_rewrite() {
     warn "CoreDNS did not report ready after the keycloak.test rewrite"
 }
 
+# Rotating the OIDC client secrets is a two-sided change, and neither side
+# notices on its own: Keycloak keeps whatever the last realm import wrote, while
+# the components read their secret from an environment variable fixed at pod
+# creation. VSO updating the Kubernetes Secret moves neither. Left alone, the
+# next unrelated pod restart picks up a new secret that Keycloak no longer
+# accepts, and SSO breaks at a moment with no obvious connection to the
+# rotation.
+#
+# So re-import the realm and roll the consumers, in that order, as part of the
+# same run. The import Job is normally an Argo CD PostSync hook, which only
+# fires on a sync; cloning it here re-runs it immediately against the refreshed
+# Secret without waiting for one.
+reconcile_sso_after_rotation() {
+  local job=keycloak-keycloak-config-cli
+  local clone
+  clone="keycloak-config-cli-rotate-$(date +%s)"
+
+  log "Re-importing the Keycloak realm with the rotated client secrets"
+  if kubectl -n "$NS" get job "$job" >/dev/null 2>&1; then
+    # `kubectl create job --from` only accepts a CronJob, so copy the spec by
+    # hand. Everything the API server or the Job controller owns has to go:
+    # the generated selector and the controller-uid/job-name labels are
+    # immutable and would bind the copy to the original. The Argo CD instance
+    # label goes too -- left on, Argo CD would consider this stray Job part of
+    # the keycloak Application and prune it mid-run.
+    if kubectl -n "$NS" get job "$job" -o json |
+      jq --arg name "$clone" '
+        .metadata = {name: $name, labels: (.metadata.labels // {} | del(
+          ."app.kubernetes.io/instance",
+          ."batch.kubernetes.io/controller-uid", ."controller-uid",
+          ."batch.kubernetes.io/job-name", ."job-name"))}
+        | del(.spec.selector, .status)
+        | .spec.template.metadata.labels |= (. // {} | del(
+          ."batch.kubernetes.io/controller-uid", ."controller-uid",
+          ."batch.kubernetes.io/job-name", ."job-name"))' |
+      kubectl -n "$NS" create -f - >/dev/null 2>&1; then
+      kubectl -n "$NS" wait --for=condition=complete "job/$clone" --timeout=600s >/dev/null 2>&1 ||
+        warn "realm re-import did not complete; check 'kubectl -n $NS logs job/$clone'"
+      kubectl -n "$NS" delete job "$clone" --ignore-not-found >/dev/null 2>&1 || true
+    else
+      warn "could not clone $job; re-import the realm by syncing the keycloak Application"
+    fi
+  else
+    warn "$job not found; skipping realm re-import (Keycloak may not be deployed yet)"
+  fi
+
+  # Everything that mounts a key from keycloak-sso, plus the two mirrors. Argo CD
+  # will not restart these itself -- the Deployment specs are unchanged, only the
+  # Secret they reference.
+  log "Restarting SSO consumers so they pick up the rotated secrets"
+  local workloads=(
+    deployment/grafana
+    statefulset/open-webui
+    deployment/superset
+    deployment/superset-worker
+    deployment/hub
+    deployment/oauth2-proxy
+    deployment/langfuse-web
+    deployment/minio
+  )
+  local w
+  for w in "${workloads[@]}"; do
+    kubectl -n "$NS" rollout restart "$w" >/dev/null 2>&1 || true
+  done
+  # Argo CD reads its client secret from a Secret in its own namespace.
+  kubectl -n "$ARGO_NS" rollout restart deployment/argocd-server >/dev/null 2>&1 || true
+}
+
 cleanup() {
   [[ -z "$PRELOAD_RECORD" ]] || rm -f "$PRELOAD_RECORD"
   [[ -z "$RETRIED_PODS_FILE" ]] || rm -f "$RETRIED_PODS_FILE"
@@ -819,6 +887,10 @@ secret_count="$({ kubectl -n "$NS" get vaultstaticsecrets -o name 2>/dev/null ||
 kubectl -n "$NS" wait --for=condition=Ready vaultstaticsecret --all --timeout=30s >/dev/null ||
   fail "not all VaultStaticSecret resources reached Ready state"
 kubectl -n "$NS" get vaultstaticsecrets
+
+if [[ "$ROTATE_SECRETS" == true ]]; then
+  reconcile_sso_after_rotation
+fi
 
 preload_cached_pod_images
 restart_pending_workload_pods

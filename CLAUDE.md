@@ -132,12 +132,15 @@ over a port-forward.
 Seven components speak OIDC natively (Grafana, Open WebUI, Superset,
 JupyterHub, Argo CD, MinIO, Langfuse). Three cannot and sit behind a shared
 **oauth2-proxy** as ingress-nginx forward-auth: MLflow, kagent, and LiteLLM's
-`/ui` only — `/v1` stays open because LiteLLM authenticates API traffic itself.
-A route opts in with `protectedPaths` in
+`/ui` only. A route opts in with `protectedPaths` in
 `minikube/gitops/ingress-resources/values.yaml`, which renders a second Ingress
 carrying the auth annotations plus an unauthenticated `/oauth2` Ingress; the
 split matters because nginx applies those annotations to every path in an
-Ingress, and a protected `/oauth2/start` would loop. Local break-glass logins
+Ingress, and a protected `/oauth2/start` would loop. **Any path whose clients
+authenticate themselves must be exempted** — LiteLLM's `/v1` and MLflow's
+`/api` both are (via `openPaths`, or by not being listed at all), because an
+SDK or CLI sending its own credentials cannot follow an interactive SSO
+redirect and just receives a 302. Local break-glass logins
 are kept everywhere they exist — Superset is the sole exception, since
 Flask-AppBuilder has a single `AUTH_TYPE`. Argo CD is the one consumer outside
 the `mini-platform` namespace, so `vault-resources` renders it a
