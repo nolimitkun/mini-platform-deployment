@@ -19,6 +19,41 @@ openaiApiKeyExistingSecretKey: PROXY_MASTER_KEY
 # Alloy splits the stream: traces to Tempo, metrics remote-written to
 # Prometheus.
 extraEnvVars:
+  # ---- Keycloak SSO ----------------------------------------------------
+  # ENABLE_LOGIN_FORM is left at its default so the local account that Open
+  # WebUI creates for the first signup stays usable as break-glass.
+  - name: WEBUI_URL
+    value: http://open-webui.test
+  - name: ENABLE_OAUTH_SIGNUP
+    value: "true"
+  # Open WebUI keys accounts by provider subject. Without this, a Keycloak user
+  # whose email already exists locally is rejected as a duplicate rather than
+  # being linked to the existing account.
+  - name: OAUTH_MERGE_ACCOUNTS_BY_EMAIL
+    value: "true"
+  - name: OAUTH_PROVIDER_NAME
+    value: Keycloak
+  - name: OPENID_PROVIDER_URL
+    value: http://keycloak.test/realms/mini-platform/.well-known/openid-configuration
+  - name: OAUTH_CLIENT_ID
+    value: open-webui
+  - name: OAUTH_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: keycloak-sso
+        key: OPEN_WEBUI_CLIENT_SECRET
+  - name: OAUTH_SCOPES
+    value: openid email profile groups
+  # Map realm groups onto Open WebUI's own roles, re-evaluated on every login.
+  - name: ENABLE_OAUTH_ROLE_MANAGEMENT
+    value: "true"
+  - name: OAUTH_ROLES_CLAIM
+    value: groups
+  - name: OAUTH_ALLOWED_ROLES
+    value: platform-users,platform-admins
+  - name: OAUTH_ADMIN_ROLES
+    value: platform-admins
+  # ---- Telemetry -------------------------------------------------------
   - name: ENABLE_OTEL
     value: "true"
   - name: ENABLE_OTEL_TRACES

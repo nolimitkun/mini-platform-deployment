@@ -8,6 +8,32 @@ global:
 configs:
   cm:
     url: http://argocd.test
+    # Keycloak SSO. The built-in `admin` account stays enabled as break-glass —
+    # its password lives in the argocd-initial-admin-secret the chart generates,
+    # not in Vault, and it is the way back in if the realm import fails.
+    #
+    # clientSecret resolves against the argocd-oidc Secret in this namespace,
+    # which VSO materializes from Vault (see minikube/gitops/vault-resources).
+    # Argo CD only considers Secrets carrying the argocd part-of label, which is
+    # why that entry sets one.
+    oidc.config: |
+      name: Keycloak
+      issuer: http://keycloak.test/realms/mini-platform
+      clientID: argocd
+      clientSecret: $argocd-oidc:clientSecret
+      requestedScopes:
+        - openid
+        - profile
+        - email
+        - groups
+  rbac:
+    # Realm groups, matched through the `groups` claim declared in scopes below.
+    # Everything unmatched falls through to policy.default, which stays unset —
+    # an authenticated user with neither group gets nothing.
+    policy.csv: |
+      g, platform-admins, role:admin
+      g, platform-users, role:readonly
+    scopes: "[groups, email]"
   params:
     server.insecure: true
     # Argo CD's components emit OTLP spans for reconciliation, repo operations

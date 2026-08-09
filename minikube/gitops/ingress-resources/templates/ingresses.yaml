@@ -1,21 +1,92 @@
-{{- range .Values.routes }}
+{{- $auth := .Values.authProxy }}
+{{- $ingressClassName := .Values.ingressClassName }}
+{{- $namespace := .Release.Namespace }}
+{{- range $route := .Values.routes }}
+{{- $protected := $route.protectedPaths | default list }}
+{{- /*
+  A route whose protectedPaths contains "/" is covered end to end by the
+  authenticated Ingress below, so emitting an unauthenticated "/" here as well
+  would declare the same host+path twice. ingress-nginx resolves that collision
+  by creation timestamp, which would silently decide whether the host is
+  protected at all.
+*/}}
+{{- if not (has "/" $protected) }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ .name }}
-  namespace: {{ $.Release.Namespace }}
+  name: {{ $route.name }}
+  namespace: {{ $namespace }}
 spec:
-  ingressClassName: {{ $.Values.ingressClassName }}
+  ingressClassName: {{ $ingressClassName }}
   rules:
-    - host: {{ .host }}
+    - host: {{ $route.host }}
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: {{ .service }}
+                name: {{ $route.service }}
                 port:
-                  number: {{ .port }}
+                  number: {{ $route.port }}
+{{- end }}
+{{- if $protected }}
+---
+{{- /*
+  Split into its own Ingress because nginx applies auth annotations to every
+  path in the object that carries them. Keeping the authenticated prefixes here
+  leaves the /oauth2 endpoints below (and, for LiteLLM, the API paths above)
+  reachable without a session -- otherwise the redirect to /oauth2/start would
+  itself require a session and loop.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $route.name }}-auth
+  namespace: {{ $namespace }}
+  annotations:
+    # Subrequest per incoming request: 202 lets it through, 401 triggers
+    # auth-signin. Addressed by Service DNS, so it never leaves the cluster.
+    nginx.ingress.kubernetes.io/auth-url: http://{{ $auth.service }}.{{ $namespace }}.svc.cluster.local:{{ $auth.port }}/oauth2/auth
+    # $host keeps the browser on the component's own hostname, so the callback
+    # and the cookie share an origin. $escaped_request_uri returns the user to
+    # where they were headed after login.
+    nginx.ingress.kubernetes.io/auth-signin: http://$host{{ $auth.path }}/start?rd=$escaped_request_uri
+    nginx.ingress.kubernetes.io/auth-response-headers: X-Auth-Request-User,X-Auth-Request-Email,X-Auth-Request-Preferred-Username
+spec:
+  ingressClassName: {{ $ingressClassName }}
+  rules:
+    - host: {{ $route.host }}
+      http:
+        paths:
+          {{- range $path := $protected }}
+          - path: {{ $path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $route.service }}
+                port:
+                  number: {{ $route.port }}
+          {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $route.name }}-oauth2
+  namespace: {{ $namespace }}
+spec:
+  ingressClassName: {{ $ingressClassName }}
+  rules:
+    - host: {{ $route.host }}
+      http:
+        paths:
+          - path: {{ $auth.path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $auth.service }}
+                port:
+                  number: {{ $auth.port }}
+{{- end }}
 {{- end }}

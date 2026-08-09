@@ -32,3 +32,36 @@ vaultSecrets:
     # (consumed with envFrom, hence the env-var-shaped keys).
     - kagent-litellm
     - kagent-grafana
+    # Every OIDC client secret plus the two seed user passwords for the
+    # mini-platform realm. Read whole by the keycloak-config-cli job, and one
+    # key at a time by each client component.
+    - keycloak-sso
+    # Mirror of the oauth2-proxy entry in keycloak-sso, under the key names the
+    # oauth2-proxy chart expects.
+    - oauth2-proxy-oidc
+
+  # Secrets a workload can only consume from its own namespace. Argo CD is the
+  # one component outside mini-platform, and it resolves an OIDC client secret
+  # written as `$argocd-oidc:clientSecret` against a Secret in the argocd
+  # namespace -- which it only looks at when the Secret carries the part-of
+  # label below.
+  #
+  # VSO resolves `vaultAuthRef` within the VaultStaticSecret's own namespace, so
+  # each namespace listed here also gets a `vault-auth` ServiceAccount and a
+  # matching VaultAuth. Vault's Kubernetes auth role must bind that namespace
+  # too -- see bound_service_account_namespaces in scripts/deploy-minikube.sh.
+  external:
+    - name: argocd-oidc
+      namespace: argocd
+      labels:
+        app.kubernetes.io/part-of: argocd
+
+# Backs the VaultAuth rendered into each `external` namespace. Mirrors the
+# defaultAuthMethod in minikube/values/vault-secrets-operator-values.yaml, which
+# only covers the operator's own namespace.
+vaultAuth:
+  method: kubernetes
+  mount: kubernetes
+  role: mini-platform
+  serviceAccount: vault-auth
+  audience: vault

@@ -134,6 +134,54 @@ repair_kube_proxy_nftables() {
   log "Cluster DNS path repaired"
 }
 
+# Single sign-on needs one Keycloak URL that means the same thing to a browser
+# and to a pod. Browsers get there through the ingress at keycloak.test, so this
+# teaches cluster DNS the same name: CoreDNS rewrites it to the Keycloak
+# Service, and the Host header still reads keycloak.test, which is what
+# Keycloak stamps into the `iss` claim.
+#
+# Without this, an in-cluster client would have to redeem authorization codes
+# against keycloak.mini-platform.svc and would be handed an issuer that does not
+# match the one in the browser's ID token, which Argo CD, oauth2-proxy and
+# Langfuse all reject. Rewriting to the Service rather than to the ingress
+# controller keeps the hop inside the cluster; the Host header is what matters,
+# not the path taken.
+#
+# CoreDNS lives in kube-system and is outside Argo CD's reconciliation, so this
+# belongs with the other imperative bring-up steps. It is idempotent.
+install_keycloak_dns_rewrite() {
+  local rewrite="rewrite name keycloak.test keycloak.${NS}.svc.cluster.local"
+  local corefile
+
+  corefile="$(kubectl -n kube-system get configmap coredns -o jsonpath='{.data.Corefile}' 2>/dev/null || true)"
+  if [[ -z "$corefile" ]]; then
+    warn "CoreDNS Corefile not found; skipping the keycloak.test rewrite (SSO logins will fail)"
+    return 0
+  fi
+  if [[ "$corefile" == *"$rewrite"* ]]; then
+    return 0
+  fi
+
+  log "Teaching CoreDNS to resolve keycloak.test in-cluster"
+  local patched
+  patched="$(printf '%s\n' "$corefile" | awk -v rule="    $rewrite" '
+    { print }
+    !done && /^\.:53 \{/ { print rule; done = 1 }
+  ')"
+  if [[ "$patched" == "$corefile" ]]; then
+    warn "CoreDNS Corefile has no .:53 server block; skipping the keycloak.test rewrite"
+    return 0
+  fi
+
+  # Patch rather than apply: the ConfigMap is minikube's, and a client-side
+  # apply from a hand-built manifest would take ownership of its labels too.
+  kubectl -n kube-system patch configmap coredns --type merge \
+    -p "$(jq -n --arg corefile "$patched" '{data: {Corefile: $corefile}}')" >/dev/null
+  kubectl -n kube-system rollout restart deployment/coredns >/dev/null
+  kubectl -n kube-system rollout status deployment/coredns --timeout=180s >/dev/null ||
+    warn "CoreDNS did not report ready after the keycloak.test rewrite"
+}
+
 cleanup() {
   [[ -z "$PRELOAD_RECORD" ]] || rm -f "$PRELOAD_RECORD"
   [[ -z "$RETRIED_PODS_FILE" ]] || rm -f "$RETRIED_PODS_FILE"
@@ -515,6 +563,8 @@ kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller --ti
 kubectl -n ingress-nginx patch service ingress-nginx-controller \
   --type merge -p '{"spec":{"type":"LoadBalancer"}}' >/dev/null
 
+install_keycloak_dns_rewrite
+
 kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
 kubectl create namespace "$ARGO_NS" --dry-run=client -o yaml | kubectl apply -f -
 
@@ -719,9 +769,12 @@ path "mini-platform/metadata/*" {
   capabilities = ["read", "list"]
 }
 EOF
+# The Argo CD namespace is bound too: Argo CD only reads an OIDC client secret
+# from a Secret in its own namespace, so vault-resources renders a VaultAuth and
+# a vault-auth ServiceAccount there as well.
 vault_exec write auth/kubernetes/role/mini-platform \
   bound_service_account_names=vault-auth \
-  bound_service_account_namespaces="$NS" \
+  bound_service_account_namespaces="$NS,$ARGO_NS" \
   audience=vault \
   policies=mini-platform-read \
   ttl=1h >/dev/null

@@ -1,7 +1,22 @@
 ingressClassName: nginx
 
+# Forward-auth target for routes that declare `protectedPaths`. oauth2-proxy
+# holds the Keycloak session on behalf of components that cannot do OIDC
+# themselves; see minikube/values/oauth2-proxy-values.yaml.
+authProxy:
+  service: oauth2-proxy
+  port: 80
+  # Served on each protected host, not on a host of its own — the session
+  # cookie oauth2-proxy sets at the callback has to be same-origin with the
+  # component it is protecting.
+  path: /oauth2
+
 # Only entry points intended for local user access are exposed. Stateful
 # dependencies, Vault, Trino, Prometheus, and vLLM remain cluster-internal.
+#
+# `protectedPaths` puts the listed path prefixes behind Keycloak via
+# oauth2-proxy. Everything else is either reachable without a login or
+# authenticates the request itself.
 routes:
   - name: open-webui
     host: open-webui.test
@@ -11,6 +26,11 @@ routes:
     host: litellm.test
     service: litellm
     port: 4000
+    # The admin UI only. /v1 stays open because LiteLLM authenticates API
+    # traffic itself with the master key and virtual keys — putting a browser
+    # redirect in front of it would break every API client.
+    protectedPaths:
+      - /ui
   - name: langfuse
     host: langfuse.test
     service: langfuse-web
@@ -19,6 +39,11 @@ routes:
     host: mlflow.test
     service: mlflow-tracking
     port: 80
+    # MLflow's own auth is a single basic-auth account with no OIDC support, so
+    # the whole host sits behind oauth2-proxy. The basic-auth credentials in
+    # Vault still work for the tracking API, which has no browser to redirect.
+    protectedPaths:
+      - /
   - name: grafana
     host: grafana.test
     service: grafana
@@ -45,3 +70,8 @@ routes:
     host: kagent.test
     service: kagent-ui
     port: 8080
+    # kagent ships no authentication whatsoever, so without this the chat UI —
+    # and the cluster-mutating tools behind it — are open to anyone who can
+    # reach the ingress.
+    protectedPaths:
+      - /

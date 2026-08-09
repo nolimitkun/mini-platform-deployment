@@ -46,6 +46,12 @@ rand_hex() {
   openssl rand -hex 32
 }
 
+# oauth2-proxy rejects any cookie secret whose length is not 16, 24, or 32
+# bytes -- it feeds the value straight to AES. 16 hex bytes prints 32 chars.
+rand_cookie() {
+  openssl rand -hex 16
+}
+
 # Reads one field of an existing secret, printing nothing if the path or field
 # is absent. Used to carry a credential into a second secret that has to hold
 # the same value.
@@ -160,6 +166,67 @@ kv_put mini-platform/keycloak-admin admin-password="$(rand_b64)"
 kv_put mini-platform/keycloak-postgresql \
   postgres-password="$(rand_b64)" \
   password="$(rand_b64)"
+
+# ---------------------------------------------------------------------------
+# Keycloak SSO
+#
+# One secret holds every OIDC client secret plus the two seed user passwords.
+# keycloak-config-cli consumes the whole thing with envFrom and interpolates
+# `$(env:NAME)` into the realm file in minikube/values/keycloak-values.yaml;
+# each client component mounts only the single key it needs. Field names are
+# therefore env-var shaped, and any change here has to be matched in that realm
+# file -- an unresolved variable is imported into Keycloak literally, producing
+# a client secret nothing can authenticate with.
+#
+# Every value is read back before being regenerated. A rotated client secret is
+# a two-sided change (Keycloak and the consumer), so on a seed-missing pass the
+# existing values have to survive even though the secrets that mirror them
+# below are written unconditionally.
+# ---------------------------------------------------------------------------
+sso_secret() {
+  local existing
+  existing="$(reuse_or_generate mini-platform/keycloak-sso "$1")"
+  printf '%s' "${existing:-$(rand_hex)}"
+}
+
+GRAFANA_CLIENT_SECRET="$(sso_secret GRAFANA_CLIENT_SECRET)"
+OPEN_WEBUI_CLIENT_SECRET="$(sso_secret OPEN_WEBUI_CLIENT_SECRET)"
+SUPERSET_CLIENT_SECRET="$(sso_secret SUPERSET_CLIENT_SECRET)"
+JUPYTERHUB_CLIENT_SECRET="$(sso_secret JUPYTERHUB_CLIENT_SECRET)"
+ARGOCD_CLIENT_SECRET="$(sso_secret ARGOCD_CLIENT_SECRET)"
+MINIO_CLIENT_SECRET="$(sso_secret MINIO_CLIENT_SECRET)"
+LANGFUSE_CLIENT_SECRET="$(sso_secret LANGFUSE_CLIENT_SECRET)"
+OAUTH2_PROXY_CLIENT_SECRET="$(sso_secret OAUTH2_PROXY_CLIENT_SECRET)"
+SSO_ADMIN_PASSWORD="${SSO_ADMIN_PASSWORD:-$(reuse_or_generate mini-platform/keycloak-sso SSO_ADMIN_PASSWORD)}"
+SSO_ADMIN_PASSWORD="${SSO_ADMIN_PASSWORD:-$(rand_b64)}"
+SSO_USER_PASSWORD="${SSO_USER_PASSWORD:-$(reuse_or_generate mini-platform/keycloak-sso SSO_USER_PASSWORD)}"
+SSO_USER_PASSWORD="${SSO_USER_PASSWORD:-$(rand_b64)}"
+
+kv_put mini-platform/keycloak-sso \
+  GRAFANA_CLIENT_SECRET="$GRAFANA_CLIENT_SECRET" \
+  OPEN_WEBUI_CLIENT_SECRET="$OPEN_WEBUI_CLIENT_SECRET" \
+  SUPERSET_CLIENT_SECRET="$SUPERSET_CLIENT_SECRET" \
+  JUPYTERHUB_CLIENT_SECRET="$JUPYTERHUB_CLIENT_SECRET" \
+  ARGOCD_CLIENT_SECRET="$ARGOCD_CLIENT_SECRET" \
+  MINIO_CLIENT_SECRET="$MINIO_CLIENT_SECRET" \
+  LANGFUSE_CLIENT_SECRET="$LANGFUSE_CLIENT_SECRET" \
+  OAUTH2_PROXY_CLIENT_SECRET="$OAUTH2_PROXY_CLIENT_SECRET" \
+  SSO_ADMIN_PASSWORD="$SSO_ADMIN_PASSWORD" \
+  SSO_USER_PASSWORD="$SSO_USER_PASSWORD"
+
+# Two mirrors of keycloak-sso, needed because their consumers dictate the key
+# names: the oauth2-proxy chart looks up client-id/client-secret/cookie-secret,
+# and Argo CD resolves `$argocd-oidc:clientSecret` against a Secret in its own
+# namespace. Both carry whatever value the authoritative secret above settled
+# on, so a seed-missing pass that adds one of these mirrors to an existing
+# cluster hands the consumer the client secret Keycloak already accepts.
+OAUTH2_PROXY_COOKIE_SECRET="${OAUTH2_PROXY_COOKIE_SECRET:-$(reuse_or_generate mini-platform/oauth2-proxy-oidc cookie-secret)}"
+OAUTH2_PROXY_COOKIE_SECRET="${OAUTH2_PROXY_COOKIE_SECRET:-$(rand_cookie)}"
+kv_put mini-platform/oauth2-proxy-oidc \
+  client-id=oauth2-proxy \
+  client-secret="$OAUTH2_PROXY_CLIENT_SECRET" \
+  cookie-secret="$OAUTH2_PROXY_COOKIE_SECRET"
+kv_put mini-platform/argocd-oidc clientSecret="$ARGOCD_CLIENT_SECRET"
 kv_put mini-platform/minio-root-credentials \
   rootUser=mini-platform \
   rootPassword="$(rand_b64)"
