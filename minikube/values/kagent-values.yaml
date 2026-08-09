@@ -132,8 +132,11 @@ grafana-mcp:
     - --allowed-hosts
     - kagent-grafana-mcp.mini-platform:8000,kagent-grafana-mcp.mini-platform.svc.cluster.local:8000,kagent-grafana-mcp:8000
   grafana:
-    # mcp-grafana appends its own paths under /api.
-    url: http://grafana.mini-platform.svc.cluster.local:80/api
+    # Base URL only. mcp-grafana builds "/api/..." itself, so a trailing /api
+    # here produces /api/api/datasources and every Grafana call 404s. The
+    # chart's own default (grafana.kagent:3000/api) has that bug, and no
+    # scheme either.
+    url: http://grafana.mini-platform.svc.cluster.local:80
     # The chart mounts this Secret with envFrom, so its keys are consumed
     # verbatim as env vars: GRAFANA_USERNAME / GRAFANA_PASSWORD. Vault-managed
     # copies of the same admin credentials Grafana itself reads from
