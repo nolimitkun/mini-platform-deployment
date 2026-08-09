@@ -26,6 +26,13 @@ servingEngineSpec:
       # Persistent HF cache (mounted at /data, HF_HOME) so the ~14GB weights
       # survive pod restarts instead of re-downloading each time.
       pvcStorage: "40Gi"
+      env:
+        # vLLM sets no service name of its own, so its spans arrive under
+        # `unknown_service` and cannot be told apart from any other
+        # uninstrumented Python process. Matches the `app` label Alloy derives
+        # from app.kubernetes.io/instance.
+        - name: OTEL_SERVICE_NAME
+          value: vllm
       vllmConfig:
         dtype: "auto"
         maxModelLen: 8192
@@ -50,6 +57,12 @@ servingEngineSpec:
           # ~1.5GB with <1GB free). The decode-throughput gain from graphs is
           # not reachable at this model/card ratio.
           - "--enforce-eager"
+          # Per-request spans (queue time, prefill, decode) exported over OTLP
+          # gRPC to the Alloy gateway. The image already carries the
+          # opentelemetry SDK and OTLP exporter — vLLM refuses to start with
+          # this flag when they are missing, so that was checked first.
+          - "--otlp-traces-endpoint"
+          - "grpc://alloy.mini-platform.svc.cluster.local:4317"
   # Large model loads slowly; give the startup probe ~30 min
   # (failureThreshold * periodSeconds) before giving up.
   startupProbe:

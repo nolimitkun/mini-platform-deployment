@@ -13,3 +13,32 @@ websocket:
 openaiBaseApiUrl: http://litellm.mini-platform.svc.cluster.local:4000/v1
 openaiApiKeyExistingSecret: litellm-master-key
 openaiApiKeyExistingSecretKey: PROXY_MASTER_KEY
+
+# Open WebUI serves no Prometheus endpoint — OTLP is the only way to get
+# anything numeric out of it, which is the reason the Alloy gateway exists.
+# Alloy splits the stream: traces to Tempo, metrics remote-written to
+# Prometheus.
+extraEnvVars:
+  - name: ENABLE_OTEL
+    value: "true"
+  - name: ENABLE_OTEL_TRACES
+    value: "true"
+  - name: ENABLE_OTEL_METRICS
+    value: "true"
+  # Off on purpose: Alloy already tails this container's stdout into Loki, so an
+  # OTLP log stream would write every line a second time. Alloy's receiver
+  # declines logs anyway.
+  - name: ENABLE_OTEL_LOGS
+    value: "false"
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: http://alloy.mini-platform.svc.cluster.local:4317
+  # Required. Open WebUI passes `insecure` to the gRPC exporter explicitly and
+  # defaults it to False, so it negotiates TLS regardless of the http:// scheme
+  # on the endpoint above and every export fails with StatusCode.UNAVAILABLE.
+  # The metrics and logs exporters inherit this value.
+  - name: OTEL_EXPORTER_OTLP_INSECURE
+    value: "true"
+  # Matches the `app` label Alloy derives from app.kubernetes.io/instance, so
+  # Grafana's trace-to-logs jump lands on Open WebUI's own log stream.
+  - name: OTEL_SERVICE_NAME
+    value: open-webui

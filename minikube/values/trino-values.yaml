@@ -28,3 +28,14 @@ jmx:
 serviceMonitor:
   enabled: false
 
+# Trino bundles the OpenTelemetry SDK and traces query planning and execution
+# once these are set (`tracing.enabled` comes from Airlift's
+# TracingEnabledConfig, the exporter keys from its OpenTelemetryExporterConfig).
+# `additionalConfigProperties` feeds both the coordinator and worker
+# config.properties, so a query's spans cover the whole cluster rather than just
+# the entry point.
+additionalConfigProperties:
+  - tracing.enabled=true
+  - tracing.exporter.endpoint=http://alloy.mini-platform.svc.cluster.local:4317
+  - tracing.exporter.protocol=grpc
+

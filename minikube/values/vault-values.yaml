@@ -10,6 +10,43 @@ server:
   enabled: true
   standalone:
     enabled: true
+    # NOTE: the chart puts this in a ConfigMap with no checksum annotation on
+    # the StatefulSet, so editing it does not roll the pod — Argo CD reports
+    # Synced while Vault keeps serving the old config. Applying a change here
+    # means deleting vault-0 by hand and unsealing it again afterwards
+    # (scripts/deploy-minikube.sh unseals on rerun). Fresh clusters are
+    # unaffected: they come up with this config already in place.
+    #
+    # The chart default, with telemetry added. Vault's /v1/sys/metrics is a
+    # normal authenticated API path, so an anonymous scrape gets 403 unless the
+    # listener opts out — hence the telemetry stanza inside `listener`. The
+    # top-level one keeps samples alive between scrapes and drops the per-host
+    # label, which on a single node only adds cardinality.
+    #
+    # Retention must exceed the scrape interval or Vault expires a sample
+    # before Prometheus ever reads it, leaving gaps in low-frequency series.
+    # The prometheus chart's global interval is 1m and this overlay does not
+    # override it, so 5m leaves several scrapes of margin.
+    config: |-
+      ui = true
+
+      listener "tcp" {
+        tls_disable = 1
+        address = "[::]:8200"
+        cluster_address = "[::]:8201"
+        telemetry {
+          unauthenticated_metrics_access = "true"
+        }
+      }
+
+      storage "file" {
+        path = "/vault/data"
+      }
+
+      telemetry {
+        prometheus_retention_time = "5m"
+        disable_hostname = true
+      }
   dataStorage:
     enabled: true
     size: 10Gi

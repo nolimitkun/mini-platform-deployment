@@ -18,6 +18,30 @@ metrics:
   serviceMonitor:
     enabled: false
 
+# OpenTelemetry tracing. `tracing-enabled` is gated behind the `opentelemetry`
+# feature, and both are build-time options — the Bitnami entrypoint runs
+# `kc.sh start` without `--optimized`, so Keycloak re-runs its build step on
+# boot and picks these up. That costs extra startup time on the first roll.
+# `--features` only adds to the default set, so nothing else is turned off.
+extraEnvVars:
+  - name: KC_FEATURES
+    value: opentelemetry
+  - name: KC_TRACING_ENABLED
+    value: "true"
+  - name: KC_TRACING_ENDPOINT
+    value: http://alloy.mini-platform.svc.cluster.local:4317
+  # Becomes the Tempo service name. Matches the `app` label Alloy derives from
+  # app.kubernetes.io/instance, so Grafana's trace-to-logs jump lands on
+  # Keycloak's own log stream.
+  - name: KC_TRACING_SERVICE_NAME
+    value: keycloak
+  # Sample everything: a login flow is low-volume enough that any sampling just
+  # leaves gaps in an already sparse trace list.
+  - name: KC_TRACING_SAMPLER_TYPE
+    value: parentbased_traceidratio
+  - name: KC_TRACING_SAMPLER_RATIO
+    value: "1.0"
+
 postgresql:
   enabled: true
   image:
