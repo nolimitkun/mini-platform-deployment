@@ -10,6 +10,8 @@ masterkeySecretKey: PROXY_MASTER_KEY
 environmentSecrets:
   - litellm-langfuse
   - litellm-redis
+  # DEEPSEEK_API_KEY, for the hosted model below.
+  - litellm-deepseek
 
 proxy_config:
   model_list:
@@ -18,6 +20,15 @@ proxy_config:
         model: openai/qwen3.6-27b
         api_base: http://vllm-router-service.mini-platform.svc.cluster.local/v1
         api_key: none
+    # Hosted model, added for kagent: its agents lean hard on multi-step tool
+    # calling, which the single-GPU local Qwen is not sized for. Routing it
+    # through the gateway rather than letting kagent call api.deepseek.com
+    # directly keeps the key in one place and puts agent turns in Langfuse
+    # next to the rest of the platform's LLM traffic.
+    - model_name: deepseek-chat
+      litellm_params:
+        model: deepseek/deepseek-chat
+        api_key: os.environ/DEEPSEEK_API_KEY
   general_settings:
     master_key: os.environ/PROXY_MASTER_KEY
     store_model_in_db: true

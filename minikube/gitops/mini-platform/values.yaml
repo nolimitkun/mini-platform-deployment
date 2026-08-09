@@ -28,6 +28,14 @@ applications:
     chartPath: charts/vault-secrets-operator
     valuesFile: minikube/values/vault-secrets-operator-values.yaml
     wave: "-4"
+  # CRDs only, in their own release ahead of every workload wave so the Agent,
+  # ModelConfig, and MCPServer types exist before the kagent release below
+  # creates instances of them.
+  kagent-crds:
+    chartPath: charts/kagent-crds
+    valuesFile: minikube/values/kagent-crds-values.yaml
+    releaseName: kagent-crds
+    wave: "-4"
   vault-resources:
     chartPath: minikube/gitops/vault-resources
     valuesFile: minikube/gitops/vault-resources/values.yaml
@@ -157,6 +165,13 @@ applications:
   open-webui:
     chartPath: charts/open-webui
     valuesFile: minikube/values/open-webui-values.yaml
+    wave: "2"
+  # After LiteLLM (its model endpoint) and Grafana (its telemetry access), both
+  # of which the agents call on startup.
+  kagent:
+    chartPath: charts/kagent
+    valuesFile: minikube/values/kagent-values.yaml
+    releaseName: kagent
     wave: "2"
   ingress-resources:
     chartPath: minikube/gitops/ingress-resources

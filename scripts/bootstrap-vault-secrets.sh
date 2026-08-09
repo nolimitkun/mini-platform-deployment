@@ -46,9 +46,30 @@ rand_hex() {
   openssl rand -hex 32
 }
 
+# Reads one field of an existing secret, printing nothing if the path or field
+# is absent. Used to carry a credential into a second secret that has to hold
+# the same value.
+kv_field() {
+  vault_cli kv get -field="$2" "$1" 2>/dev/null || true
+}
+
+# Same idea as kv_put's skip: in SEED_MISSING_ONLY mode a credential that other
+# secrets mirror has to keep the value already in Vault, not a fresh random one.
+# Without this, seeding a newly added mirror (e.g. kagent-litellm) onto a
+# cluster whose source secret is untouched would hand the new consumer a
+# credential the owning service never accepted.
+reuse_or_generate() {
+  local path="$1" field="$2" existing=""
+  if [[ "$SEED_MISSING_ONLY" == true ]]; then
+    existing="$(kv_field "$path" "$field")"
+  fi
+  printf '%s' "$existing"
+}
+
 POSTGRES_ADMIN_PASSWORD="${POSTGRES_ADMIN_PASSWORD:-$(rand_b64)}"
 LITELLM_DB_PASSWORD="${LITELLM_DB_PASSWORD:-$(rand_hex)}"
 REDIS_PASSWORD="${REDIS_PASSWORD:-$(rand_b64)}"
+LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-$(reuse_or_generate mini-platform/litellm-master-key PROXY_MASTER_KEY)}"
 LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-sk-$(rand_hex)}"
 LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-lf_pk_$(rand_hex)}"
 LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-lf_sk_$(rand_hex)}"
@@ -109,9 +130,12 @@ kv_put mini-platform/mlflow-postgresql \
 kv_put mini-platform/mlflow-minio \
   root-user=mlflow \
   root-password="$(rand_b64)"
+GRAFANA_ADMIN_USER="admin"
+GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD:-$(reuse_or_generate mini-platform/grafana-admin admin-password)}"
+GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD:-$(rand_b64)}"
 kv_put mini-platform/grafana-admin \
-  admin-user=admin \
-  admin-password="$(rand_b64)"
+  admin-user="$GRAFANA_ADMIN_USER" \
+  admin-password="$GRAFANA_ADMIN_PASSWORD"
 
 kv_put mini-platform/superset-postgresql \
   postgres-password="$(rand_b64)" \
@@ -139,6 +163,26 @@ kv_put mini-platform/keycloak-postgresql \
 kv_put mini-platform/minio-root-credentials \
   rootUser=mini-platform \
   rootPassword="$(rand_b64)"
+
+# DeepSeek is the model behind kagent's agents, reached through LiteLLM so the
+# key stays in one place. Required only when this secret is actually written,
+# matching how HF_TOKEN is handled above.
+if [[ "$SEED_MISSING_ONLY" != true ]] || ! vault_cli kv get mini-platform/litellm-deepseek >/dev/null 2>&1; then
+  : "${DEEPSEEK_API_KEY:?Set DEEPSEEK_API_KEY to a DeepSeek API key for the LiteLLM model kagent uses.}"
+fi
+kv_put mini-platform/litellm-deepseek DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}"
+
+# kagent authenticates to LiteLLM with the master key, the same way Prometheus
+# does for the proxy's /metrics. The key name is OPENAI_API_KEY because kagent
+# reaches the gateway over the OpenAI protocol.
+kv_put mini-platform/kagent-litellm OPENAI_API_KEY="$LITELLM_MASTER_KEY"
+
+# grafana-mcp loads this Secret with envFrom, so the field names are the env
+# vars mcp-grafana reads. Same credentials Grafana enforces, carried over from
+# grafana-admin above.
+kv_put mini-platform/kagent-grafana \
+  GRAFANA_USERNAME="$GRAFANA_ADMIN_USER" \
+  GRAFANA_PASSWORD="$GRAFANA_ADMIN_PASSWORD"
 
 printf '%s\n' \
   "Base Mini Platform secrets, including Langfuse project bootstrap keys, have been written to Vault."

@@ -83,6 +83,19 @@ extraScrapeConfigs: |
     metrics_path: /metrics
     static_configs:
       - targets: ["alloy:12345"]
+  # kagent's controller. Plain HTTP rather than the chart's default
+  # authenticated HTTPS on 8443 — kagent-values.yaml switches it over so this
+  # can stay an ordinary static target like everything else here.
+  - job_name: kagent-controller
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["kagent-controller-metrics:8080"]
+  # The MCP tool server puts metrics behind their own Service on a second port,
+  # separate from the 8084 it serves MCP on.
+  - job_name: kagent-tools
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["kagent-tools-metrics:8085"]
 
   # ---------------------------------------------------------------------------
   # Platform infrastructure outside the mini-platform namespace, plus the

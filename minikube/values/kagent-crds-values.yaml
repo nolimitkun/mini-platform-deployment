@@ -1,0 +1,17 @@
+# kagent's CustomResourceDefinitions, kept in their own release so Argo CD can
+# establish them in an earlier sync wave than the controller that consumes them.
+# Splitting them out is the upstream-recommended layout; it also means a kagent
+# chart bump never has to re-apply CRDs in the same wave as the workloads.
+
+# MCPServer CRD. The kagent controller reconciles MCPServer/RemoteMCPServer
+# resources, and the bundled tool server is registered as one, so this is
+# required rather than optional.
+kmcp:
+  enabled: true
+
+# Substrate is kagent's sandboxed agent runtime (ate.dev ActorTemplates and
+# WorkerPools). Nothing on this platform runs agents in sandboxes, so its CRDs
+# stay out of the cluster. Keep in step with `substrate.enabled` in
+# kagent-values.yaml.
+substrate:
+  enabled: false

@@ -10,6 +10,7 @@ DEPLOY_REPO_URL="${DEPLOY_REPO_URL:-https://github.com/nolimitkun/mini-platform-
 DEPLOY_REVISION="${DEPLOY_REVISION:-main}"
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-$HOME/.vault-mini-platform-init.json}"
 HF_TOKEN_FILE="${HF_TOKEN_FILE:-$HOME/.cache/huggingface/token}"
+DEEPSEEK_KEY_FILE="${DEEPSEEK_KEY_FILE:-$HOME/.deepseek-key}"
 SOURCE_MODE=remote
 GPU=true
 RESET=false
@@ -54,6 +55,13 @@ Environment:
                           Raise it for a --reset run: that empties Minikube's
                           image store, and pulling the whole platform back over
                           a home connection takes well over the default.
+  HF_TOKEN                Hugging Face token for the vLLM model pull. Falls back
+                          to ~/.cache/huggingface/token (HF_TOKEN_FILE).
+  DEEPSEEK_API_KEY        DeepSeek key for the hosted model kagent's agents run
+                          on. Falls back to ~/.deepseek-key (DEEPSEEK_KEY_FILE).
+                          Both are required only when their Vault secret is
+                          actually written: a fresh install, a --rotate-secrets
+                          run, or the first upgrade after the secret was added.
 
 The local-source mode requires a clean Git working tree in both this repo and
 the charts repo, because Argo CD reads Git commits, not uncommitted files.
@@ -409,6 +417,16 @@ if [[ -z "${HF_TOKEN:-}" && -s "$HF_TOKEN_FILE" ]]; then
   log "Loaded HF_TOKEN from $HF_TOKEN_FILE"
 fi
 
+# Same treatment for the DeepSeek key backing the model kagent's agents run on.
+# The Vault seed requires it on a fresh install and on the first upgrade after
+# kagent was added, and it is demanded well after the cluster and Vault are up
+# -- so without this a deploy aborts midway, leaving Argo CD half-synced.
+if [[ -z "${DEEPSEEK_API_KEY:-}" && -s "$DEEPSEEK_KEY_FILE" ]]; then
+  DEEPSEEK_API_KEY="$(tr -d '\r\n' < "$DEEPSEEK_KEY_FILE")"
+  export DEEPSEEK_API_KEY
+  log "Loaded DEEPSEEK_API_KEY from $DEEPSEEK_KEY_FILE"
+fi
+
 if command -v loginctl >/dev/null 2>&1 &&
    docker info --format '{{ join .SecurityOptions "," }}' 2>/dev/null | grep -q rootless &&
    loginctl show-user "$USER" -p Linger 2>/dev/null | grep -q '^Linger=no$'; then
@@ -463,7 +481,21 @@ start_args=(
   # default, so it has to be asked for.
   --extra-config=kube-proxy.mode=nftables
   --cpus=8
-  --memory=16384
+  # Must stay ahead of the platform's total pod memory *requests*, which is not
+  # the usual "give the VM enough RAM" sizing argument. On the docker driver
+  # this becomes a cgroup cap on the node container, but /proc/meminfo inside
+  # that container is not namespaced, so kubelet reads the host's total and
+  # advertises it as node capacity. Scheduling is therefore done against host
+  # memory while the actual ceiling is this number -- kubelet will happily admit
+  # far more than fits and nothing reports pressure until the kernel OOM-kills
+  # inside the cgroup, which takes etcd and kube-apiserver with it.
+  #
+  # 16384 was under the ~57 GiB of requests the platform already carried; it
+  # survived only because most workloads idle well below their requests, and
+  # adding kagent pushed real usage past the cap and downed the control plane.
+  # Check `kubectl describe node` "Allocated resources" against this value
+  # before adding components.
+  --memory=65536
   --disk-size=100g
 )
 if [[ "$GPU" == true ]]; then
@@ -649,7 +681,11 @@ VAULT_TOKEN="$(jq -r '.root_token' "$VAULT_INIT_FILE")"
 [[ -n "$VAULT_TOKEN" && "$VAULT_TOKEN" != null ]] ||
   fail "Vault root token was not found in $VAULT_INIT_FILE"
 
-sealed="$(jq -r '.sealed // true' <<<"$vault_status")"
+# Not `.sealed // true`: jq's `//` fires on false as well as null, so that form
+# reports an unsealed Vault as sealed and this always ran the unseal below. That
+# was harmless (unsealing an unsealed Vault is a no-op) but it made the status
+# check meaningless. Only a missing field, i.e. Vault unreachable, means sealed.
+sealed="$(jq -r 'if .sealed == null then "true" else (.sealed | tostring) end' <<<"$vault_status")"
 if [[ "$initialized_now" == true || "$sealed" == true ]]; then
   log "Unsealing Vault"
   kubectl -n "$NS" exec vault-0 -- env VAULT_ADDR=http://127.0.0.1:8200 \

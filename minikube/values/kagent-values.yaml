@@ -1,0 +1,177 @@
+# kagent — agentic AI for the cluster: a controller that reconciles Agent CRs,
+# a chat UI, and an MCP tool server the agents call to inspect the platform.
+#
+# The release name must stay `kagent`: the bundled agents reference their tool
+# servers by the fixed names `kagent-tool-server` and `kagent-grafana-mcp`,
+# which the chart derives from the release name.
+
+# ==============================================================================
+# MODEL — DeepSeek, reached through the platform's LiteLLM gateway
+# ==============================================================================
+# kagent talks OpenAI-protocol to LiteLLM rather than to api.deepseek.com
+# directly. Going through the gateway means the DeepSeek key lives in exactly
+# one place (litellm-values.yaml, from Vault), and every agent turn shows up in
+# Langfuse and in LiteLLM's Prometheus metrics alongside the rest of the
+# platform's LLM traffic.
+#
+# To bypass the gateway instead, set baseUrl to https://api.deepseek.com/v1 and
+# point apiKeySecretRef at a secret holding the raw DeepSeek key.
+providers:
+  default: openAI
+  openAI:
+    provider: OpenAI
+    # Must match a model_name in litellm-values.yaml's model_list.
+    model: deepseek-chat
+    # Vault-managed; carries the LiteLLM master key under an OPENAI_API_KEY key
+    # because that is the env name the OpenAI-protocol client expects.
+    apiKeySecretRef: kagent-litellm
+    apiKeySecretKey: OPENAI_API_KEY
+    # Rendered into the ModelConfig's `openAI` block by the chart.
+    config:
+      baseUrl: http://litellm.mini-platform.svc.cluster.local:4000/v1
+
+# ==============================================================================
+# DATABASE
+# ==============================================================================
+# Bundled single-pod Postgres, matching how langfuse, mlflow, superset, and
+# keycloak each carry their own. The shared `postgresql` release is provisioned
+# with a single database (litellm) and adding a second one needs an initdb
+# script that Bitnami only runs against an empty volume, so it would not apply
+# to the already-initialized cluster.
+database:
+  postgres:
+    bundled:
+      enabled: true
+      # 500Mi is the chart default; agent session history is chatty enough that
+      # it is worth more headroom up front, since resizing means recreating the
+      # PVC.
+      storage: 5Gi
+    # pgvector is not present in the bundled postgres image, so kagent's
+    # long-term memory feature stays off. Every agent below therefore keeps
+    # memory.enabled at its false default.
+    vectorEnabled: false
+
+# ==============================================================================
+# CONTROLLER
+# ==============================================================================
+controller:
+  metrics:
+    enabled: true
+    # Plain HTTP on 8080 instead of the default authenticated HTTPS on 8443, so
+    # the scrape config in prometheus-values.yaml can be a plain static target
+    # like every other component here rather than needing a bearer token and a
+    # TLS skip.
+    secureServing: false
+    bindAddress: ":8080"
+    service:
+      port: 8080
+
+# ==============================================================================
+# TRACING
+# ==============================================================================
+# Through the Alloy OTLP gateway rather than Tempo directly, matching LiteLLM —
+# one endpoint for every OTLP producer, and alloy-values.yaml alone decides
+# where each signal lands. gRPC on 4317 is what the chart's default protocol
+# expects.
+otel:
+  tracing:
+    enabled: true
+    exporter:
+      otlp:
+        endpoint: alloy.mini-platform.svc.cluster.local:4317
+        protocol: grpc
+        insecure: true
+  # Container stdout is already picked up by Alloy's pod-log scraper and shipped
+  # to Loki, so an OTLP log pipeline here would duplicate every line.
+  logging:
+    enabled: false
+
+# ==============================================================================
+# TOOLS
+# ==============================================================================
+# The MCP tool server the agents call. Its Kubernetes tools authenticate with
+# the pod ServiceAccount, so there is nothing to wire.
+kagent-tools:
+  enabled: true
+
+# Registry of MCPServer/RemoteMCPServer resources. Needed for the bundled tool
+# server registration; also what any future MCP server on this platform would
+# hang off.
+kmcp:
+  enabled: true
+
+# Sandboxed agent runtime — see kagent-crds-values.yaml.
+substrate:
+  enabled: false
+
+# Documentation-search MCP server. It embeds queries through api.openai.com
+# with its own key rather than through the gateway, so it stays off.
+querydoc:
+  enabled: false
+
+# ==============================================================================
+# GRAFANA MCP — the observability integration
+# ==============================================================================
+# This is what gives kagent live access to platform telemetry. mcp-grafana
+# proxies Grafana's datasource API, so a single wire-up reaches Prometheus,
+# Loki, and Tempo through the datasources already provisioned in
+# grafana-values.yaml, instead of three separate connections.
+grafana-mcp:
+  enabled: true
+  # Without this the integration cannot work at all: mcp-grafana validates the
+  # Host header and, per `--allowed-hosts`, defaults the allowlist to "loopback
+  # variants of --address". The chart binds 0.0.0.0:8000 but the RemoteMCPServer
+  # it generates connects over Service DNS, so every request the kagent
+  # controller makes is rejected with `403 forbidden: host not allowed` and the
+  # tool server reconciles to Accepted=False with zero tools discovered.
+  # Upstream kagent 0.9.12 ships no value for this, so it is broken out of the
+  # box on any cluster; the allowlist below is the Service DNS the controller
+  # actually dials. Kept explicit rather than "*", which upstream documents as
+  # safe only behind a Host-rewriting reverse proxy.
+  args:
+    - --allowed-hosts
+    - kagent-grafana-mcp.mini-platform:8000,kagent-grafana-mcp.mini-platform.svc.cluster.local:8000,kagent-grafana-mcp:8000
+  grafana:
+    # Base URL only. mcp-grafana builds "/api/..." itself, so a trailing /api
+    # here produces /api/api/datasources and every Grafana call 404s. The
+    # chart's own default (grafana.kagent:3000/api) has that bug, and no
+    # scheme either.
+    url: http://grafana.mini-platform.svc.cluster.local:80
+    # The chart mounts this Secret with envFrom, so its keys are consumed
+    # verbatim as env vars: GRAFANA_USERNAME / GRAFANA_PASSWORD. Vault-managed
+    # copies of the same admin credentials Grafana itself reads from
+    # grafana-admin. Basic auth avoids minting a Grafana service-account token
+    # by hand, which is not something GitOps can reproduce.
+    secretRef: kagent-grafana
+
+# ==============================================================================
+# AGENTS
+# ==============================================================================
+# Enabled: the ones whose backing systems actually run on this platform.
+k8s-agent:
+  enabled: true
+helm-agent:
+  enabled: true
+# Generates and explains PromQL. Note it only writes queries — it holds no
+# Prometheus connection of its own; observability-agent is what executes them.
+promql-agent:
+  enabled: true
+# Queries Prometheus, Loki, and Tempo live via grafana-mcp above.
+observability-agent:
+  enabled: true
+
+# Disabled: no service mesh, gateway, CNI-policy layer, or progressive-delivery
+# controller on this platform, so these agents would start up with tools that
+# resolve to nothing. Flip one on if the matching component ever lands.
+istio-agent:
+  enabled: false
+kgateway-agent:
+  enabled: false
+argo-rollouts-agent:
+  enabled: false
+cilium-policy-agent:
+  enabled: false
+cilium-manager-agent:
+  enabled: false
+cilium-debug-agent:
+  enabled: false
