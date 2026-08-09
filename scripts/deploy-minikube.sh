@@ -463,7 +463,21 @@ start_args=(
   # default, so it has to be asked for.
   --extra-config=kube-proxy.mode=nftables
   --cpus=8
-  --memory=16384
+  # Must stay ahead of the platform's total pod memory *requests*, which is not
+  # the usual "give the VM enough RAM" sizing argument. On the docker driver
+  # this becomes a cgroup cap on the node container, but /proc/meminfo inside
+  # that container is not namespaced, so kubelet reads the host's total and
+  # advertises it as node capacity. Scheduling is therefore done against host
+  # memory while the actual ceiling is this number -- kubelet will happily admit
+  # far more than fits and nothing reports pressure until the kernel OOM-kills
+  # inside the cgroup, which takes etcd and kube-apiserver with it.
+  #
+  # 16384 was under the ~57 GiB of requests the platform already carried; it
+  # survived only because most workloads idle well below their requests, and
+  # adding kagent pushed real usage past the cap and downed the control plane.
+  # Check `kubectl describe node` "Allocated resources" against this value
+  # before adding components.
+  --memory=65536
   --disk-size=100g
 )
 if [[ "$GPU" == true ]]; then
