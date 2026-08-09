@@ -254,7 +254,13 @@ kv_put mini-platform/kagent-grafana \
 # HolmesGPT mounts all three of these with envFrom, so the field names are the
 # env vars it reads. The first two are mirrors, for the same reasons the kagent
 # pair above are: the gateway and Grafana each already own their credential.
-kv_put mini-platform/holmes-litellm OPENAI_API_KEY="$LITELLM_MASTER_KEY"
+#
+# Deliberately not named OPENAI_API_KEY, the way kagent's copy is. Holmes keeps
+# a backward-compatibility path that, on finding OPENAI_API_KEY in its
+# environment, registers a second model against api.openai.com and makes *that*
+# one the default -- which would send every request that omits a model name to
+# OpenAI carrying the gateway's key.
+kv_put mini-platform/holmes-litellm LITELLM_API_KEY="$LITELLM_MASTER_KEY"
 kv_put mini-platform/holmes-grafana \
   GRAFANA_USERNAME="$GRAFANA_ADMIN_USER" \
   GRAFANA_PASSWORD="$GRAFANA_ADMIN_PASSWORD"

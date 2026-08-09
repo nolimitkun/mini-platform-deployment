@@ -27,11 +27,16 @@ modelList:
   deepseek-chat:
     model: openai/deepseek-chat
     api_base: http://litellm.mini-platform.svc.cluster.local:4000/v1
-    api_key: envRef:OPENAI_API_KEY
+    # LITELLM_API_KEY, not OPENAI_API_KEY. Holmes carries a compatibility path
+    # that registers an extra model against api.openai.com whenever it finds
+    # OPENAI_API_KEY in the environment, and that model wins the default —
+    # every request omitting `model` would go to OpenAI with the gateway's key
+    # and 401. Naming the key anything else keeps this the only model loaded.
+    api_key: envRef:LITELLM_API_KEY
 
 # Loaded onto the pod with envFrom, so each Secret's keys are consumed verbatim
 # as env vars. All three are Vault-managed; see vault-resources/values.yaml.
-#   holmes-litellm  OPENAI_API_KEY                — the model list entry above
+#   holmes-litellm  LITELLM_API_KEY               — the model list entry above
 #   holmes-grafana  GRAFANA_USERNAME/PASSWORD     — the Loki and Tempo toolsets
 #   holmes-api      HOLMES_API_KEY,
 #                   HOLMES_APPROVAL_SIGNING_KEY   — the server's own auth
