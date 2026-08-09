@@ -32,6 +32,12 @@ vaultSecrets:
     # (consumed with envFrom, hence the env-var-shaped keys).
     - kagent-litellm
     - kagent-grafana
+    # HolmesGPT's three envFrom mounts: its credential for calling LiteLLM, its
+    # Grafana basic-auth pair for the Loki and Tempo toolsets, and the API key
+    # its own HTTP server authenticates callers with.
+    - holmes-litellm
+    - holmes-grafana
+    - holmes-api
     # Every OIDC client secret plus the two seed user passwords for the
     # mini-platform realm. Read whole by the keycloak-config-cli job, and one
     # key at a time by each client component.

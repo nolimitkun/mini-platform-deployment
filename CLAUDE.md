@@ -92,6 +92,20 @@ hostnames), MLflow (experiments), Qdrant
 (vectors), Spark Operator, Superset → Trino (analytics), Keycloak (identity),
 MinIO (S3 object store), all reconciled by Argo CD.
 
+**Two agentic-AI consumers sit on top of the stack, both running their model
+through LiteLLM** so their spend lands in Langfuse with everything else: kagent
+(chat UI, agents, Grafana MCP) and HolmesGPT (an investigation API, no UI).
+Holmes reads Kubernetes over a read-only ClusterRole and reaches Prometheus
+directly but Loki and Tempo through Grafana's datasource proxy — trading a
+credential (basic auth from `holmes-grafana`, the same compromise `kagent-grafana`
+makes) for clickable links back into Grafana and for keeping
+`grafana-values.yaml` the only description of where each backend lives, keyed on
+the fixed datasource uids. Its overlay is also the reason `alloy-values.yaml`
+carries an `app`-label fallback: the holmes chart labels its pod `app: holmes`
+and never sets `app.kubernetes.io/instance`, which is what Alloy reads first,
+so without the fallback its logs would arrive with an empty `app` and Tempo's
+trace→logs jump (`OTEL_SERVICE_NAME: holmes`) would land on nothing.
+
 **Observability is three signals behind one Grafana.** Prometheus scrapes
 metrics; Grafana Alloy (a DaemonSet, Promtail's successor) tails pod logs
 through the Kubernetes API into Loki; LiteLLM's `otel` callback pushes spans
@@ -132,7 +146,9 @@ over a port-forward.
 Seven components speak OIDC natively (Grafana, Open WebUI, Superset,
 JupyterHub, Argo CD, MinIO, Langfuse). Three cannot and sit behind a shared
 **oauth2-proxy** as ingress-nginx forward-auth: MLflow, kagent, and LiteLLM's
-`/ui` only. A route opts in with `protectedPaths` in
+`/ui` only. HolmesGPT is outside the scheme altogether: no browser UI, so it
+authenticates its own requests against `HOLMES_API_KEY` and its route is left
+unprotected. A route opts in with `protectedPaths` in
 `minikube/gitops/ingress-resources/values.yaml`, which renders a second Ingress
 carrying the auth annotations plus an unauthenticated `/oauth2` Ingress; the
 split matters because nginx applies those annotations to every path in an
@@ -173,7 +189,7 @@ wave** that orders rollout:
 | `-3` | Vault secret mappings, stateful deps (postgres, redis, qdrant, minio, spark-operator) |
 | `-2` | Keycloak, Langfuse, MLflow, Trino, vLLM |
 | `-1` → `0` | Prometheus, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset |
-| `1` → `3` | LiteLLM, then Open WebUI, kagent and oauth2-proxy, then ingress routes |
+| `1` → `3` | LiteLLM, then Open WebUI, kagent, HolmesGPT and oauth2-proxy, then ingress routes |
 
 All generated Applications use `automated` sync with `prune: true`,
 `selfHeal: true`, `CreateNamespace=true`, and `ServerSideApply=true`.

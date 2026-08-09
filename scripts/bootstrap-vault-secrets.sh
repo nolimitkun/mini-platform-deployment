@@ -251,5 +251,31 @@ kv_put mini-platform/kagent-grafana \
   GRAFANA_USERNAME="$GRAFANA_ADMIN_USER" \
   GRAFANA_PASSWORD="$GRAFANA_ADMIN_PASSWORD"
 
+# HolmesGPT mounts all three of these with envFrom, so the field names are the
+# env vars it reads. The first two are mirrors, for the same reasons the kagent
+# pair above are: the gateway and Grafana each already own their credential.
+#
+# Deliberately not named OPENAI_API_KEY, the way kagent's copy is. Holmes keeps
+# a backward-compatibility path that, on finding OPENAI_API_KEY in its
+# environment, registers a second model against api.openai.com and makes *that*
+# one the default -- which would send every request that omits a model name to
+# OpenAI carrying the gateway's key.
+kv_put mini-platform/holmes-litellm LITELLM_API_KEY="$LITELLM_MASTER_KEY"
+kv_put mini-platform/holmes-grafana \
+  GRAFANA_USERNAME="$GRAFANA_ADMIN_USER" \
+  GRAFANA_PASSWORD="$GRAFANA_ADMIN_PASSWORD"
+
+# Holmes has no login of its own, so HOLMES_API_KEY is the whole of its
+# authentication: with it set, every route except /healthz and /readyz demands
+# the key in an X-API-Key or Authorization: Bearer header. Rotating it locks out
+# existing callers, which is the point of kv_put's skip on an upgrade pass.
+#
+# HOLMES_APPROVAL_SIGNING_KEY signs the short-lived tokens Holmes mints for tool
+# calls that need a human to approve them. Left unset it generates one per
+# process, and every restart invalidates the approvals already in flight.
+kv_put mini-platform/holmes-api \
+  HOLMES_API_KEY="$(rand_b64)" \
+  HOLMES_APPROVAL_SIGNING_KEY="$(rand_b64)"
+
 printf '%s\n' \
   "Base Mini Platform secrets, including Langfuse project bootstrap keys, have been written to Vault."

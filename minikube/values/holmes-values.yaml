@@ -1,0 +1,170 @@
+# HolmesGPT — an LLM agent that root-causes cluster problems. It reads
+# Kubernetes over a read-only ClusterRole and correlates that against the
+# platform's own telemetry: Prometheus for metrics, Loki for logs, Tempo for
+# traces. Where kagent is a chat UI you drive, Holmes is an HTTP API you ask a
+# question and get an investigation back from.
+#
+# The release name must stay `holmes`: the chart names its Deployment and
+# Service `<release>-holmes`, and the ingress route in
+# minikube/gitops/ingress-resources/values.yaml points at `holmes-holmes`.
+
+# ==============================================================================
+# MODEL — DeepSeek, reached through the platform's LiteLLM gateway
+# ==============================================================================
+# Same arrangement as kagent: Holmes speaks the OpenAI protocol to LiteLLM
+# rather than to api.deepseek.com, so the DeepSeek key stays in one place
+# (litellm-values.yaml, from Vault) and every investigation's token spend shows
+# up in Langfuse and in LiteLLM's Prometheus metrics next to the rest of the
+# platform's LLM traffic.
+#
+# The chart rewrites `envRef:NAME` into the runtime `{{ env.NAME }}` templating
+# the model list file uses, so the key itself never appears here — it arrives as
+# an env var from the Secret mounted below.
+modelList:
+  # The key is the name a caller passes as `model` in the HTTP API. It is also
+  # the only entry, which makes it the default when a request omits `model`.
+  # Must match a model_name in litellm-values.yaml's model_list.
+  deepseek-chat:
+    model: openai/deepseek-chat
+    api_base: http://litellm.mini-platform.svc.cluster.local:4000/v1
+    # LITELLM_API_KEY, not OPENAI_API_KEY. Holmes carries a compatibility path
+    # that registers an extra model against api.openai.com whenever it finds
+    # OPENAI_API_KEY in the environment, and that model wins the default —
+    # every request omitting `model` would go to OpenAI with the gateway's key
+    # and 401. Naming the key anything else keeps this the only model loaded.
+    api_key: envRef:LITELLM_API_KEY
+
+# Loaded onto the pod with envFrom, so each Secret's keys are consumed verbatim
+# as env vars. All three are Vault-managed; see vault-resources/values.yaml.
+#   holmes-litellm  LITELLM_API_KEY               — the model list entry above
+#   holmes-grafana  GRAFANA_USERNAME/PASSWORD     — the Loki and Tempo toolsets
+#   holmes-api      HOLMES_API_KEY,
+#                   HOLMES_APPROVAL_SIGNING_KEY   — the server's own auth
+extraEnvVarsSecrets:
+  - holmes-litellm
+  - holmes-grafana
+  - holmes-api
+
+# ==============================================================================
+# TOOLSETS — what Holmes is allowed to look at
+# ==============================================================================
+toolsets:
+  # Live cluster reads through the pod's ServiceAccount. The ClusterRole the
+  # chart renders is get/list/watch only and does not cover Secrets, so this is
+  # the boundary on everything below, including `bash`.
+  kubernetes/core:
+    enabled: true
+  # Pod logs straight from the API server. Kept alongside the Loki toolset
+  # rather than replaced by it — Holmes picks whichever source fits, and this
+  # one still answers for a pod whose logs have not been shipped yet.
+  kubernetes/logs:
+    enabled: true
+
+  prometheus/metrics:
+    enabled: true
+    subtype: prometheus
+    config:
+      # Port 80 is what the prometheus chart's server Service publishes here,
+      # not the 9090 the upstream docs assume.
+      prometheus_url: http://prometheus-server.mini-platform.svc.cluster.local
+
+  # Loki and Tempo are both reached through Grafana's datasource proxy rather
+  # than directly on :3100 and :3200. Direct would need no credentials at all,
+  # but going through Grafana is what makes Holmes emit clickable
+  # "view in Grafana" links, and it means the datasource definitions in
+  # grafana-values.yaml stay the single description of where each backend
+  # lives. The uids are the fixed ones set there precisely so they can be
+  # referenced by name.
+  grafana/loki:
+    enabled: true
+    config:
+      api_url: http://grafana.mini-platform.svc.cluster.local:80
+      # Grafana has no GitOps-reproducible way to mint a service-account token,
+      # so this uses basic auth with the admin credentials, the same compromise
+      # grafana-mcp makes in kagent-values.yaml. `{{ env.NAME }}` is Holmes'
+      # own templating, resolved when the toolset loads — the values land in
+      # the pod from holmes-grafana, never in this file or the rendered
+      # ConfigMap.
+      username: "{{ env.GRAFANA_USERNAME }}"
+      password: "{{ env.GRAFANA_PASSWORD }}"
+      grafana_datasource_uid: loki
+      # The URL a human can actually open. api_url above is cluster-internal,
+      # and a link to it would be dead in a browser.
+      external_url: http://grafana.test
+  grafana/tempo:
+    enabled: true
+    config:
+      api_url: http://grafana.mini-platform.svc.cluster.local:80
+      username: "{{ env.GRAFANA_USERNAME }}"
+      password: "{{ env.GRAFANA_PASSWORD }}"
+      grafana_datasource_uid: tempo
+      external_url: http://grafana.test
+
+  # Shell access, bounded by the read-only ClusterRole above. `extended` is the
+  # chart default and the level upstream recommends for containers: it adds
+  # cat/ls/find on top of kubectl get/describe/logs, which Holmes needs because
+  # its image has no interactive shell to fall back on.
+  bash:
+    enabled: true
+    config:
+      builtin_allowlist: extended
+  connectivity_check:
+    enabled: true
+  skills:
+    enabled: true
+
+  # Fetches pages Holmes is pointed at, for following a runbook link out of an
+  # alert annotation. Harmless but it is the one toolset that leaves the
+  # cluster, so it is called out rather than left to the default.
+  internet:
+    enabled: true
+
+  # Historical alerts, change tracking and resource recommendations from the
+  # hosted Robusta platform. Enabled in the chart's defaults, but there is no
+  # Robusta account behind this cluster, so it would only fail its health check.
+  robusta:
+    enabled: false
+
+# ==============================================================================
+# SERVER AUTHENTICATION
+# ==============================================================================
+# Holmes ships no login screen and no UI — every route is API. HOLMES_API_KEY
+# makes it authenticate its own requests (X-API-Key or a bearer token), which
+# is why holmes.test is *not* behind oauth2-proxy: a client sending its own
+# credential cannot follow an interactive SSO redirect, the same reason
+# LiteLLM's /v1 and MLflow's /api are exempt. /healthz and /readyz stay open so
+# the kubelet probes still work.
+#
+# The key arrives as an env var from holmes-api above, alongside
+# HOLMES_APPROVAL_SIGNING_KEY — without which Holmes mints an ephemeral HMAC
+# key per process and in-flight tool approvals break on every restart.
+
+# ==============================================================================
+# TELEMETRY
+# ==============================================================================
+# Traces and metrics over OTLP to the Alloy gateway, matching LiteLLM and
+# kagent — one endpoint for every producer, and alloy-values.yaml alone decides
+# that spans go to Tempo and metrics to Prometheus. Setting the endpoint is what
+# turns instrumentation on; Holmes auto-detects it at startup.
+additionalEnvVars:
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    # gRPC on 4317 is the OTel SDK's default protocol, and the http:// scheme is
+    # how it is told the connection is plaintext.
+    value: http://alloy.mini-platform.svc.cluster.local:4317
+  - name: OTEL_SERVICE_NAME
+    # Must equal the Loki `app` label on this pod's logs, or Tempo's
+    # tracesToLogsV2 jump lands on nothing. The chart labels its pod `app:
+    # holmes` and never sets app.kubernetes.io/instance, which is the label
+    # alloy-values.yaml reads first — see the fallback rule it keeps for
+    # exactly this case.
+    value: holmes
+
+# Usage reporting to Robusta's servers. The chart turns this on whenever
+# ROBUSTA_UI_DOMAIN is unset, which on a standalone install is always.
+enableTelemetry: false
+
+# The optional operator, which reconciles ScheduledHealthCheck CRs into
+# recurring investigations. Left off: it is a second Deployment whose only
+# purpose is running Holmes on a timer, and nothing here schedules one.
+operator:
+  enabled: false

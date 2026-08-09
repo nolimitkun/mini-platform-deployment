@@ -194,7 +194,7 @@ install_keycloak_dns_rewrite() {
 # same run. The import Job is normally an Argo CD PostSync hook, which only
 # fires on a sync; cloning it here re-runs it immediately against the refreshed
 # Secret without waiting for one.
-reconcile_sso_after_rotation() {
+reconcile_after_secret_rotation() {
   local job=keycloak-keycloak-config-cli
   local clone
   clone="keycloak-config-cli-rotate-$(date +%s)"
@@ -228,10 +228,19 @@ reconcile_sso_after_rotation() {
     warn "$job not found; skipping realm re-import (Keycloak may not be deployed yet)"
   fi
 
-  # Everything that mounts a key from keycloak-sso, plus the two mirrors. Argo CD
-  # will not restart these itself -- the Deployment specs are unchanged, only the
-  # Secret they reference.
-  log "Restarting SSO consumers so they pick up the rotated secrets"
+  # Every workload that reads a rotated Secret from its pod spec -- a key of
+  # keycloak-sso, or one of the mirrors. Argo CD will not restart these itself:
+  # the Deployment specs are unchanged, only the Secret they reference, and a
+  # secretKeyRef or envFrom is resolved once at pod creation.
+  #
+  # Holmes matters most here, because HOLMES_API_KEY *is* its authentication:
+  # left running it keeps honouring the old key while `port-forward-services.sh`
+  # and the README's kubectl lookup both hand out the new one, so every caller
+  # gets a 401 with nothing to point at. kagent-grafana-mcp has the same shape
+  # (envFrom on the rotated Grafana mirror). kagent-litellm needs no entry --
+  # nothing mounts it, the kagent controller resolves it through the ModelConfig
+  # on each reconcile.
+  log "Restarting the workloads that hold rotated secrets in their pod spec"
   local workloads=(
     deployment/grafana
     statefulset/open-webui
@@ -241,6 +250,8 @@ reconcile_sso_after_rotation() {
     deployment/oauth2-proxy
     deployment/langfuse-web
     deployment/minio
+    deployment/holmes-holmes
+    deployment/kagent-grafana-mcp
   )
   local w
   for w in "${workloads[@]}"; do
@@ -889,7 +900,7 @@ kubectl -n "$NS" wait --for=condition=Ready vaultstaticsecret --all --timeout=30
 kubectl -n "$NS" get vaultstaticsecrets
 
 if [[ "$ROTATE_SECRETS" == true ]]; then
-  reconcile_sso_after_rotation
+  reconcile_after_secret_rotation
 fi
 
 preload_cached_pod_images
