@@ -154,6 +154,9 @@ init_services() {
     "Superset|$NS|svc/superset|8088|8088"
     "Keycloak|$NS|svc/keycloak|8090|80"
     "MinIO Console|$NS|svc/minio-console|9001|9001"
+    # 8081 locally because Argo CD already holds 8080; the UI itself listens on
+    # 8080 in-cluster.
+    "kagent|$NS|svc/kagent-ui|8081|8080"
   )
 }
 
