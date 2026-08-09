@@ -663,7 +663,11 @@ VAULT_TOKEN="$(jq -r '.root_token' "$VAULT_INIT_FILE")"
 [[ -n "$VAULT_TOKEN" && "$VAULT_TOKEN" != null ]] ||
   fail "Vault root token was not found in $VAULT_INIT_FILE"
 
-sealed="$(jq -r '.sealed // true' <<<"$vault_status")"
+# Not `.sealed // true`: jq's `//` fires on false as well as null, so that form
+# reports an unsealed Vault as sealed and this always ran the unseal below. That
+# was harmless (unsealing an unsealed Vault is a no-op) but it made the status
+# check meaningless. Only a missing field, i.e. Vault unreachable, means sealed.
+sealed="$(jq -r 'if .sealed == null then "true" else (.sealed | tostring) end' <<<"$vault_status")"
 if [[ "$initialized_now" == true || "$sealed" == true ]]; then
   log "Unsealing Vault"
   kubectl -n "$NS" exec vault-0 -- env VAULT_ADDR=http://127.0.0.1:8200 \
