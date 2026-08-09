@@ -537,11 +537,15 @@ the cross-links between them resolve. To check coverage without leaving the
 cluster:
 
 ```bash
-kubectl -n "$NS" exec deploy/grafana -- wget -qO- 'http://prometheus-server/api/v1/query?query=count(up==0)'
+kubectl -n "$NS" exec deploy/grafana -- wget -qO- 'http://prometheus-server/api/v1/query?query=count(up==0)%20or%20vector(0)'
 ```
 
-That should report `0` — every scrape target healthy. Logs cover every pod in
-every namespace, since Alloy discovers them rather than being told about them:
+That should report `0` — every scrape target healthy. The `or vector(0)` is
+what makes it say so: on a healthy cluster `up==0` matches nothing, and
+counting an empty vector yields an empty result rather than a zero.
+
+Logs cover every pod in every namespace, since Alloy discovers them rather
+than being told about them:
 
 ```bash
 kubectl -n "$NS" exec deploy/grafana -- wget -qO- 'http://loki:3100/loki/api/v1/label/namespace/values'
