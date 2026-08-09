@@ -10,6 +10,7 @@ DEPLOY_REPO_URL="${DEPLOY_REPO_URL:-https://github.com/nolimitkun/mini-platform-
 DEPLOY_REVISION="${DEPLOY_REVISION:-main}"
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-$HOME/.vault-mini-platform-init.json}"
 HF_TOKEN_FILE="${HF_TOKEN_FILE:-$HOME/.cache/huggingface/token}"
+DEEPSEEK_KEY_FILE="${DEEPSEEK_KEY_FILE:-$HOME/.deepseek-key}"
 SOURCE_MODE=remote
 GPU=true
 RESET=false
@@ -54,6 +55,13 @@ Environment:
                           Raise it for a --reset run: that empties Minikube's
                           image store, and pulling the whole platform back over
                           a home connection takes well over the default.
+  HF_TOKEN                Hugging Face token for the vLLM model pull. Falls back
+                          to ~/.cache/huggingface/token (HF_TOKEN_FILE).
+  DEEPSEEK_API_KEY        DeepSeek key for the hosted model kagent's agents run
+                          on. Falls back to ~/.deepseek-key (DEEPSEEK_KEY_FILE).
+                          Both are required only when their Vault secret is
+                          actually written: a fresh install, a --rotate-secrets
+                          run, or the first upgrade after the secret was added.
 
 The local-source mode requires a clean Git working tree in both this repo and
 the charts repo, because Argo CD reads Git commits, not uncommitted files.
@@ -407,6 +415,16 @@ if [[ -z "${HF_TOKEN:-}" && -s "$HF_TOKEN_FILE" ]]; then
   HF_TOKEN="$(tr -d '\r\n' < "$HF_TOKEN_FILE")"
   export HF_TOKEN
   log "Loaded HF_TOKEN from $HF_TOKEN_FILE"
+fi
+
+# Same treatment for the DeepSeek key backing the model kagent's agents run on.
+# The Vault seed requires it on a fresh install and on the first upgrade after
+# kagent was added, and it is demanded well after the cluster and Vault are up
+# -- so without this a deploy aborts midway, leaving Argo CD half-synced.
+if [[ -z "${DEEPSEEK_API_KEY:-}" && -s "$DEEPSEEK_KEY_FILE" ]]; then
+  DEEPSEEK_API_KEY="$(tr -d '\r\n' < "$DEEPSEEK_KEY_FILE")"
+  export DEEPSEEK_API_KEY
+  log "Loaded DEEPSEEK_API_KEY from $DEEPSEEK_KEY_FILE"
 fi
 
 if command -v loginctl >/dev/null 2>&1 &&

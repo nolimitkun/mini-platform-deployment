@@ -131,10 +131,21 @@ On a GPU-enabled Minikube host, with both repos pushed somewhere Argo CD can
 reach:
 
 ```bash
+# Two external credentials are seeded into Vault during the run. Both are
+# demanded well after the cluster and Vault are already up, so a missing one
+# aborts the deploy midway rather than at the start.
+export HF_TOKEN='hf_xxxxxxxxxxxxxxxxxxxx'        # vLLM model pull
+export DEEPSEEK_API_KEY='sk-xxxxxxxxxxxxxxxxxxxx' # model kagent's agents run on
+
 ./scripts/deploy-minikube.sh \
   --charts-repo-url https://github.com/<owner>/mini-platform.git --charts-revision main \
   --deploy-repo-url https://github.com/<owner>/mini-platform-deployment.git --deploy-revision main
 ```
+
+The script picks both up from disk when they are not exported —
+`~/.cache/huggingface/token` and `~/.deepseek-key` respectively — so the exports
+are only needed the first time. Neither is required on a re-run once its Vault
+secret exists; see the script's `--help` for the exact rule.
 
 The script:
 
@@ -191,7 +202,7 @@ minikube start -p mini-platform \
   --driver=docker \
   --kubernetes-version=v1.34.4 \
   --extra-config=kube-proxy.mode=nftables \
-  --cpus=8 --memory=16384 --disk-size=100g
+  --cpus=8 --memory=65536 --disk-size=100g
 ```
 
 `kube-proxy.mode=nftables` is not optional. In its default iptables mode
@@ -210,7 +221,7 @@ minikube start -p mini-platform \
   --driver=docker --container-runtime=docker --gpus=nvidia \
   --kubernetes-version=v1.34.4 \
   --extra-config=kube-proxy.mode=nftables \
-  --cpus=8 --memory=16384 --disk-size=100g
+  --cpus=8 --memory=65536 --disk-size=100g
 ```
 
 Without GPU access, adjust the vLLM overlay before deploying or its pod stays
