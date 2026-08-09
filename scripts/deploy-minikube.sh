@@ -101,10 +101,8 @@ kubernetes_service_dnat_rules() {
 # `minikube start` restarts kube-proxy, so a rerun against an existing profile
 # hits this. Fresh clusters come up correct and skip the repair entirely.
 repair_kube_proxy_nftables() {
-  local attempt
-
   # Give kube-proxy a chance to write its table before judging it.
-  for attempt in {1..24}; do
+  for _ in {1..24}; do
     [[ "$(kubernetes_service_dnat_rules)" == 0 ]] || return 0
     sleep 5
   done
@@ -113,7 +111,7 @@ repair_kube_proxy_nftables() {
   minikube -p "$PROFILE" ssh -- "sudo nft delete table ip kube-proxy" >/dev/null 2>&1 || true
   kubectl -n kube-system delete pod -l k8s-app=kube-proxy --wait=false >/dev/null 2>&1 || true
 
-  for attempt in {1..24}; do
+  for _ in {1..24}; do
     [[ "$(kubernetes_service_dnat_rules)" == 0 ]] || break
     sleep 5
   done
