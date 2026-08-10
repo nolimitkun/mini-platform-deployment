@@ -1,0 +1,25 @@
+vaultSecrets:
+  # MLflow's own basic-auth account. Also mounted by Prometheus, one wave later,
+  # to scrape the tracking server.
+  - mlflow-auth
+  - mlflow-postgresql
+  - mlflow-minio
+
+routes:
+  - name: mlflow
+    host: mlflow.test
+    service: mlflow-tracking
+    port: 80
+    # MLflow's own auth is a single basic-auth account with no OIDC support, so
+    # the browser UI sits behind oauth2-proxy.
+    protectedPaths:
+      - /
+    # ...but not the tracking API. The MLflow SDK and CLI send basic-auth
+    # credentials and cannot follow an interactive SSO redirect, so leaving /api
+    # protected turns every `mlflow.set_tracking_uri("http://mlflow.test")` into
+    # a 302 at the ingress. MLflow authenticates these routes itself with the
+    # account in mini-platform/mlflow-auth — the same split LiteLLM uses for
+    # /v1. The UI's own /ajax-api calls stay protected; they come from a browser
+    # that already holds the oauth2-proxy cookie.
+    openPaths:
+      - /api

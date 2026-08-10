@@ -40,6 +40,11 @@ spec:
   leaves the /oauth2 endpoints below (and, for LiteLLM, the API paths above)
   reachable without a session -- otherwise the redirect to /oauth2/start would
   itself require a session and loop.
+
+  oauth2-proxy syncs in wave 2, so a route declared on an application in an
+  earlier wave points at a Service that does not exist yet and answers 503 on
+  its protected paths until then. That is a bring-up transient, not a gate: an
+  Ingress is healthy the moment it is applied.
 */}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress

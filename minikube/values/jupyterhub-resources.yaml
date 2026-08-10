@@ -1,0 +1,7 @@
+# JupyterHub speaks OIDC natively against Keycloak, reading its client secret
+# out of keycloak-sso, so it needs no secret of its own.
+routes:
+  - name: jupyterhub
+    host: jupyterhub.test
+    service: proxy-public
+    port: 80

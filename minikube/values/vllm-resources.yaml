@@ -1,0 +1,6 @@
+# Hugging Face token for pulling model weights. The llm-d decode path reads the
+# same Secret (see minikube/gitops/llm-d-modelserver/values.yaml); it stays
+# declared here because the two paths share this release's HF-cache PVC and only
+# one of them is ever enabled.
+vaultSecrets:
+  - vllm-hf-token

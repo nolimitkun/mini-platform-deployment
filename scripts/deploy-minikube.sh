@@ -849,8 +849,8 @@ path "mini-platform/metadata/*" {
 }
 EOF
 # The Argo CD namespace is bound too: Argo CD only reads an OIDC client secret
-# from a Secret in its own namespace, so vault-resources renders a VaultAuth and
-# a vault-auth ServiceAccount there as well.
+# from a Secret in its own namespace, so keycloak-resources.yaml renders a
+# VaultAuth and a vault-auth ServiceAccount there as well.
 vault_exec write auth/kubernetes/role/mini-platform \
   bound_service_account_names=vault-auth \
   bound_service_account_namespaces="$NS,$ARGO_NS" \

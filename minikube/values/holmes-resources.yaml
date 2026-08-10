@@ -1,0 +1,21 @@
+vaultSecrets:
+  # HolmesGPT's three envFrom mounts: its credential for calling LiteLLM, its
+  # Grafana basic-auth pair for the Loki and Tempo toolsets, and the API key its
+  # own HTTP server authenticates callers with. See
+  # minikube/values/holmes-values.yaml for why the LiteLLM key is deliberately
+  # not called OPENAI_API_KEY.
+  - holmes-litellm
+  - holmes-grafana
+  - holmes-api
+
+routes:
+  # The Service name carries the release name twice because the chart builds it
+  # as `<release>-holmes`.
+  - name: holmes
+    host: holmes.test
+    service: holmes-holmes
+    port: 80
+    # Deliberately not protected. Holmes has no browser UI — every route is
+    # API, and it authenticates each request itself against HOLMES_API_KEY.
+    # Forward-auth here would 302 every caller, exactly as it did to MLflow's
+    # tracking API, while adding no protection the key does not already give.

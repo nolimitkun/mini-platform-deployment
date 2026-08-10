@@ -1,8 +1,13 @@
+{{- $auth := .Values.vault.auth }}
+{{- if .Values.vaultAuthServiceAccount }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ .Values.vaultAuth.serviceAccount }}
+  name: {{ $auth.serviceAccount }}
   namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+{{- end }}
 {{- /*
   VSO looks up a VaultStaticSecret's vaultAuthRef in the secret's own namespace,
   and the VaultAuth in turn authenticates with a ServiceAccount from that same
@@ -11,7 +16,7 @@ metadata:
   release namespace.
 */}}
 {{- $namespaces := list }}
-{{- range .Values.vaultSecrets.external }}
+{{- range .Values.externalVaultSecrets }}
 {{- $namespaces = append $namespaces .namespace }}
 {{- end }}
 {{- range $ns := $namespaces | uniq }}
@@ -19,22 +24,25 @@ metadata:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ $.Values.vaultAuth.serviceAccount }}
+  name: {{ $auth.serviceAccount }}
   namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultAuth
 metadata:
-  name: {{ $.Values.vaultSecrets.vaultAuthRef }}
+  name: {{ $.Values.vault.vaultAuthRef }}
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
-  method: {{ $.Values.vaultAuth.method }}
-  mount: {{ $.Values.vaultAuth.mount }}
+  method: {{ $auth.method }}
+  mount: {{ $auth.mount }}
   kubernetes:
-    role: {{ $.Values.vaultAuth.role }}
-    serviceAccount: {{ $.Values.vaultAuth.serviceAccount }}
+    role: {{ $auth.role }}
+    serviceAccount: {{ $auth.serviceAccount }}
     audiences:
-      - {{ $.Values.vaultAuth.audience }}
+      - {{ $auth.audience }}
 {{- end }}

@@ -15,7 +15,8 @@
   every other chartPath (the first-party gitops/* charts) lives alongside the
   values in the deployment repo. Either way the values file is always pulled
   from the deployment repo through the $deploy ref, so valueFiles are written
-  repo-root-relative ($deploy/...) and never depend on chart-path depth.
+  repo-root-relative ($deploy/...) and never depend on chart-path depth. The
+  same holds for the optional resourcesFile source below.
 */}}
 {{- $chartRepo := $deployRepo -}}
 {{- $chartRevision := $deployRevision -}}
@@ -47,6 +48,21 @@ spec:
         releaseName: {{ default $name $app.releaseName | quote }}
         valueFiles:
           - {{ printf "$deploy/%s" $app.valuesFile | quote }}
+{{- with $app.resourcesFile }}
+{{- /*
+  A second manifest-producing source, so the release's ingress route and the
+  Vault secrets it consumes are created, healed and pruned with the release
+  itself instead of from two cluster-wide lists. The chart is shared and always
+  first-party; only the values file differs per application.
+*/}}
+    - repoURL: {{ $deployRepo | quote }}
+      targetRevision: {{ $deployRevision | quote }}
+      path: {{ $.Values.resourcesChartPath | quote }}
+      helm:
+        releaseName: {{ printf "%s-resources" (default $name $app.releaseName) | quote }}
+        valueFiles:
+          - {{ printf "$deploy/%s" . | quote }}
+{{- end }}
     - repoURL: {{ $deployRepo | quote }}
       targetRevision: {{ $deployRevision | quote }}
       ref: deploy

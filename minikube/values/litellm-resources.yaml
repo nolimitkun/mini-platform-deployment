@@ -1,0 +1,24 @@
+vaultSecrets:
+  - litellm-redis
+  # DeepSeek key for the model_list entry that Open WebUI, kagent and HolmesGPT
+  # all reach through this gateway.
+  - litellm-deepseek
+  #
+  # Three of this release's secrets are declared elsewhere:
+  #   litellm-dbcredentials  postgresql-resources.yaml -- mounted by this
+  #                          chart's PreSync migrations hook (see there)
+  #   litellm-master-key     prometheus-resources.yaml -- scraped two waves
+  #                          earlier
+  #   litellm-langfuse       langfuse-resources.yaml   -- provisioned by
+  #                          Langfuse's init job
+
+routes:
+  - name: litellm
+    host: litellm.test
+    service: litellm
+    port: 4000
+    # The admin UI only. /v1 stays open because LiteLLM authenticates API
+    # traffic itself with the master key and virtual keys — putting a browser
+    # redirect in front of it would break every API client.
+    protectedPaths:
+      - /ui
