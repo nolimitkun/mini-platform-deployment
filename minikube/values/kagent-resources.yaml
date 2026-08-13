@@ -1,0 +1,18 @@
+vaultSecrets:
+  # kagent's credential for calling LiteLLM, and its Grafana basic-auth pair for
+  # the Grafana MCP server. Both are mirrors — the gateway and Grafana each
+  # already own the underlying credential — written under the key names each
+  # consumer expects.
+  - kagent-litellm
+  - kagent-grafana
+
+routes:
+  - name: kagent
+    host: kagent.test
+    service: kagent-ui
+    port: 8080
+    # kagent ships no authentication whatsoever, so without this the chat UI —
+    # and the cluster-mutating tools behind it — are open to anyone who can
+    # reach the ingress.
+    protectedPaths:
+      - /

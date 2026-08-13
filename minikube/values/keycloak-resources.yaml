@@ -1,0 +1,37 @@
+vaultSecrets:
+  - keycloak-admin
+  - keycloak-postgresql
+  # Every OIDC client secret plus the two seed user passwords for the
+  # mini-platform realm. keycloak-config-cli reads the whole thing with envFrom
+  # and interpolates it into the realm; each client component mounts only its
+  # own key. Declared here because Keycloak is the earliest release that needs
+  # it — MinIO, Langfuse, Grafana, JupyterHub, Superset and Open WebUI all read
+  # a single key out of the same Secret in this or a later wave.
+  - keycloak-sso
+
+# Argo CD is the one consumer outside the mini-platform namespace: it resolves
+# `$argocd-oidc:clientSecret` against a Secret in its own namespace, and only
+# looks at Secrets carrying the part-of label below.
+#
+# It sits here rather than on the argocd release for an ordering reason. Argo CD
+# syncs in wave -5, ahead of the Vault Secrets Operator in wave -4, so the
+# VaultStaticSecret CRD does not exist yet when that Application first applies —
+# and a failed resource there would stall the root sync before the operator that
+# defines the type is ever installed. Keycloak, in wave -2, both owns the client
+# secret's contents and syncs late enough to create it. Argo CD is already
+# running by then and picks the Secret up when it appears; a rotation still
+# needs the restart that scripts/deploy-minikube.sh performs.
+externalVaultSecrets:
+  - name: argocd-oidc
+    namespace: argocd
+    labels:
+      app.kubernetes.io/part-of: argocd
+
+routes:
+  # No protectedPaths: Keycloak *is* the login. The admin console is reachable
+  # here and nowhere else — the single-issuer design (KC_HOSTNAME pinned to
+  # http://keycloak.test) makes a port-forward useless.
+  - name: keycloak
+    host: keycloak.test
+    service: keycloak
+    port: 80

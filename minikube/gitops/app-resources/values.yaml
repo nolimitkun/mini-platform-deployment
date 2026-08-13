@@ -1,0 +1,80 @@
+# Defaults for the per-application resources chart.
+#
+# This chart is never given a values file of its own. It is rendered once per
+# managed release, as the second source of that release's Argo CD Application,
+# against `minikube/values/<name>-resources.yaml` — so an application's ingress
+# route and the Vault secrets it consumes are created and pruned with the
+# application itself rather than from two cluster-wide lists.
+#
+# Everything below is platform-wide wiring that every one of those files
+# inherits; a per-application file only sets `routes`, `vaultSecrets`,
+# `externalVaultSecrets` and `vaultAuthServiceAccount`.
+
+# ==============================================================================
+# INGRESS
+# ==============================================================================
+ingressClassName: nginx
+
+# Forward-auth target for routes that declare `protectedPaths`. oauth2-proxy
+# holds the Keycloak session on behalf of components that cannot do OIDC
+# themselves; see minikube/values/oauth2-proxy-values.yaml.
+authProxy:
+  service: oauth2-proxy
+  port: 80
+  # Served on each protected host, not on a host of its own — the session
+  # cookie oauth2-proxy sets at the callback has to be same-origin with the
+  # component it is protecting.
+  path: /oauth2
+
+# Only entry points intended for local user access are exposed. Stateful
+# dependencies, Vault, Trino, Prometheus, and vLLM remain cluster-internal, and
+# so simply carry no route.
+#
+# `protectedPaths` puts the listed path prefixes behind Keycloak via
+# oauth2-proxy. Everything else is either reachable without a login or
+# authenticates the request itself.
+routes: []
+
+# ==============================================================================
+# VAULT
+# ==============================================================================
+vault:
+  mount: mini-platform
+  vaultAuthRef: default
+  refreshAfter: 1m
+  # Backs the VaultAuth rendered into each `externalVaultSecrets` namespace.
+  # Mirrors the defaultAuthMethod in
+  # minikube/values/vault-secrets-operator-values.yaml, which only covers the
+  # operator's own namespace.
+  auth:
+    method: kubernetes
+    mount: kubernetes
+    role: mini-platform
+    serviceAccount: vault-auth
+    audience: vault
+
+# Vault KV paths under the mount above, each rendered as a VaultStaticSecret
+# that VSO syncs into a like-named Kubernetes Secret in the application's own
+# namespace. The name must also be written by
+# scripts/bootstrap-vault-secrets.sh — a path listed here but never seeded
+# leaves the workload waiting on a Secret that never appears.
+#
+# Declare a secret on the *earliest-syncing* application that consumes it. A
+# pod cannot go Ready without a Secret it mounts, and Argo CD holds each sync
+# wave until the previous one is healthy, so a secret first needed in wave -1
+# but declared on an application in wave 1 deadlocks the rollout.
+vaultSecrets: []
+
+# Secrets a workload can only consume from its own namespace, i.e. one outside
+# the application's destination namespace.
+#
+# VSO resolves `vaultAuthRef` within the VaultStaticSecret's own namespace, so
+# each namespace named here also gets a `vault-auth` ServiceAccount and a
+# matching VaultAuth. Vault's Kubernetes auth role must bind that namespace
+# too — see bound_service_account_namespaces in scripts/deploy-minikube.sh.
+externalVaultSecrets: []
+
+# Renders the ServiceAccount that VSO's cluster-wide defaultAuthMethod
+# authenticates as. Exactly one application sets this — the one that installs
+# the operator.
+vaultAuthServiceAccount: false

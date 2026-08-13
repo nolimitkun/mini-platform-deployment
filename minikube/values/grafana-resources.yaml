@@ -1,0 +1,11 @@
+# The admin account, kept as break-glass alongside Keycloak SSO. kagent and
+# HolmesGPT mirror it into secrets of their own (kagent-grafana, holmes-grafana)
+# because both reach Loki and Tempo through Grafana's datasource proxy.
+vaultSecrets:
+  - grafana-admin
+
+routes:
+  - name: grafana
+    host: grafana.test
+    service: grafana
+    port: 80

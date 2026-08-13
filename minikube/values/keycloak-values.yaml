@@ -37,9 +37,9 @@ extraEnvVars:
   # keycloak.test, and every client that validates the issuer (Argo CD,
   # oauth2-proxy, Langfuse) would reject the token.
   #
-  # The chart only renders KC_HOSTNAME when its own ingress is enabled, and
-  # routes here live in the ingress-resources chart instead — so set it
-  # directly. Container `env` wins over the chart's `envFrom` ConfigMap.
+  # The chart only renders KC_HOSTNAME when its own ingress is enabled, and the
+  # route here lives in minikube/values/keycloak-resources.yaml instead — so set
+  # it directly. Container `env` wins over the chart's `envFrom` ConfigMap.
   # Consequence worth knowing: Keycloak now issues redirects to keycloak.test
   # unconditionally, so the admin console is not reachable over a port-forward.
   - name: KC_HOSTNAME

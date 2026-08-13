@@ -1,0 +1,14 @@
+vaultSecrets:
+  - superset-postgresql
+  - superset-redis
+  # SECRET_KEY plus the admin account Superset bootstraps with. Superset is the
+  # one component with no break-glass login once SSO is on — Flask-AppBuilder
+  # has a single AUTH_TYPE — so this account only matters before the first
+  # Keycloak sign-in.
+  - superset-env
+
+routes:
+  - name: superset
+    host: superset.test
+    service: superset
+    port: 8088

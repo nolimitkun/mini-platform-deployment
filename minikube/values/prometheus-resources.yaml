@@ -1,0 +1,11 @@
+vaultSecrets:
+  # LiteLLM's master key. It belongs to LiteLLM and Open WebUI reads it too, but
+  # both of those releases sync in waves 1 and 2 while Prometheus mounts the
+  # Secret as a scrape credential (extraSecretMounts in prometheus-values.yaml)
+  # in wave -1 — and a pod with a missing secret volume never goes Ready. Argo
+  # CD holds each wave until the previous one is healthy, so declaring this on
+  # LiteLLM would deadlock the rollout at wave -1. Earliest consumer wins.
+  #
+  # The other two scrape credentials Prometheus mounts, mlflow-auth and
+  # langfuse-s3, come from releases in wave -2 and need no such exception.
+  - litellm-master-key

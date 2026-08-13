@@ -1,0 +1,2 @@
+vaultSecrets:
+  - redis-credentials

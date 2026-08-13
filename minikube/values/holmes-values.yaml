@@ -6,7 +6,7 @@
 #
 # The release name must stay `holmes`: the chart names its Deployment and
 # Service `<release>-holmes`, and the ingress route in
-# minikube/gitops/ingress-resources/values.yaml points at `holmes-holmes`.
+# minikube/values/holmes-resources.yaml points at `holmes-holmes`.
 
 # ==============================================================================
 # MODEL — DeepSeek, reached through the platform's LiteLLM gateway
@@ -35,7 +35,7 @@ modelList:
     api_key: envRef:LITELLM_API_KEY
 
 # Loaded onto the pod with envFrom, so each Secret's keys are consumed verbatim
-# as env vars. All three are Vault-managed; see vault-resources/values.yaml.
+# as env vars. All three are Vault-managed; see holmes-resources.yaml.
 #   holmes-litellm  LITELLM_API_KEY               — the model list entry above
 #   holmes-grafana  GRAFANA_USERNAME/PASSWORD     — the Loki and Tempo toolsets
 #   holmes-api      HOLMES_API_KEY,

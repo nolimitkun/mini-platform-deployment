@@ -1,0 +1,8 @@
+# Mirror of the oauth2-proxy entry in keycloak-sso, under the key names the
+# oauth2-proxy chart expects.
+#
+# No route of its own: oauth2-proxy is served at /oauth2 on each protected host
+# instead, so its session cookie is same-origin with the component it guards.
+# Those Ingresses are rendered alongside the protected route itself.
+vaultSecrets:
+  - oauth2-proxy-oidc

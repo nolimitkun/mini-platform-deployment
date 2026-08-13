@@ -1,0 +1,6 @@
+apiVersion: v2
+name: mini-platform-app-resources
+description: Per-application ingress routes and Vault secret mappings, rendered as an extra source on each Argo CD Application.
+type: application
+version: 0.1.0
+appVersion: "1.0"

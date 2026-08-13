@@ -1,0 +1,16 @@
+# The standalone object store. MLflow and Langfuse do not use it — each ships
+# its own MinIO subchart (`mlflow-minio`, `langfuse-s3`) — so nothing in the
+# cluster depends on this release beyond Prometheus scraping it.
+vaultSecrets:
+  # The root account, kept as break-glass and for S3 API clients that have no
+  # browser to run an OIDC flow in. Console logins go through Keycloak, whose
+  # client secret arrives in keycloak-sso — declared on the keycloak release,
+  # which is why this one syncs in wave -2 rather than with the other stateful
+  # dependencies.
+  - minio-root-credentials
+
+routes:
+  - name: minio
+    host: minio.test
+    service: minio-console
+    port: 9001

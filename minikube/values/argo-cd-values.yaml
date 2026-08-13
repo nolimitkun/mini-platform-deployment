@@ -13,7 +13,10 @@ configs:
     # not in Vault, and it is the way back in if the realm import fails.
     #
     # clientSecret resolves against the argocd-oidc Secret in this namespace,
-    # which VSO materializes from Vault (see minikube/gitops/vault-resources).
+    # which VSO materializes from Vault. That mapping is declared on the
+    # keycloak release (minikube/values/keycloak-resources.yaml), not here —
+    # this Application syncs in wave -5, before the VaultStaticSecret CRD
+    # exists.
     # Argo CD only considers Secrets carrying the argocd part-of label, which is
     # why that entry sets one.
     oidc.config: |

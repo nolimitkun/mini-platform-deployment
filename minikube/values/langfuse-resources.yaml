@@ -1,0 +1,19 @@
+vaultSecrets:
+  - langfuse-app-secrets
+  - langfuse-postgresql
+  - langfuse-redis
+  - langfuse-clickhouse
+  - langfuse-s3
+  # Credentials for the headless init that provisions the starter org, project
+  # and API keys, so no browser setup is needed on a fresh cluster.
+  - langfuse-init-user
+  # Shared with LiteLLM, which reads the same public/secret pair to send its
+  # traces here. Declared on this side because Langfuse's init job is what
+  # provisions the keys, and because it syncs three waves ahead of LiteLLM.
+  - litellm-langfuse
+
+routes:
+  - name: langfuse
+    host: langfuse.test
+    service: langfuse-web
+    port: 3000

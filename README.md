@@ -79,9 +79,9 @@ Every browser-facing service authenticates against Keycloak — see
 | Path | Purpose |
 | --- | --- |
 | `minikube/values/` | Mini Platform integration overlays — no committed credentials |
+| `minikube/values/*-resources.yaml` | Per-release `.test` ingress route and `VaultStaticSecret` mappings, rendered inside that release's own Argo CD Application |
 | `minikube/gitops/mini-platform/` | Argo CD app-of-apps chart defining every managed release and its sync wave |
-| `minikube/gitops/vault-resources/` | `VaultStaticSecret` mappings and the VSO auth service account |
-| `minikube/gitops/ingress-resources/` | Browser-facing `.test` ingress routes, including the oauth2-proxy forward-auth wiring |
+| `minikube/gitops/app-resources/` | Shared chart that turns a `*-resources.yaml` into Ingresses (including the oauth2-proxy forward-auth wiring) and Vault secret mappings |
 | `minikube/gitops/root-application.yaml` | Root Argo CD Application that bootstraps the app-of-apps |
 | `scripts/deploy-minikube.sh` | Creates/resets Minikube and automates the Argo CD + Vault bootstrap |
 | `scripts/bootstrap-vault-secrets.sh` | Generates and writes initial credentials into Vault |
@@ -335,10 +335,12 @@ kubectl apply -f minikube/gitops/root-application.yaml
 kubectl -n argocd get applications
 ```
 
-Sync waves order the rollout: Argo CD and Vault/VSO come first, then secret
-mappings and stateful dependencies, then the application tier, and finally
-LiteLLM, Open WebUI, and ingress. Early reconciliations may show
-missing-secret failures until Vault is initialized in step 4 and the
+Sync waves order the rollout: Argo CD and Vault/VSO come first, then the
+stateful dependencies, then the application tier, and finally LiteLLM, Open
+WebUI and the agents. Each release brings its own ingress route and
+`VaultStaticSecret` mappings with it, so a secret is declared on the
+earliest-syncing application that consumes it. Early reconciliations may show
+missing-secret failures until Vault is initialized in step 4 and those
 `VaultStaticSecret` resources synchronize.
 
 #### 4. Initialize Vault and seed secrets
@@ -426,15 +428,16 @@ kubectl -n "$NS" get secrets
 
 #### 5. Managed releases
 
-The app-of-apps reconciles these applications (and the `vault-resources` and
-`ingress-resources` GitOps charts):
+The app-of-apps reconciles these applications. Each is multi-source: the chart
+below, plus — where the release owns an ingress route or Vault secrets — the
+shared `minikube/gitops/app-resources` chart rendered against a sibling
+`minikube/values/<name>-resources.yaml`:
 
 | Argo CD application | Chart | Values |
 | --- | --- | --- |
 | `mini-platform-argocd` | `charts/argo-cd` | `minikube/values/argo-cd-values.yaml` |
 | `mini-platform-vault` | `charts/vault` | `minikube/values/vault-values.yaml` |
 | `mini-platform-vault-secrets-operator` | `charts/vault-secrets-operator` | `minikube/values/vault-secrets-operator-values.yaml` |
-| `mini-platform-vault-resources` | `minikube/gitops/vault-resources` | `minikube/gitops/vault-resources/values.yaml` |
 | `mini-platform-postgresql` | `charts/postgresql` | `minikube/values/postgresql-values.yaml` |
 | `mini-platform-redis` | `charts/redis` | `minikube/values/redis-values.yaml` |
 | `mini-platform-qdrant` | `charts/qdrant` | `minikube/values/qdrant-values.yaml` |
@@ -459,7 +462,7 @@ The app-of-apps reconciles these applications (and the `vault-resources` and
 | `mini-platform-kagent-crds` | `charts/kagent-crds` | `minikube/values/kagent-crds-values.yaml` |
 | `mini-platform-kagent` | `charts/kagent` | `minikube/values/kagent-values.yaml` |
 | `mini-platform-holmes` | `charts/holmes` | `minikube/values/holmes-values.yaml` |
-| `mini-platform-ingress-resources` | `minikube/gitops/ingress-resources` | `minikube/gitops/ingress-resources/values.yaml` |
+| `mini-platform-oauth2-proxy` | `charts/oauth2-proxy` | `minikube/values/oauth2-proxy-values.yaml` |
 
 † **llm-d serving path** (disabled by default): an alternative to the
 production-stack router, using the Gateway API Inference Extension standalone
@@ -697,8 +700,8 @@ Seven components speak OIDC themselves and are configured in their own overlay:
 Grafana, Open WebUI, Superset, JupyterHub, Argo CD, MinIO Console and Langfuse.
 
 Three cannot, and sit behind **oauth2-proxy** as ingress-nginx forward-auth
-(`minikube/values/oauth2-proxy-values.yaml`, with the routes in
-`minikube/gitops/ingress-resources/values.yaml`):
+(`minikube/values/oauth2-proxy-values.yaml`, with each route in its own
+component's `minikube/values/<name>-resources.yaml`):
 
 - **MLflow** — the Bitnami chart offers a single basic-auth account and no OIDC.
   The browser UI is protected; `/api` is not, because the MLflow SDK and CLI
@@ -769,8 +772,8 @@ Two consequences worth knowing:
    and the issuer `http://keycloak.test/realms/mini-platform`.
 
 If the component has no OIDC support, skip steps 1–3 and instead add
-`protectedPaths` to its route in `minikube/gitops/ingress-resources/values.yaml`
-and a callback URL on the existing `oauth2-proxy` client.
+`protectedPaths` to its route in `minikube/values/<name>-resources.yaml` and a
+callback URL on the existing `oauth2-proxy` client.
 
 ## Verifying the Stack
 
