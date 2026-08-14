@@ -140,13 +140,29 @@ toolsets:
 # key per process and in-flight tool approvals break on every restart.
 
 # ==============================================================================
-# TELEMETRY
+# TELEMETRY AND IDENTITY
 # ==============================================================================
 # Traces and metrics over OTLP to the Alloy gateway, matching LiteLLM and
 # kagent — one endpoint for every producer, and alloy-values.yaml alone decides
 # that spans go to Tempo and metrics to Prometheus. Setting the endpoint is what
 # turns instrumentation on; Holmes auto-detects it at startup.
+#
+# Both signals are emitted per investigation rather than exposed for scraping,
+# so an idle Holmes publishes no series and no spans at all. That is not a gap:
+# `{job="holmes"}` and a `holmes` service in Tempo only appear once someone has
+# asked it something. Its own /metrics sits behind HOLMES_API_KEY, which is why
+# prometheus-values.yaml carries no holmes job.
 additionalEnvVars:
+  - name: CLUSTER_NAME
+    # Holmes stamps the toolset status records it persists with the cluster
+    # they came from, and raises rather than defaulting when no name is set.
+    # Nothing here reads those records — the store behind them is Robusta's,
+    # and this cluster has no Robusta account — but without this the refresh
+    # loop throws a traceback every time a toolset's health flips, which is
+    # often enough to bury real errors. The chart exposes no value for it, so
+    # it goes here. `mini-platform` is the Minikube profile, the kube context
+    # and the node name.
+    value: mini-platform
   - name: OTEL_EXPORTER_OTLP_ENDPOINT
     # gRPC on 4317 is the OTel SDK's default protocol, and the http:// scheme is
     # how it is told the connection is plaintext.
