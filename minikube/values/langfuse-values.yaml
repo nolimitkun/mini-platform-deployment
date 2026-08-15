@@ -44,9 +44,20 @@ langfuse:
       value: http://keycloak.test/realms/mini-platform
     - name: AUTH_KEYCLOAK_SCOPE
       value: openid email profile
-    # Lets the Keycloak identity attach to the init user's existing account
-    # when the email matches, instead of failing as a duplicate — which is what
-    # keeps the seeded org and project visible after the first SSO login.
+    # Attach the Keycloak identity to an existing Langfuse account with the same
+    # email rather than failing the login as a duplicate.
+    #
+    # Note what it does *not* do here: the init user below is seeded as
+    # admin@mini-platform.test and the realm's seed users are
+    # platform-admin@ and platform-user@, so no address matches and nothing is
+    # linked. An SSO login lands on a fresh account with no organization, which
+    # means an empty Langfuse — the seeded Mini Platform org and its LiteLLM
+    # project belong to the init user alone. Either add the SSO account to the
+    # org from the Langfuse UI, or seed LANGFUSE_INIT_USER_EMAIL in
+    # scripts/bootstrap-vault-secrets.sh as platform-admin@mini-platform.test so
+    # this setting has a match to work with (that only takes effect on a fresh
+    # cluster or with --rotate-secrets, since the bootstrap leaves existing
+    # secrets alone).
     - name: AUTH_KEYCLOAK_ALLOW_ACCOUNT_LINKING
       value: "true"
     # ---- Project bootstrap -------------------------------------------------
