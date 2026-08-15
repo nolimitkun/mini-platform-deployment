@@ -339,9 +339,11 @@ Sync waves order the rollout: Argo CD and Vault/VSO come first, then the
 stateful dependencies, then the application tier, and finally LiteLLM, Open
 WebUI and the agents. Each release brings its own ingress route and
 `VaultStaticSecret` mappings with it, so a secret is declared on the
-earliest-syncing application that consumes it. Early reconciliations may show
-missing-secret failures until Vault is initialized in step 4 and those
-`VaultStaticSecret` resources synchronize.
+earliest-syncing application that consumes it — and, where a release needs a
+dependency *running* rather than just a Secret, a wave later still (MinIO reads
+its OIDC configuration once at startup, so it syncs after Keycloak). Early
+reconciliations may show missing-secret failures until Vault is initialized in
+step 4 and those `VaultStaticSecret` resources synchronize.
 
 #### 4. Initialize Vault and seed secrets
 
@@ -724,6 +726,27 @@ The pattern in both exceptions is the same: a route lists the prefixes it wants
 behind Keycloak in `protectedPaths`, and carves back out any path whose clients
 authenticate themselves with `openPaths`. nginx matches the longest prefix, so
 the exemption wins over the broader protected path.
+
+### The MinIO console loses its SSO button after a cluster restart
+
+MinIO resolves its OIDC discovery URL once, during startup. If Keycloak is not
+answering yet it logs `Unable to initialize OpenID` and carries on without a
+provider: the console offers username/password and no Keycloak button, and it
+never retries. The app-of-apps syncs MinIO a wave after Keycloak so the initial
+rollout is ordered, but `minikube stop` / `minikube start` brings every pod back
+at once and MinIO — serving within seconds, against a Keycloak that still has a
+realm import ahead of it — loses that race. Check and fix with:
+
+```bash
+kubectl -n mini-platform exec deploy/minio -- curl -s http://localhost:9001/api/v1/login
+```
+
+`"loginStrategy":"redirect"` means SSO is wired; `"form"` means it is not, and a
+restart once the platform is up recovers it:
+
+```bash
+kubectl -n mini-platform rollout restart deploy/minio
+```
 
 ### Break-glass logins
 

@@ -14,6 +14,24 @@ consoleService:
 # Keycloak SSO for the console. The root credentials above keep working, both
 # as break-glass and for the S3 API clients (MLflow, Langfuse) that have no
 # browser to run an OIDC flow in.
+#
+# MinIO fetches configUrl once, during IAM init at startup. If it fails it logs
+# "Unable to initialize OpenID" and keeps serving without a provider — the
+# console then reports loginStrategy `form` and shows no Keycloak button, for
+# the life of the process. It never retries, so this is not something a wait
+# fixes: whatever the console decided at boot is what it offers until MinIO is
+# restarted. The app-of-apps therefore syncs this release a wave after Keycloak
+# (see the comment on its `applications:` entry).
+#
+# That ordering only governs the Argo CD rollout. On a `minikube stop` /
+# `minikube start` the kubelet brings every pod back at once, MinIO is serving
+# long before Keycloak has finished its realm import, and the console drops back
+# to form-only login. The remedy is a restart once the platform is up:
+#
+#   kubectl -n mini-platform rollout restart deploy/minio
+#
+# Verify with: curl -s http://minio.test/api/v1/login — `"loginStrategy":
+# "redirect"` means SSO is wired, `"form"` means MinIO lost the race.
 oidc:
   enabled: true
   configUrl: http://keycloak.test/realms/mini-platform/.well-known/openid-configuration

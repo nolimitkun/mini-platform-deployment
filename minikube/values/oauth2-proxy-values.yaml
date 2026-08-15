@@ -41,6 +41,18 @@ extraArgs:
   # The stack terminates plain HTTP, so a Secure cookie would never be sent
   # back and every login would loop. See the hardening notes in the README.
   - --cookie-secure=false
+  # Keep the ID, access and refresh tokens out of the session cookie. Without
+  # this the cookie is the encrypted session *including* all three JWTs — 3893
+  # bytes measured against this realm — and the callback's response header block
+  # comes to 4211 bytes, just over ingress-nginx's default 4k `proxy_buffer_size`.
+  # nginx answers "upstream sent too big header" with a 502, so every login
+  # through this proxy died on the last hop while oauth2-proxy itself logged
+  # AuthSuccess. Raising the buffer would work too, but nothing downstream reads
+  # the tokens: `auth-response-headers` on the rendered Ingress forwards only
+  # X-Auth-Request-User/Email/Preferred-Username, all of which survive a minimal
+  # session. The cost is that sessions cannot be refreshed, which is why
+  # --cookie-refresh is left unset (oauth2-proxy rejects the combination).
+  - --session-cookie-minimal=true
   # Cookies stay host-scoped rather than shared across *.test: a cookie domain
   # that short risks being treated as a public suffix by the browser. The cost
   # is one redirect per host on first visit, which Keycloak's own session makes
