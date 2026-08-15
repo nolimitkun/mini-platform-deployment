@@ -21,7 +21,7 @@ providers:
   openAI:
     provider: OpenAI
     # Must match a model_name in litellm-values.yaml's model_list.
-    model: deepseek-chat
+    model: deepseek-v4-pro
     # Vault-managed; carries the LiteLLM master key under an OPENAI_API_KEY key
     # because that is the env name the OpenAI-protocol client expects.
     apiKeySecretRef: kagent-litellm

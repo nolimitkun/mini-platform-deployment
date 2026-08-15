@@ -372,8 +372,8 @@ export VAULT_TOKEN='<initial-root-token-from-init-output>'
 # tokenizer (Qwen/Qwen3.6-27B). Accept any gated-model licenses at
 # huggingface.co with this account first, or the vLLM pull will 401.
 export HF_TOKEN='hf_xxxxxxxxxxxxxxxxxxxx'
-# DeepSeek key for the hosted `deepseek-chat` model LiteLLM serves. kagent's
-# agents run on it; nothing else on the platform requires it.
+# DeepSeek key for the hosted `deepseek-v4-pro` model LiteLLM serves. kagent's
+# agents and HolmesGPT run on it; nothing else on the platform requires it.
 export DEEPSEEK_API_KEY='sk-xxxxxxxxxxxxxxxxxxxx'
 
 vault secrets enable -path=mini-platform kv-v2
@@ -848,7 +848,7 @@ configure TLS and authentication before exposing it.
 
 **kagent.** The chat UI is at `http://kagent.test`. Four agents ship enabled —
 `k8s-agent`, `helm-agent`, `promql-agent`, and `observability-agent` — all
-running on `deepseek-chat` through LiteLLM, so their turns appear in Langfuse
+running on `deepseek-v4-pro` through LiteLLM, so their turns appear in Langfuse
 alongside every other LLM call. The agents that target components this platform
 does not run (Istio, kgateway, Cilium, Argo Rollouts) are disabled in the
 overlay. `observability-agent` is the one wired to live telemetry: it reaches
@@ -867,7 +867,7 @@ Prometheus connection of its own. Ask `observability-agent` when you want a
 query actually executed.
 
 **HolmesGPT.** An investigation API at `http://holmes.test`, on the same
-`deepseek-chat` model through LiteLLM. Where kagent is a chat UI you drive, this
+`deepseek-v4-pro` model through LiteLLM. Where kagent is a chat UI you drive, this
 is one HTTP call that reads the cluster and its telemetry and answers with what
 it found and how it got there. Its toolsets cover the Kubernetes API (over a
 read-only ClusterRole with no access to Secrets), Prometheus directly, and Loki

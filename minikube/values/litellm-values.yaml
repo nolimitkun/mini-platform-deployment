@@ -25,9 +25,17 @@ proxy_config:
     # through the gateway rather than letting kagent call api.deepseek.com
     # directly keeps the key in one place and puts agent turns in Langfuse
     # next to the rest of the platform's LLM traffic.
-    - model_name: deepseek-chat
+    #
+    # Named explicitly rather than through the legacy `deepseek-chat` alias.
+    # That alias still answers, but api.deepseek.com now resolves it to
+    # deepseek-v4-flash — so every agent on this platform was quietly running
+    # the small model while the config said otherwise. v4-pro is the reasoning
+    # variant: responses carry `reasoning_content` alongside `content`, and
+    # first-token latency is correspondingly higher. `deepseek-v4-flash` is the
+    # cheaper sibling if an agent turns out not to need the reasoning.
+    - model_name: deepseek-v4-pro
       litellm_params:
-        model: deepseek/deepseek-chat
+        model: deepseek/deepseek-v4-pro
         api_key: os.environ/DEEPSEEK_API_KEY
   general_settings:
     master_key: os.environ/PROXY_MASTER_KEY
