@@ -77,10 +77,11 @@ applications:
   # consumes: the client secret in keycloak-sso, and Keycloak itself. MinIO
   # resolves the OIDC discovery URL exactly once, at startup, and simply carries
   # on without a provider if that lookup fails, leaving the console on
-  # username/password with no SSO button until the process is restarted. A wave
-  # *after* Keycloak's is what makes that lookup deterministic — same wave and
-  # MinIO wins the race, because it starts in seconds and Keycloak needs a
-  # database and a realm import first. See minio-values.yaml.
+  # username/password with no SSO button until the process is restarted. Sharing
+  # Keycloak's wave lost that race every time — MinIO is serving in seconds,
+  # Keycloak has a database and a realm import ahead of it — so it goes one wave
+  # later. That closes the ordering failure but not the transient ones; see
+  # minio-values.yaml and ensure_minio_sso in scripts/deploy-minikube.sh.
   minio:
     chartPath: charts/minio
     valuesFile: minikube/values/minio-values.yaml

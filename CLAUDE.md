@@ -225,6 +225,10 @@ never recovers without a restart. Sharing Keycloak's wave was enough to lose
 that race every time, since MinIO is serving within seconds and Keycloak has a
 database and a realm import ahead of it. Nothing depends on MinIO (MLflow and
 Langfuse each ship their own MinIO subchart), so the later wave costs nothing.
+The wave only orders the initial rollout, though; a container that restarts
+later can lose the lookup to any transient, which is why the deploy script ends
+with `ensure_minio_sso` — it asks the console which login strategy it is
+offering and restarts MinIO if the answer is `form`.
 
 The rule goes one step further for **PreSync hooks**, which Argo CD runs before
 every regular resource in the same Application — sync waves order the sync

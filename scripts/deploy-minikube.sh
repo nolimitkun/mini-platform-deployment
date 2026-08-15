@@ -469,6 +469,54 @@ ensure_litellm_schema() {
   fi
 }
 
+# MinIO resolves its OIDC discovery URL once, during IAM init at startup. If
+# that lookup fails it logs "Unable to initialize OpenID" and serves on without
+# a provider: the console offers username/password and no Keycloak button, and
+# it never retries. Any transient is enough -- Keycloak not up yet, the CoreDNS
+# rollout this script performs a few steps earlier, a pod sandbox being
+# recreated -- and the result outlives the transient, because only a restart
+# re-runs the lookup. Sync waves order the initial rollout but cannot help a
+# container that restarts later, so the bring-up ends by checking the console's
+# own view of itself and restarting MinIO if it came up blind.
+minio_login_strategy() {
+  kubectl -n "$NS" exec deployment/minio -- \
+    curl -sf --max-time 10 http://localhost:9001/api/v1/login 2>/dev/null |
+    sed -n 's/.*"loginStrategy":"\([^"]*\)".*/\1/p'
+}
+
+ensure_minio_sso() {
+  kubectl -n "$NS" get deployment minio >/dev/null 2>&1 || return 0
+  # Only meaningful when the overlay asked for SSO in the first place.
+  kubectl -n "$NS" get deployment minio \
+    -o jsonpath='{.spec.template.spec.containers[0].env[*].name}' 2>/dev/null |
+    grep -q MINIO_IDENTITY_OPENID_CONFIG_URL || return 0
+
+  log "Verifying MinIO console SSO"
+  local strategy
+
+  strategy="$(minio_login_strategy)"
+  if [[ "$strategy" == redirect ]]; then
+    log "MinIO console offers Keycloak SSO"
+    return 0
+  fi
+  if [[ -z "$strategy" ]]; then
+    warn "MinIO console did not answer; skipping SSO check"
+    return 0
+  fi
+
+  warn "MinIO console has no SSO button (loginStrategy=$strategy); restarting to retry OIDC discovery"
+  kubectl -n "$NS" rollout restart deployment/minio >/dev/null
+  kubectl -n "$NS" rollout status deployment/minio --timeout=300s >/dev/null ||
+    { warn "MinIO did not roll out; inspect 'kubectl -n $NS logs deploy/minio'"; return 0; }
+
+  strategy="$(minio_login_strategy)"
+  if [[ "$strategy" == redirect ]]; then
+    log "MinIO console offers Keycloak SSO"
+  else
+    warn "MinIO console still has no SSO button; inspect 'kubectl -n $NS logs deploy/minio' for 'Unable to initialize OpenID'"
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --reset)
@@ -935,6 +983,7 @@ if [[ "$WAIT_FOR_WORKLOADS" == true ]]; then
 fi
 
 ensure_litellm_schema
+ensure_minio_sso
 
 log "Deployment bootstrap finished"
 kubectl -n "$ARGO_NS" get applications

@@ -709,7 +709,12 @@ component's `minikube/values/<name>-resources.yaml`):
   The browser UI is protected; `/api` is not, because the MLflow SDK and CLI
   send basic-auth credentials and cannot follow an interactive SSO redirect.
   MLflow authenticates those routes itself with the account in
-  `mini-platform/mlflow-auth`.
+  `mini-platform/mlflow-auth`. That account guards the UI too, so MLflow is the
+  one service that asks twice: Keycloak first, then MLflow's own
+  `WWW-Authenticate: Basic` prompt. Both are deliberate — forward-auth cannot
+  cover `/api`, and MLflow has no way to trust an identity the proxy already
+  established — so the browser prompt is answered with the `mlflow-auth`
+  credentials, not a Keycloak account.
 - **kagent** — ships no authentication at all.
 - **LiteLLM** — its built-in SSO is license-gated. Only `/ui` is protected;
   `/v1` stays open because LiteLLM authenticates API traffic itself with the
@@ -729,13 +734,15 @@ the exemption wins over the broader protected path.
 
 ### The MinIO console loses its SSO button after a cluster restart
 
-MinIO resolves its OIDC discovery URL once, during startup. If Keycloak is not
-answering yet it logs `Unable to initialize OpenID` and carries on without a
-provider: the console offers username/password and no Keycloak button, and it
-never retries. The app-of-apps syncs MinIO a wave after Keycloak so the initial
-rollout is ordered, but `minikube stop` / `minikube start` brings every pod back
-at once and MinIO — serving within seconds, against a Keycloak that still has a
-realm import ahead of it — loses that race. Check and fix with:
+MinIO resolves its OIDC discovery URL once, during startup. If that lookup fails
+it logs `Unable to initialize OpenID` and carries on without a provider: the
+console offers username/password and no Keycloak button, and it never retries.
+Keycloak not being up yet is only one way to get there — a CoreDNS rollout or a
+recreated pod sandbox does it just as well, and the console stays that way until
+MinIO restarts. `deploy-minikube.sh` checks for this and restarts MinIO itself
+at the end of a bring-up, but nothing reconciles it afterwards, so a
+`minikube stop` / `minikube start` can leave the console without its SSO button.
+Check and fix with:
 
 ```bash
 kubectl -n mini-platform exec deploy/minio -- curl -s http://localhost:9001/api/v1/login

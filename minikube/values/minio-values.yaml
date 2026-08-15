@@ -15,23 +15,28 @@ consoleService:
 # as break-glass and for the S3 API clients (MLflow, Langfuse) that have no
 # browser to run an OIDC flow in.
 #
-# MinIO fetches configUrl once, during IAM init at startup. If it fails it logs
-# "Unable to initialize OpenID" and keeps serving without a provider — the
-# console then reports loginStrategy `form` and shows no Keycloak button, for
-# the life of the process. It never retries, so this is not something a wait
-# fixes: whatever the console decided at boot is what it offers until MinIO is
-# restarted. The app-of-apps therefore syncs this release a wave after Keycloak
-# (see the comment on its `applications:` entry).
+# MinIO fetches configUrl once, during IAM init at startup. If that lookup
+# fails it logs "Unable to initialize OpenID" and keeps serving without a
+# provider — the console then reports loginStrategy `form` and shows no Keycloak
+# button, for the life of the process. It never retries, which is what makes
+# this worth a comment: the failure outlives whatever caused it, and everything
+# else about MinIO looks healthy.
 #
-# That ordering only governs the Argo CD rollout. On a `minikube stop` /
-# `minikube start` the kubelet brings every pod back at once, MinIO is serving
-# long before Keycloak has finished its realm import, and the console drops back
-# to form-only login. The remedy is a restart once the platform is up:
+# Any transient at the wrong moment does it — Keycloak not up yet, the CoreDNS
+# rollout deploy-minikube.sh performs, a pod sandbox being recreated. Both
+# halves of the platform's answer are therefore about *when* MinIO starts, not
+# about waiting longer: the app-of-apps syncs this release a wave after Keycloak
+# so the initial rollout cannot lose that particular race, and the deploy script
+# ends with ensure_minio_sso, which asks the console what it is offering and
+# restarts MinIO if it came up blind.
 #
+# Neither covers a container that restarts later — after `minikube stop` /
+# `minikube start`, say. The check and the remedy by hand:
+#
+#   kubectl -n mini-platform exec deploy/minio -- curl -s http://localhost:9001/api/v1/login
 #   kubectl -n mini-platform rollout restart deploy/minio
 #
-# Verify with: curl -s http://minio.test/api/v1/login — `"loginStrategy":
-# "redirect"` means SSO is wired, `"form"` means MinIO lost the race.
+# `"loginStrategy":"redirect"` means SSO is wired; `"form"` means it is not.
 oidc:
   enabled: true
   configUrl: http://keycloak.test/realms/mini-platform/.well-known/openid-configuration
