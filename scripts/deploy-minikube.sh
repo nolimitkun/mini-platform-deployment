@@ -691,6 +691,15 @@ spec:
           # Nothing here needs Argo CD specifically; the tag only has to exist,
           # and matching charts/argo-cd's appVersion is what keeps it cached.
           image: quay.io/argoproj/argocd:v3.4.2
+          # That image's default user is uid 999, but the repo trees on the PVC
+          # are root-owned -- `kubectl cp` below runs tar as whoever this
+          # container is, and the volume predates the image swap. As uid 999 git
+          # refuses to serve them ("detected dubious ownership") and could not
+          # overwrite them on the next copy either. Root is also what the
+          # previous alpine image ran as, so this keeps ownership on the volume
+          # consistent across the change.
+          securityContext:
+            runAsUser: 0
           command:
             - sh
             - -ec
@@ -723,8 +732,14 @@ EOF
   # `kubectl wait` fails outright when nothing matches the selector yet, so wait
   # on the Deployment first — that gives the ReplicaSet time to create the pod.
   kubectl -n gitops-source rollout status deployment/git-source --timeout=300s
-  kubectl -n gitops-source wait --for=condition=Ready pod -l app=git-source --timeout=300s
-  git_pod="$(kubectl -n gitops-source get pod -l app=git-source -o jsonpath='{.items[0].metadata.name}')"
+  # Everything below is scoped to the newest pod by name rather than by label.
+  # When this Deployment's template changes, the previous revision's pod keeps
+  # the app=git-source label while it terminates, so a label-wide `kubectl wait`
+  # blocks on a pod that will never be Ready again, and `.items[0]` can resolve
+  # to that same doomed pod.
+  git_pod="$(kubectl -n gitops-source get pod -l app=git-source \
+    --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1:].metadata.name}')"
+  kubectl -n gitops-source wait --for=condition=Ready "pod/$git_pod" --timeout=300s
   kubectl -n gitops-source cp "$CHARTS_DIR/." "$git_pod:/repos/mini-platform"
   kubectl -n gitops-source cp "$ROOT/." "$git_pod:/repos/mini-platform-deployment"
   source_ready=false
