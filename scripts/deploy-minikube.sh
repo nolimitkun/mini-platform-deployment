@@ -491,10 +491,23 @@ ensure_litellm_schema() {
 # re-runs the lookup. Sync waves order the initial rollout but cannot help a
 # container that restarts later, so the bring-up ends by checking the console's
 # own view of itself and restarting MinIO if it came up blind.
+# The console's own view of how it authenticates. Answers "" if it never
+# replies, and never fails: the API refuses connections for a few seconds after
+# a restart, and under `set -o pipefail` returning that failure would take the
+# whole deploy down at the very last step, after every bit of real work.
 minio_login_strategy() {
-  kubectl -n "$NS" exec deployment/minio -- \
-    curl -sf --max-time 10 http://localhost:9001/api/v1/login 2>/dev/null |
-    sed -n 's/.*"loginStrategy":"\([^"]*\)".*/\1/p'
+  local deadline out
+  deadline=$((SECONDS + 60))
+  while :; do
+    out="$(kubectl -n "$NS" exec deployment/minio -- \
+      curl -sf --max-time 10 http://localhost:9001/api/v1/login 2>/dev/null || true)"
+    out="$(printf '%s' "$out" | sed -n 's/.*"loginStrategy":"\([^"]*\)".*/\1/p')"
+    if [[ -n "$out" || "$SECONDS" -ge "$deadline" ]]; then
+      printf '%s' "$out"
+      return 0
+    fi
+    sleep 5
+  done
 }
 
 ensure_minio_sso() {
