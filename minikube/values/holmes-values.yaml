@@ -175,6 +175,28 @@ additionalEnvVars:
     # exactly this case.
     value: holmes
 
+# ==============================================================================
+# WRITABLE STATE
+# ==============================================================================
+# The chart hardcodes readOnlyRootFilesystem and documents it as "required for
+# Holmes operation", but Holmes still writes two things under $HOME: a cache of
+# toolset health status, and a config-hash file it uses to decide whether the
+# toolset config changed. Both land in /root/.holmes, and without somewhere
+# writable there each container start logs a WARNING for the hashes and then an
+# OSError traceback from os.makedirs. Neither is fatal — the toolsets all load
+# and the refresh loop carries on — but it is startup noise that reads like a
+# real failure.
+#
+# emptyDir rather than a PVC on purpose: this is a cache. Losing it on restart
+# costs one refresh cycle, and the status it holds is only meaningful for the
+# lifetime of the process anyway.
+additionalVolumes:
+  - name: holmes-state
+    emptyDir: {}
+additionalVolumeMounts:
+  - name: holmes-state
+    mountPath: /root/.holmes
+
 # Usage reporting to Robusta's servers. The chart turns this on whenever
 # ROBUSTA_UI_DOMAIN is unset, which on a standalone install is always.
 enableTelemetry: false
