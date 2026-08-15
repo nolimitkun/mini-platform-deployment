@@ -436,11 +436,17 @@ ensure_litellm_schema() {
     'select to_regclass('"'"'public."LiteLLM_UserTable"'"'"') is not null' \
     2>/dev/null | tr -d '[:space:]' || true)"
   if [[ "$exists" == t ]]; then
-    log "LiteLLM schema already present"
-    return 0
+    # Present is not the same as current. An image bump moves the schema on
+    # without anything re-running the migration, and the drift surfaces far
+    # from its cause: the admin UI's own /login mints a key, that insert hits a
+    # column the database does not have, and the browser gets a 500 from a
+    # proxy whose pods are all Ready and whose /v1 traffic is fine. So the
+    # migration runs either way -- `prisma migrate deploy` is idempotent and a
+    # no-op against an up-to-date database.
+    log "LiteLLM schema present; reconciling any pending migrations"
+  else
+    warn "LiteLLM schema missing; applying Prisma migration (PreSync hook did not)"
   fi
-
-  warn "LiteLLM schema missing; applying Prisma migration (PreSync hook did not)"
   deadline=$((SECONDS + 300))
   pod=""
   while [[ "$SECONDS" -lt "$deadline" ]]; do
@@ -461,9 +467,16 @@ ensure_litellm_schema() {
 
   if kubectl -n "$NS" exec "$pod" -- sh -c \
       'DISABLE_SCHEMA_UPDATE=false python litellm/proxy/prisma_migration.py'; then
-    log "LiteLLM schema migration applied; restarting deployment"
-    kubectl -n "$NS" rollout restart deployment/litellm >/dev/null
-    kubectl -n "$NS" rollout status deployment/litellm --timeout=180s || true
+    if [[ "$exists" == t ]]; then
+      # Only a drift reconcile. The running pod already expects the columns the
+      # migration just added -- that mismatch is what made it fail -- so there
+      # is nothing to restart it for.
+      log "LiteLLM migrations reconciled"
+    else
+      log "LiteLLM schema migration applied; restarting deployment"
+      kubectl -n "$NS" rollout restart deployment/litellm >/dev/null
+      kubectl -n "$NS" rollout status deployment/litellm --timeout=180s || true
+    fi
   else
     warn "LiteLLM Prisma migration failed; inspect 'kubectl -n $NS logs deploy/litellm'"
   fi
