@@ -140,13 +140,35 @@ toolsets:
 # key per process and in-flight tool approvals break on every restart.
 
 # ==============================================================================
-# TELEMETRY
+# TELEMETRY AND IDENTITY
 # ==============================================================================
 # Traces and metrics over OTLP to the Alloy gateway, matching LiteLLM and
 # kagent — one endpoint for every producer, and alloy-values.yaml alone decides
 # that spans go to Tempo and metrics to Prometheus. Setting the endpoint is what
 # turns instrumentation on; Holmes auto-detects it at startup.
+#
+# Both signals are emitted per investigation rather than exposed for scraping,
+# so an idle Holmes publishes no series and no spans at all. That is not a gap:
+# `{job="holmes"}` and a `holmes` service in Tempo only appear once someone has
+# asked it something. Its own /metrics sits behind HOLMES_API_KEY, which is why
+# prometheus-values.yaml carries no holmes job.
 additionalEnvVars:
+  - name: CLUSTER_NAME
+    # Required, despite this cluster having no Robusta account to sync to.
+    # holmes_sync_toolsets_status() raises outright when it cannot resolve a
+    # cluster name, and server.py's refresh loop calls it on every toolset
+    # health flip *without* the `if dal.enabled` guard it puts on the
+    # neighbouring refresh_holmes_status() call. So the disconnected-platform
+    # short circuit — the "Skipping holmes status and toolsets
+    # synchronization" line at startup — does not cover this path: it only
+    # skips the startup sync, and the per-change one runs regardless.
+    #
+    # Without this, every flip logged a traceback instead: 26 of them in one
+    # pod's 4d22h, driven by the transient Grafana 502s that flap
+    # grafana/tempo. The chart exposes no value for it, so it goes here.
+    # `mini-platform` is the Minikube profile, the kube context and the node
+    # name.
+    value: mini-platform
   - name: OTEL_EXPORTER_OTLP_ENDPOINT
     # gRPC on 4317 is the OTel SDK's default protocol, and the http:// scheme is
     # how it is told the connection is plaintext.
@@ -158,6 +180,28 @@ additionalEnvVars:
     # alloy-values.yaml reads first — see the fallback rule it keeps for
     # exactly this case.
     value: holmes
+
+# ==============================================================================
+# WRITABLE STATE
+# ==============================================================================
+# The chart hardcodes readOnlyRootFilesystem and documents it as "required for
+# Holmes operation", but Holmes still writes two things under $HOME: a cache of
+# toolset health status, and a config-hash file it uses to decide whether the
+# toolset config changed. Both land in /root/.holmes, and without somewhere
+# writable there each container start logs a WARNING for the hashes and then an
+# OSError traceback from os.makedirs. Neither is fatal — the toolsets all load
+# and the refresh loop carries on — but it is startup noise that reads like a
+# real failure.
+#
+# emptyDir rather than a PVC on purpose: this is a cache. Losing it on restart
+# costs one refresh cycle, and the status it holds is only meaningful for the
+# lifetime of the process anyway.
+additionalVolumes:
+  - name: holmes-state
+    emptyDir: {}
+additionalVolumeMounts:
+  - name: holmes-state
+    mountPath: /root/.holmes
 
 # Usage reporting to Robusta's servers. The chart turns this on whenever
 # ROBUSTA_UI_DOMAIN is unset, which on a standalone install is always.
