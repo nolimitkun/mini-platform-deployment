@@ -679,12 +679,22 @@ spec:
     spec:
       containers:
         - name: git-source
-          image: alpine:3.20
+          # Argo CD's own image, picked because git-daemon is already inside it
+          # (/usr/lib/git-core/git-daemon) and because Argo CD runs the same
+          # image, so it is in the node's image store before this pod is ever
+          # created. That matters on restart. This was alpine:3.20 running
+          # `apk add --no-cache git-daemon` at startup, which made every
+          # container start depend on reaching the Alpine CDN -- so when
+          # Service routing was down the install failed, the pod crashlooped,
+          # and the deploy aborted at "internal Git source did not serve the
+          # expected commits", three layers away from the actual fault.
+          # Nothing here needs Argo CD specifically; the tag only has to exist,
+          # and matching charts/argo-cd's appVersion is what keeps it cached.
+          image: quay.io/argoproj/argocd:v3.4.2
           command:
             - sh
             - -ec
             - |
-              apk add --no-cache git-daemon
               while [ ! -d /repos/mini-platform/.git ] || [ ! -d /repos/mini-platform-deployment/.git ]; do sleep 2; done
               exec git daemon --reuseaddr --export-all --base-path=/repos --listen=0.0.0.0 --port=9418 /repos/mini-platform /repos/mini-platform-deployment
           ports:
