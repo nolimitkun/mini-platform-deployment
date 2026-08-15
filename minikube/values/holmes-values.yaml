@@ -154,14 +154,20 @@ toolsets:
 # prometheus-values.yaml carries no holmes job.
 additionalEnvVars:
   - name: CLUSTER_NAME
-    # Holmes stamps the toolset status records it persists with the cluster
-    # they came from, and raises rather than defaulting when no name is set.
-    # Nothing here reads those records — the store behind them is Robusta's,
-    # and this cluster has no Robusta account — but without this the refresh
-    # loop throws a traceback every time a toolset's health flips, which is
-    # often enough to bury real errors. The chart exposes no value for it, so
-    # it goes here. `mini-platform` is the Minikube profile, the kube context
-    # and the node name.
+    # Required, despite this cluster having no Robusta account to sync to.
+    # holmes_sync_toolsets_status() raises outright when it cannot resolve a
+    # cluster name, and server.py's refresh loop calls it on every toolset
+    # health flip *without* the `if dal.enabled` guard it puts on the
+    # neighbouring refresh_holmes_status() call. So the disconnected-platform
+    # short circuit — the "Skipping holmes status and toolsets
+    # synchronization" line at startup — does not cover this path: it only
+    # skips the startup sync, and the per-change one runs regardless.
+    #
+    # Without this, every flip logged a traceback instead: 26 of them in one
+    # pod's 4d22h, driven by the transient Grafana 502s that flap
+    # grafana/tempo. The chart exposes no value for it, so it goes here.
+    # `mini-platform` is the Minikube profile, the kube context and the node
+    # name.
     value: mini-platform
   - name: OTEL_EXPORTER_OTLP_ENDPOINT
     # gRPC on 4317 is the OTel SDK's default protocol, and the http:// scheme is
