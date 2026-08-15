@@ -121,9 +121,17 @@ kv_put mini-platform/litellm-langfuse \
   LANGFUSE_HOST=http://langfuse-web.mini-platform.svc.cluster.local:3000
 # Langfuse headless init user: makes the auto-provisioned org/project visible in
 # the UI (org/project alone are API-only; a fresh signup joins no org).
+#
+# The address is the realm's platform-admin, deliberately, and it is the only
+# thing making SSO useful here. Langfuse links an OIDC identity to an existing
+# account by matching email; seeded under any other address, nothing matches, a
+# Keycloak login lands on a brand-new account belonging to no organization, and
+# the seeded org and its LiteLLM project stay invisible to the person who just
+# logged in. Matching it makes the SSO login *be* the owner account. Keep it in
+# step with the seed user in minikube/values/keycloak-values.yaml.
 kv_put mini-platform/langfuse-init-user \
-  LANGFUSE_INIT_USER_EMAIL=admin@mini-platform.test \
-  LANGFUSE_INIT_USER_NAME=Admin \
+  LANGFUSE_INIT_USER_EMAIL=platform-admin@mini-platform.test \
+  LANGFUSE_INIT_USER_NAME="Platform Admin" \
   LANGFUSE_INIT_USER_PASSWORD="$(rand_b64)"
 
 kv_put mini-platform/mlflow-auth \

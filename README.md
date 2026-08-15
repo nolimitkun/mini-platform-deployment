@@ -761,6 +761,15 @@ Local accounts are deliberately left enabled, so a broken realm import does not
 lock you out: Grafana, Argo CD, MinIO, Langfuse, MLflow and Keycloak's own
 `master` realm all still accept their Vault-managed password.
 
+Langfuse's is a special case worth knowing about, because the local account and
+the SSO identity are deliberately the *same* account. Its headless init seeds
+the owner of the Mini Platform org under the realm's `platform-admin` address,
+and `AUTH_KEYCLOAK_ALLOW_ACCOUNT_LINKING` matches on email — so the first
+Keycloak login attaches to that account instead of starting an empty one, and
+`LANGFUSE_INIT_USER_PASSWORD` is the form-login fallback into the same place.
+Seeding it under any other address is what makes an SSO login land in a Langfuse
+with no organization and no project visible.
+
 **Superset is the exception.** Flask-AppBuilder supports one `AUTH_TYPE` at a
 time, so switching it to `AUTH_OAUTH` retires the username/password form
 outright. The `admin` account still exists in the database and its password is
