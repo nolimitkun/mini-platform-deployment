@@ -254,10 +254,11 @@ KV mount `mini-platform/`. Each release's
 `vaultSecrets`; the `app-resources` template renders a `VaultStaticSecret` per
 name that VSO syncs into a like-named Kubernetes Secret. The two must agree: a
 secret a workload needs must be **both** written by the bootstrap script **and**
-listed in some release's resources file. Note the shared `litellm-langfuse`
-secret — Langfuse's
-headless init provisions the starter org/project from those keys and LiteLLM
-reads the same keys for tracing, so no browser setup is needed.
+listed in some release's resources file. `litellm-langfuse` is consumed by
+Langfuse's headless init and LiteLLM for the starter project. Holmes is isolated
+in a second project: `holmes-langfuse-project` is mounted only by the
+`minikube/gitops/langfuse-project` provisioning job, while Holmes itself mounts
+the derived exporter header from `holmes-langfuse`.
 
 ## Common conventions / recipes
 

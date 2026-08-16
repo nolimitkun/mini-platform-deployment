@@ -1,0 +1,68 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: langfuse-holmes-project
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: langfuse-holmes-project
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: provision
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "/provision/provision.js"]
+          env:
+            # The script is ConfigMap-mounted outside /app, so Node would not
+            # otherwise discover the image's pnpm-hoisted Prisma client.
+            - name: NODE_PATH
+              value: /app/node_modules
+            - name: DATABASE_HOST
+              value: {{ .Values.database.host | quote }}
+            - name: DATABASE_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: DATABASE_USERNAME
+              value: {{ .Values.database.username | quote }}
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.credentialsSecret }}
+                  key: {{ .Values.database.passwordKey }}
+            - name: SALT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.langfuseAppSecret.name }}
+                  key: {{ .Values.langfuseAppSecret.saltKey }}
+            - name: LANGFUSE_PROJECT_ID
+              value: {{ .Values.project.id | quote }}
+            - name: LANGFUSE_PROJECT_NAME
+              value: {{ .Values.project.name | quote }}
+            - name: LANGFUSE_ORGANIZATION_ID
+              value: {{ .Values.project.organizationId | quote }}
+            - name: LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.project.credentialsSecret }}
+                  key: LANGFUSE_PUBLIC_KEY
+            - name: LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.project.credentialsSecret }}
+                  key: LANGFUSE_SECRET_KEY
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          volumeMounts:
+            - name: provisioner
+              mountPath: /provision
+              readOnly: true
+      volumes:
+        - name: provisioner
+          configMap:
+            name: langfuse-holmes-project

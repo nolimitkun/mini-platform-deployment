@@ -57,7 +57,7 @@ HolmesGPT ──▶ LiteLLM                 (root-cause analysis; same gateway)
           ├─▶ Kubernetes API          (read-only ClusterRole)
           ├─▶ Prometheus              (direct)
           ├─▶ Grafana ──▶ Loki, Tempo (datasource proxy)
-          └─OTLP/HTTP─▶ Langfuse      (native investigation traces)
+          └─OTLP/HTTP─▶ Langfuse      (native traces; dedicated HolmesGPT project)
 LiteLLM /a2a/holmesgpt ──▶ Holmes A2A adapter ──▶ HolmesGPT /api/chat
 MLflow                                (experiment + artifact tracking)
 Qdrant                                (vector store for notebook/RAG examples)
@@ -413,12 +413,15 @@ mirror the LiteLLM master key, `mini-platform/kagent-grafana` and
 `mini-platform/holmes-grafana` the Grafana admin login — so on a
 `SEED_MISSING_ONLY=true` upgrade the script reads the existing values back out
 of Vault instead of generating new ones that the owning service would reject.
-Notably, it writes shared Langfuse project keys to
+Notably, it writes LiteLLM's Langfuse project keys to
 `mini-platform/litellm-langfuse`: Langfuse's headless init provisions the
 starter organization and project from those keys, and LiteLLM consumes the same
-Vault-managed secret for tracing. It also derives the Basic-auth header in
-`mini-platform/holmes-langfuse`, which lets Holmes send its own investigation
-traces directly to that project without mounting the raw project keys.
+Vault-managed secret for tracing. Holmes uses a separate `HolmesGPT` project:
+`mini-platform/holmes-langfuse-project` holds its project keys for the
+idempotent `mini-platform-langfuse-holmes-project` provisioning job, while
+`mini-platform/holmes-langfuse` contains only the derived Basic-auth header
+mounted by Holmes. Native investigation traces therefore never mix with the
+LiteLLM gateway project, and Holmes never mounts its raw Langfuse keys.
 
 VSO then creates the destination Kubernetes Secrets. Check synchronization:
 
@@ -450,6 +453,7 @@ shared `minikube/gitops/app-resources` chart rendered against a sibling
 | `mini-platform-spark-operator` | `charts/spark-operator` | `minikube/values/spark-operator-values.yaml` |
 | `mini-platform-keycloak` | `charts/keycloak` | `minikube/values/keycloak-values.yaml` |
 | `mini-platform-langfuse` | `charts/langfuse` | `minikube/values/langfuse-values.yaml` |
+| `mini-platform-langfuse-holmes-project` | `minikube/gitops/langfuse-project` | `minikube/gitops/langfuse-project/values.yaml` |
 | `mini-platform-mlflow` | `charts/mlflow` | `minikube/values/mlflow-values.yaml` |
 | `mini-platform-trino` | `charts/trino` | `minikube/values/trino-values.yaml` |
 | `mini-platform-vllm` | `charts/vllm-stack` | `minikube/values/vllm-values.yaml` |

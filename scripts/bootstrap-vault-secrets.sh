@@ -81,6 +81,10 @@ LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-$(reuse_or_generate mini-platform/li
 LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-lf_pk_$(rand_hex)}"
 LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-$(reuse_or_generate mini-platform/litellm-langfuse LANGFUSE_SECRET_KEY)}"
 LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-lf_sk_$(rand_hex)}"
+HOLMES_LANGFUSE_PUBLIC_KEY="${HOLMES_LANGFUSE_PUBLIC_KEY:-$(reuse_or_generate mini-platform/holmes-langfuse-project LANGFUSE_PUBLIC_KEY)}"
+HOLMES_LANGFUSE_PUBLIC_KEY="${HOLMES_LANGFUSE_PUBLIC_KEY:-lf_pk_$(rand_hex)}"
+HOLMES_LANGFUSE_SECRET_KEY="${HOLMES_LANGFUSE_SECRET_KEY:-$(reuse_or_generate mini-platform/holmes-langfuse-project LANGFUSE_SECRET_KEY)}"
+HOLMES_LANGFUSE_SECRET_KEY="${HOLMES_LANGFUSE_SECRET_KEY:-lf_sk_$(rand_hex)}"
 SUPERSET_DB_PASSWORD="${SUPERSET_DB_PASSWORD:-$(rand_hex)}"
 SUPERSET_REDIS_PASSWORD="${SUPERSET_REDIS_PASSWORD:-$(rand_hex)}"
 SUPERSET_ADMIN_PASSWORD="${SUPERSET_ADMIN_PASSWORD:-$(rand_b64)}"
@@ -122,11 +126,20 @@ kv_put mini-platform/litellm-langfuse \
   LANGFUSE_SECRET_KEY="$LANGFUSE_SECRET_KEY" \
   LANGFUSE_HOST=http://langfuse-web.mini-platform.svc.cluster.local:3000
 
+# Kept separate from the derived exporter header below: only the provisioning
+# job and Langfuse receive these raw project keys; the Holmes pod does not.
+kv_put mini-platform/holmes-langfuse-project \
+  LANGFUSE_PUBLIC_KEY="$HOLMES_LANGFUSE_PUBLIC_KEY" \
+  LANGFUSE_SECRET_KEY="$HOLMES_LANGFUSE_SECRET_KEY"
+
 # Holmes exports its native investigation spans straight to Langfuse. The OTel
 # exporter expects an already-encoded Basic-auth header, so expose only that
 # derived value to Holmes rather than mounting the Langfuse project keys there.
-LANGFUSE_BASIC_AUTH="$(printf '%s' "${LANGFUSE_PUBLIC_KEY}:${LANGFUSE_SECRET_KEY}" | base64 | tr -d '\n')"
-kv_put mini-platform/holmes-langfuse \
+LANGFUSE_BASIC_AUTH="$(printf '%s' "${HOLMES_LANGFUSE_PUBLIC_KEY}:${HOLMES_LANGFUSE_SECRET_KEY}" | base64 | tr -d '\n')"
+# This is a derived mirror, so rewrite it even during seed-missing upgrades. A
+# cluster upgrading from the shared LiteLLM project already has this path; the
+# new project keys above must replace that old header without rotating them.
+vault_cli kv put mini-platform/holmes-langfuse \
   OTEL_EXPORTER_OTLP_TRACES_HEADERS="Authorization=Basic ${LANGFUSE_BASIC_AUTH}"
 # Langfuse headless init user: makes the auto-provisioned org/project visible in
 # the UI (org/project alone are API-only; a fresh signup joins no org).

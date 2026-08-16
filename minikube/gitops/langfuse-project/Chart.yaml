@@ -1,0 +1,6 @@
+apiVersion: v2
+name: langfuse-project
+description: Idempotently provisions the dedicated HolmesGPT Langfuse project
+type: application
+version: 0.1.0
+appVersion: "3.174.1"

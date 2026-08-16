@@ -8,6 +8,11 @@
 # Service `<release>-holmes`, and the ingress route in
 # minikube/values/holmes-resources.yaml points at `holmes-holmes`.
 
+# Marks the project-key cutover and forces existing Holmes pods to reload the
+# Vault-synced OTLP header during upgrades from the shared LiteLLM project.
+podAnnotations:
+  mini-platform.dev/langfuse-project: holmes
+
 # ==============================================================================
 # MODEL — DeepSeek, reached through the platform's LiteLLM gateway
 # ==============================================================================
