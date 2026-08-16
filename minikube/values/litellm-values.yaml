@@ -72,6 +72,10 @@ proxy_config:
     master_key: os.environ/PROXY_MASTER_KEY
     store_model_in_db: true
     store_prompts_in_spend_logs: true
+    # LiteLLM blocks private-address URLs by default. Allow only the internal
+    # adapter hostname required for HolmesGPT agent-card discovery and A2A.
+    user_url_allowed_hosts:
+      - holmes-a2a.mini-platform.svc.cluster.local
   litellm_settings:
     cache: true
     callbacks:
