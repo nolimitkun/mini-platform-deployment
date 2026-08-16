@@ -8,14 +8,30 @@
 # Service `<release>-holmes`, and the ingress route in
 # minikube/values/holmes-resources.yaml points at `holmes-holmes`.
 
+# Marks the project-key cutover and forces existing Holmes pods to reload the
+# Vault-synced OTLP header during upgrades from the shared LiteLLM project.
+podAnnotations:
+  mini-platform.dev/langfuse-project: holmes
+
+# Holmes wraps every shell tool in a virtual-memory limit. The x86 default of
+# 800 MB is too small for this image's Go-based kubectl binary to initialize,
+# even for tiny requests such as `kubectl cluster-info`. 1500 MB is verified in
+# the running container and remains comfortably below the pod ceiling.
+resources:
+  requests:
+    cpu: 100m
+    memory: 2Gi
+  limits:
+    memory: 3Gi
+
 # ==============================================================================
 # MODEL — DeepSeek, reached through the platform's LiteLLM gateway
 # ==============================================================================
 # Same arrangement as kagent: Holmes speaks the OpenAI protocol to LiteLLM
 # rather than to api.deepseek.com, so the DeepSeek key stays in one place
-# (litellm-values.yaml, from Vault) and every investigation's token spend shows
-# up in Langfuse and in LiteLLM's Prometheus metrics next to the rest of the
-# platform's LLM traffic.
+# (litellm-values.yaml, from Vault). Holmes exports the complete investigation
+# trace directly to Langfuse below; the gateway is only the model endpoint for
+# this client.
 #
 # The chart rewrites `envRef:NAME` into the runtime `{{ env.NAME }}` templating
 # the model list file uses, so the key itself never appears here — it arrives as
@@ -33,17 +49,21 @@ modelList:
     # every request omitting `model` would go to OpenAI with the gateway's key
     # and 401. Naming the key anything else keeps this the only model loaded.
     api_key: envRef:LITELLM_API_KEY
+    # Keep LiteLLM logging enabled. Each model iteration is recorded in the
+    # LiteLLM Langfuse project and inherits Holmes's W3C trace ID.
 
 # Loaded onto the pod with envFrom, so each Secret's keys are consumed verbatim
-# as env vars. All three are Vault-managed; see holmes-resources.yaml.
+# as env vars. All four are Vault-managed; see holmes-resources.yaml.
 #   holmes-litellm  LITELLM_API_KEY               — the model list entry above
 #   holmes-grafana  GRAFANA_USERNAME/PASSWORD     — the Loki and Tempo toolsets
 #   holmes-api      HOLMES_API_KEY,
 #                   HOLMES_APPROVAL_SIGNING_KEY   — the server's own auth
+#   holmes-langfuse OTEL_EXPORTER_OTLP_TRACES_HEADERS — direct trace auth
 extraEnvVarsSecrets:
   - holmes-litellm
   - holmes-grafana
   - holmes-api
+  - holmes-langfuse
 
 # ==============================================================================
 # TOOLSETS — what Holmes is allowed to look at
@@ -142,17 +162,19 @@ toolsets:
 # ==============================================================================
 # TELEMETRY AND IDENTITY
 # ==============================================================================
-# Traces and metrics over OTLP to the Alloy gateway, matching LiteLLM and
-# kagent — one endpoint for every producer, and alloy-values.yaml alone decides
-# that spans go to Tempo and metrics to Prometheus. Setting the endpoint is what
-# turns instrumentation on; Holmes auto-detects it at startup.
+# Holmes 0.38.2 does not honor the standard signal-specific trace variables.
+# It reads OTEL_EXPORTER_OTLP_ENDPOINT/HEADERS for traces and
+# OTEL_EXPORTER_OTLP_METRICS_ENDPOINT for the metrics override. Investigation
+# spans therefore go directly to Langfuse while metrics continue through Alloy.
 #
 # Both signals are emitted per investigation rather than exposed for scraping,
 # so an idle Holmes publishes no series and no spans at all. That is not a gap:
-# `{job="holmes"}` and a `holmes` service in Tempo only appear once someone has
-# asked it something. Its own /metrics sits behind HOLMES_API_KEY, which is why
-# prometheus-values.yaml carries no holmes job.
+# `{job="holmes"}` in Prometheus and traces in Langfuse only appear once someone
+# has asked it something. Its own /metrics sits behind HOLMES_API_KEY, which is
+# why prometheus-values.yaml carries no holmes job.
 additionalEnvVars:
+  - name: TOOL_MEMORY_LIMIT_MB
+    value: "1500"
   - name: CLUSTER_NAME
     # Required, despite this cluster having no Robusta account to sync to.
     # holmes_sync_toolsets_status() raises outright when it cannot resolve a
@@ -170,16 +192,24 @@ additionalEnvVars:
     # name.
     value: mini-platform
   - name: OTEL_EXPORTER_OTLP_ENDPOINT
-    # gRPC on 4317 is the OTel SDK's default protocol, and the http:// scheme is
-    # how it is told the connection is plaintext.
-    value: http://alloy.mini-platform.svc.cluster.local:4317
+    # Holmes appends /v1/traces to this base URL.
+    value: http://langfuse-web.mini-platform.svc.cluster.local:3000/api/public/otel
+  - name: OTEL_EXPORTER_OTLP_PROTOCOL
+    value: http/protobuf
+  - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+    # Holmes uses this value verbatim, so include the signal path.
+    value: http://alloy.mini-platform.svc.cluster.local:4318/v1/metrics
+  - name: HOLMES_LANGFUSE_ATTRIBUTES
+    # Adds Langfuse's trace input/output, observation content, user/session,
+    # tags, and investigation metadata attributes to Holmes' native spans.
+    value: "true"
   - name: OTEL_SERVICE_NAME
-    # Must equal the Loki `app` label on this pod's logs, or Tempo's
-    # tracesToLogsV2 jump lands on nothing. The chart labels its pod `app:
-    # holmes` and never sets app.kubernetes.io/instance, which is the label
-    # alloy-values.yaml reads first — see the fallback rule it keeps for
-    # exactly this case.
+    # Stable service identity on Holmes' native Langfuse spans and OTLP metrics.
     value: holmes
+  - name: PYTHONPATH
+    # Python loads sitecustomize.py automatically. The mounted middleware
+    # extracts an incoming traceparent before Holmes starts its investigation.
+    value: /etc/holmes/otel-context:.:/app/holmes
 
 # ==============================================================================
 # WRITABLE STATE
@@ -199,9 +229,15 @@ additionalEnvVars:
 additionalVolumes:
   - name: holmes-state
     emptyDir: {}
+  - name: otel-context
+    configMap:
+      name: holmes-otel-context
 additionalVolumeMounts:
   - name: holmes-state
     mountPath: /root/.holmes
+  - name: otel-context
+    mountPath: /etc/holmes/otel-context
+    readOnly: true
 
 # Usage reporting to Robusta's servers. The chart turns this on whenever
 # ROBUSTA_UI_DOMAIN is unset, which on a standalone install is always.

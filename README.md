@@ -56,7 +56,9 @@ kagent ──▶ LiteLLM                    (agents; DeepSeek through the gatewa
 HolmesGPT ──▶ LiteLLM                 (root-cause analysis; same gateway)
           ├─▶ Kubernetes API          (read-only ClusterRole)
           ├─▶ Prometheus              (direct)
-          └─▶ Grafana ──▶ Loki, Tempo (datasource proxy)
+          ├─▶ Grafana ──▶ Loki, Tempo (datasource proxy)
+          └─OTLP/HTTP─▶ Langfuse      (native traces; dedicated HolmesGPT project)
+LiteLLM /a2a/holmesgpt ──▶ Holmes A2A adapter ──▶ HolmesGPT /api/chat
 MLflow                                (experiment + artifact tracking)
 Qdrant                                (vector store for notebook/RAG examples)
 Spark Operator ──▶ Spark batch jobs
@@ -411,11 +413,15 @@ mirror the LiteLLM master key, `mini-platform/kagent-grafana` and
 `mini-platform/holmes-grafana` the Grafana admin login — so on a
 `SEED_MISSING_ONLY=true` upgrade the script reads the existing values back out
 of Vault instead of generating new ones that the owning service would reject.
-Notably, it writes shared Langfuse
-project keys to `mini-platform/litellm-langfuse`: Langfuse's headless init
-provisions the starter organization and project from those keys, and LiteLLM
-consumes the same Vault-managed secret for tracing — no browser setup is needed
-before LiteLLM is ready.
+Notably, it writes LiteLLM's Langfuse project keys to
+`mini-platform/litellm-langfuse`: Langfuse's headless init provisions the
+starter organization and project from those keys, and LiteLLM consumes the same
+Vault-managed secret for tracing. Holmes uses a separate `HolmesGPT` project:
+`mini-platform/holmes-langfuse-project` holds its project keys for the
+idempotent `mini-platform-langfuse-holmes-project` provisioning job, while
+`mini-platform/holmes-langfuse` contains only the derived Basic-auth header
+mounted by Holmes. Native investigation traces therefore never mix with the
+LiteLLM gateway project, and Holmes never mounts its raw Langfuse keys.
 
 VSO then creates the destination Kubernetes Secrets. Check synchronization:
 
@@ -447,6 +453,7 @@ shared `minikube/gitops/app-resources` chart rendered against a sibling
 | `mini-platform-spark-operator` | `charts/spark-operator` | `minikube/values/spark-operator-values.yaml` |
 | `mini-platform-keycloak` | `charts/keycloak` | `minikube/values/keycloak-values.yaml` |
 | `mini-platform-langfuse` | `charts/langfuse` | `minikube/values/langfuse-values.yaml` |
+| `mini-platform-langfuse-holmes-project` | `minikube/gitops/langfuse-project` | `minikube/gitops/langfuse-project/values.yaml` |
 | `mini-platform-mlflow` | `charts/mlflow` | `minikube/values/mlflow-values.yaml` |
 | `mini-platform-trino` | `charts/trino` | `minikube/values/trino-values.yaml` |
 | `mini-platform-vllm` | `charts/vllm-stack` | `minikube/values/vllm-values.yaml` |
@@ -464,6 +471,7 @@ shared `minikube/gitops/app-resources` chart rendered against a sibling
 | `mini-platform-kagent-crds` | `charts/kagent-crds` | `minikube/values/kagent-crds-values.yaml` |
 | `mini-platform-kagent` | `charts/kagent` | `minikube/values/kagent-values.yaml` |
 | `mini-platform-holmes` | `charts/holmes` | `minikube/values/holmes-values.yaml` |
+| `mini-platform-holmes-a2a` | `minikube/gitops/holmes-a2a` | `minikube/gitops/holmes-a2a/values.yaml` |
 | `mini-platform-oauth2-proxy` | `charts/oauth2-proxy` | `minikube/values/oauth2-proxy-values.yaml` |
 
 † **llm-d serving path** (disabled by default): an alternative to the
@@ -894,9 +902,42 @@ the Prometheus URL actually resolved:
 curl -sS http://holmes.test/api/info -H "X-API-Key: $HOLMES_API_KEY" | jq
 ```
 
+Holmes is also registered in LiteLLM's A2A agent gateway as `holmesgpt`.
+LiteLLM authenticates the caller with its normal API key, then the internal
+adapter translates the A2A `message/send` request into Holmes' `/api/chat`
+contract and authenticates that hop with `holmes-api` from Vault:
+
+```bash
+export LITELLM_API_KEY="$(kubectl -n "$NS" get secret litellm-master-key \
+  -o jsonpath='{.data.PROXY_MASTER_KEY}' | base64 -d)"
+
+curl -sS http://litellm.test/v1/agents \
+  -H "Authorization: Bearer $LITELLM_API_KEY" | jq
+
+curl -sS http://litellm.test/a2a/holmesgpt \
+  -H "Authorization: Bearer $LITELLM_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "investigation-1",
+    "method": "message/send",
+    "params": {
+      "message": {
+        "kind": "message",
+        "role": "user",
+        "messageId": "question-1",
+        "parts": [{"kind": "text", "text": "Which pods are unhealthy, and why?"}]
+      }
+    }
+  }' | jq -r '.result.parts[0].text'
+```
+
 Investigations are slow (tens of seconds to minutes) and cost tokens on every
-turn; they show up in Langfuse like any other LiteLLM traffic, and Holmes' own
-spans go to Tempo under the service name `holmes`.
+turn. Holmes sends one native investigation trace directly to Langfuse over
+OTLP/HTTP, including its LLM turns, reasoning, tool calls and results, initiating
+user/session, and final answer. Its model requests still route through LiteLLM,
+but carry `no-log: true` so the gateway does not create duplicate Langfuse
+traces.
 
 **Observability.** All three signals are read through Grafana, which ships
 provisioned `prometheus`, `loki` and `tempo` data sources with fixed uids so

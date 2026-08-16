@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: open-webui-holmes-pipe
+data:
+  holmesgpt.py: |
+{{ .Files.Get "files/holmesgpt.py" | indent 4 }}
+  install.py: |
+{{ .Files.Get "files/install.py" | indent 4 }}

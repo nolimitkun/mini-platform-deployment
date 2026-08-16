@@ -35,6 +35,10 @@ authProxy:
 # authenticates the request itself.
 routes: []
 
+# Optional application-owned ConfigMaps. This is used for small runtime
+# adapters that must roll and prune with the consuming Argo CD application.
+configMaps: []
+
 # ==============================================================================
 # VAULT
 # ==============================================================================

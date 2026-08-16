@@ -104,8 +104,13 @@ hostnames), MLflow (experiments), Qdrant
 MinIO (S3 object store), all reconciled by Argo CD.
 
 **Two agentic-AI consumers sit on top of the stack, both running their model
-through LiteLLM** so their spend lands in Langfuse with everything else: kagent
-(chat UI, agents, Grafana MCP) and HolmesGPT (an investigation API, no UI).
+through LiteLLM**: kagent (chat UI, agents, Grafana MCP) and HolmesGPT (an
+investigation API, no UI). kagent's model calls use LiteLLM's global Langfuse
+callback. Holmes instead marks those gateway calls `no-log` and sends its richer
+native investigation trace directly to Langfuse over authenticated OTLP/HTTP.
+LiteLLM also publishes Holmes in its A2A agent registry: the first-party
+`minikube/gitops/holmes-a2a` adapter translates A2A `message/send` calls into
+Holmes' authenticated `/api/chat` contract.
 Holmes reads Kubernetes over a read-only ClusterRole and reaches Prometheus
 directly but Loki and Tempo through Grafana's datasource proxy — trading a
 credential (basic auth from `holmes-grafana`, the same compromise `kagent-grafana`
@@ -114,8 +119,7 @@ makes) for clickable links back into Grafana and for keeping
 the fixed datasource uids. Its overlay is also the reason `alloy-values.yaml`
 carries an `app`-label fallback: the holmes chart labels its pod `app: holmes`
 and never sets `app.kubernetes.io/instance`, which is what Alloy reads first,
-so without the fallback its logs would arrive with an empty `app` and Tempo's
-trace→logs jump (`OTEL_SERVICE_NAME: holmes`) would land on nothing.
+so without the fallback its logs would arrive with an empty `app` label.
 
 **Observability is three signals behind one Grafana.** Prometheus scrapes
 metrics; Grafana Alloy (a DaemonSet, Promtail's successor) tails pod logs
@@ -204,6 +208,7 @@ Each entry maps a `chartPath` (under `charts/` in the charts repo, or
 | `-2` | Keycloak, Langfuse, MLflow, Trino, vLLM |
 | `-1` → `0` | MinIO, Prometheus, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset |
 | `1` → `2` | LiteLLM, then Open WebUI, kagent, HolmesGPT and oauth2-proxy |
+| `3` | Holmes A2A adapter, after Holmes and its API-key mapping are healthy |
 
 All generated Applications use `automated` sync with `prune: true`,
 `selfHeal: true`, `CreateNamespace=true`, and `ServerSideApply=true`.
@@ -249,10 +254,11 @@ KV mount `mini-platform/`. Each release's
 `vaultSecrets`; the `app-resources` template renders a `VaultStaticSecret` per
 name that VSO syncs into a like-named Kubernetes Secret. The two must agree: a
 secret a workload needs must be **both** written by the bootstrap script **and**
-listed in some release's resources file. Note the shared `litellm-langfuse`
-secret — Langfuse's
-headless init provisions the starter org/project from those keys and LiteLLM
-reads the same keys for tracing, so no browser setup is needed.
+listed in some release's resources file. `litellm-langfuse` is consumed by
+Langfuse's headless init and LiteLLM for the starter project. Holmes is isolated
+in a second project: `holmes-langfuse-project` is mounted only by the
+`minikube/gitops/langfuse-project` provisioning job, while Holmes itself mounts
+the derived exporter header from `holmes-langfuse`.
 
 ## Common conventions / recipes
 

@@ -11,6 +11,12 @@ vaultSecrets:
   # traces here. Declared on this side because Langfuse's init job is what
   # provisions the keys, and because it syncs three waves ahead of LiteLLM.
   - litellm-langfuse
+  # Raw keys for the dedicated Holmes project. Only Langfuse's provisioning
+  # job mounts this Secret; Holmes receives a derived Basic-auth header.
+  - holmes-langfuse-project
+  # Raw keys for the dedicated Open WebUI project. The provisioning job reads
+  # this copy; Open WebUI receives the same pair from its runtime Secret.
+  - open-webui-langfuse-project
 
 routes:
   - name: langfuse

@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: open-webui-holmes-pipe
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: open-webui-holmes-pipe
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: provision
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "/provision/install.py"]
+          env:
+            - name: OPEN_WEBUI_DATABASE
+              value: {{ .Values.openWebUI.databasePath | quote }}
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          volumeMounts:
+            - name: provisioner
+              mountPath: /provision
+              readOnly: true
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: provisioner
+          configMap:
+            name: open-webui-holmes-pipe
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.openWebUI.databasePvc }}

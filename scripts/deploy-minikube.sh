@@ -182,6 +182,47 @@ install_keycloak_dns_rewrite() {
     warn "CoreDNS did not report ready after the keycloak.test rewrite"
 }
 
+# Requesting an explicit Argo CD sync reruns hooks even when the rendered
+# manifests are unchanged. Track a new operation completion rather than the
+# Application's aggregate health, which can already be healthy before the hook
+# starts.
+sync_argocd_application() {
+  local app="$1"
+  local previous_finished phase finished
+
+  if ! kubectl -n "$ARGO_NS" get application "$app" >/dev/null 2>&1; then
+    warn "Argo CD Application $app not found; cannot rerun its provisioning hooks"
+    return 1
+  fi
+
+  previous_finished="$(kubectl -n "$ARGO_NS" get application "$app" \
+    -o jsonpath='{.status.operationState.finishedAt}' 2>/dev/null || true)"
+
+  # An explicit sync runs Sync hooks even when the Application is already
+  # Synced. Secret data is external to the rendered manifests, so changing a
+  # VaultStaticSecret alone would otherwise never rerun a provisioning Job.
+  kubectl -n "$ARGO_NS" patch application "$app" --type=merge \
+    -p '{"operation":{"sync":{"prune":true}}}' >/dev/null
+
+  for _ in {1..120}; do
+    phase="$(kubectl -n "$ARGO_NS" get application "$app" \
+      -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)"
+    finished="$(kubectl -n "$ARGO_NS" get application "$app" \
+      -o jsonpath='{.status.operationState.finishedAt}' 2>/dev/null || true)"
+    if [[ -n "$finished" && "$finished" != "$previous_finished" ]]; then
+      if [[ "$phase" == Succeeded ]]; then
+        return 0
+      fi
+      warn "Argo CD sync for $app finished with phase ${phase:-unknown}"
+      return 1
+    fi
+    sleep 5
+  done
+
+  warn "timed out waiting for Argo CD sync of $app"
+  return 1
+}
+
 # Rotating the OIDC client secrets is a two-sided change, and neither side
 # notices on its own: Keycloak keeps whatever the last realm import wrote, while
 # the components read their secret from an environment variable fixed at pod
@@ -227,6 +268,20 @@ reconcile_after_secret_rotation() {
   else
     warn "$job not found; skipping realm re-import (Keycloak may not be deployed yet)"
   fi
+
+  # Dedicated Langfuse project credentials are stored in Vault, while the API
+  # keys accepted by Langfuse are written by Argo CD Sync-hook Jobs. Rotating
+  # only the Secrets leaves Langfuse knowing the old keys. Explicitly rerun the
+  # project provisioners after VSO has synchronized the new values and before
+  # any producer restarts with them.
+  local project_app
+  for project_app in \
+    mini-platform-langfuse-holmes-project \
+    mini-platform-langfuse-open-webui-project; do
+    log "Reprovisioning Langfuse credentials through $project_app"
+    sync_argocd_application "$project_app" ||
+      fail "could not reprovision Langfuse credentials through $project_app"
+  done
 
   # Every workload that reads a rotated Secret from its pod spec -- a key of
   # keycloak-sso, or one of the mirrors. Argo CD will not restart these itself:

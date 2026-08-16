@@ -1,0 +1,32 @@
+image:
+  repository: langfuse/langfuse
+  tag: 3.174.1
+  pullPolicy: IfNotPresent
+
+resourceName: langfuse-open-webui-project
+
+project:
+  id: open-webui
+  name: Open WebUI
+  organizationId: mini-platform
+  credentialsSecret: open-webui-langfuse-project
+  apiKeyNote: Provisioned Open WebUI API Key
+
+database:
+  host: langfuse-postgresql
+  name: postgres_langfuse
+  username: postgres
+  credentialsSecret: langfuse-postgresql
+  passwordKey: password
+
+langfuseAppSecret:
+  name: langfuse-app-secrets
+  saltKey: salt
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
