@@ -201,8 +201,8 @@ Each entry maps a `chartPath` (under `charts/` in the charts repo, or
 | `-5` | Argo CD |
 | `-4` | Vault, VSO, kagent CRDs |
 | `-3` | Stateful deps (postgres, redis, qdrant, spark-operator) |
-| `-2` | Keycloak, MinIO, Langfuse, MLflow, Trino, vLLM |
-| `-1` → `0` | Prometheus, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset |
+| `-2` | Keycloak, Langfuse, MLflow, Trino, vLLM |
+| `-1` → `0` | MinIO, Prometheus, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset |
 | `1` → `2` | LiteLLM, then Open WebUI, kagent, HolmesGPT and oauth2-proxy |
 
 All generated Applications use `automated` sync with `prune: true`,
@@ -214,8 +214,21 @@ until the previous one is healthy, so a secret first needed in wave `-1` but
 declared on an application in wave `1` deadlocks the rollout. Two placements
 follow from that rule rather than from ownership and are commented as such:
 `litellm-master-key` lives with Prometheus (which mounts it as a scrape
-credential in wave `-1`), and MinIO sits in wave `-2` rather than `-3` because
-its console login needs `keycloak-sso`.
+credential in wave `-1`), and MinIO sits well after the stateful tier it would
+otherwise belong to because its console login needs `keycloak-sso`.
+
+MinIO shows the same rule applying to a **running** dependency rather than a
+Secret, which is why it is a wave later still, at `-1`. It resolves its OIDC
+discovery URL once during startup and, if that fails, serves on without a
+provider — the console falls back to username/password with no SSO button and
+never recovers without a restart. Sharing Keycloak's wave was enough to lose
+that race every time, since MinIO is serving within seconds and Keycloak has a
+database and a realm import ahead of it. Nothing depends on MinIO (MLflow and
+Langfuse each ship their own MinIO subchart), so the later wave costs nothing.
+The wave only orders the initial rollout, though; a container that restarts
+later can lose the lookup to any transient, which is why the deploy script ends
+with `ensure_minio_sso` — it asks the console which login strategy it is
+offering and restarts MinIO if the answer is `form`.
 
 The rule goes one step further for **PreSync hooks**, which Argo CD runs before
 every regular resource in the same Application — sync waves order the sync

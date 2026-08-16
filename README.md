@@ -339,9 +339,11 @@ Sync waves order the rollout: Argo CD and Vault/VSO come first, then the
 stateful dependencies, then the application tier, and finally LiteLLM, Open
 WebUI and the agents. Each release brings its own ingress route and
 `VaultStaticSecret` mappings with it, so a secret is declared on the
-earliest-syncing application that consumes it. Early reconciliations may show
-missing-secret failures until Vault is initialized in step 4 and those
-`VaultStaticSecret` resources synchronize.
+earliest-syncing application that consumes it — and, where a release needs a
+dependency *running* rather than just a Secret, a wave later still (MinIO reads
+its OIDC configuration once at startup, so it syncs after Keycloak). Early
+reconciliations may show missing-secret failures until Vault is initialized in
+step 4 and those `VaultStaticSecret` resources synchronize.
 
 #### 4. Initialize Vault and seed secrets
 
@@ -370,8 +372,8 @@ export VAULT_TOKEN='<initial-root-token-from-init-output>'
 # tokenizer (Qwen/Qwen3.6-27B). Accept any gated-model licenses at
 # huggingface.co with this account first, or the vLLM pull will 401.
 export HF_TOKEN='hf_xxxxxxxxxxxxxxxxxxxx'
-# DeepSeek key for the hosted `deepseek-chat` model LiteLLM serves. kagent's
-# agents run on it; nothing else on the platform requires it.
+# DeepSeek key for the hosted `deepseek-v4-pro` model LiteLLM serves. kagent's
+# agents and HolmesGPT run on it; nothing else on the platform requires it.
 export DEEPSEEK_API_KEY='sk-xxxxxxxxxxxxxxxxxxxx'
 
 vault secrets enable -path=mini-platform kv-v2
@@ -707,7 +709,12 @@ component's `minikube/values/<name>-resources.yaml`):
   The browser UI is protected; `/api` is not, because the MLflow SDK and CLI
   send basic-auth credentials and cannot follow an interactive SSO redirect.
   MLflow authenticates those routes itself with the account in
-  `mini-platform/mlflow-auth`.
+  `mini-platform/mlflow-auth`. That account guards the UI too, so MLflow is the
+  one service that asks twice: Keycloak first, then MLflow's own
+  `WWW-Authenticate: Basic` prompt. Both are deliberate — forward-auth cannot
+  cover `/api`, and MLflow has no way to trust an identity the proxy already
+  established — so the browser prompt is answered with the `mlflow-auth`
+  credentials, not a Keycloak account.
 - **kagent** — ships no authentication at all.
 - **LiteLLM** — its built-in SSO is license-gated. Only `/ui` is protected;
   `/v1` stays open because LiteLLM authenticates API traffic itself with the
@@ -725,11 +732,43 @@ behind Keycloak in `protectedPaths`, and carves back out any path whose clients
 authenticate themselves with `openPaths`. nginx matches the longest prefix, so
 the exemption wins over the broader protected path.
 
+### The MinIO console loses its SSO button after a cluster restart
+
+MinIO resolves its OIDC discovery URL once, during startup. If that lookup fails
+it logs `Unable to initialize OpenID` and carries on without a provider: the
+console offers username/password and no Keycloak button, and it never retries.
+Keycloak not being up yet is only one way to get there — a CoreDNS rollout or a
+recreated pod sandbox does it just as well, and the console stays that way until
+MinIO restarts. `deploy-minikube.sh` checks for this and restarts MinIO itself
+at the end of a bring-up, but nothing reconciles it afterwards, so a
+`minikube stop` / `minikube start` can leave the console without its SSO button.
+Check and fix with:
+
+```bash
+kubectl -n mini-platform exec deploy/minio -- curl -s http://localhost:9001/api/v1/login
+```
+
+`"loginStrategy":"redirect"` means SSO is wired; `"form"` means it is not, and a
+restart once the platform is up recovers it:
+
+```bash
+kubectl -n mini-platform rollout restart deploy/minio
+```
+
 ### Break-glass logins
 
 Local accounts are deliberately left enabled, so a broken realm import does not
 lock you out: Grafana, Argo CD, MinIO, Langfuse, MLflow and Keycloak's own
 `master` realm all still accept their Vault-managed password.
+
+Langfuse's is a special case worth knowing about, because the local account and
+the SSO identity are deliberately the *same* account. Its headless init seeds
+the owner of the Mini Platform org under the realm's `platform-admin` address,
+and `AUTH_KEYCLOAK_ALLOW_ACCOUNT_LINKING` matches on email — so the first
+Keycloak login attaches to that account instead of starting an empty one, and
+`LANGFUSE_INIT_USER_PASSWORD` is the form-login fallback into the same place.
+Seeding it under any other address is what makes an SSO login land in a Langfuse
+with no organization and no project visible.
 
 **Superset is the exception.** Flask-AppBuilder supports one `AUTH_TYPE` at a
 time, so switching it to `AUTH_OAUTH` retires the username/password form
@@ -809,7 +848,7 @@ configure TLS and authentication before exposing it.
 
 **kagent.** The chat UI is at `http://kagent.test`. Four agents ship enabled —
 `k8s-agent`, `helm-agent`, `promql-agent`, and `observability-agent` — all
-running on `deepseek-chat` through LiteLLM, so their turns appear in Langfuse
+running on `deepseek-v4-pro` through LiteLLM, so their turns appear in Langfuse
 alongside every other LLM call. The agents that target components this platform
 does not run (Istio, kgateway, Cilium, Argo Rollouts) are disabled in the
 overlay. `observability-agent` is the one wired to live telemetry: it reaches
@@ -828,7 +867,7 @@ Prometheus connection of its own. Ask `observability-agent` when you want a
 query actually executed.
 
 **HolmesGPT.** An investigation API at `http://holmes.test`, on the same
-`deepseek-chat` model through LiteLLM. Where kagent is a chat UI you drive, this
+`deepseek-v4-pro` model through LiteLLM. Where kagent is a chat UI you drive, this
 is one HTTP call that reads the cluster and its telemetry and answers with what
 it found and how it got there. Its toolsets cover the Kubernetes API (over a
 read-only ClusterRole with no access to Secrets), Prometheus directly, and Loki

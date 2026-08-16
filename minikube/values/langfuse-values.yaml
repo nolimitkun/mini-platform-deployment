@@ -19,26 +19,40 @@ langfuse:
   additionalEnv:
     # ---- Keycloak SSO ------------------------------------------------------
     # AUTH_DISABLE_USERNAME_PASSWORD is left unset, so the headless init user
-    # below remains a working local login. Langfuse registers a generic OIDC
-    # provider under the fixed id `custom`, which is what fixes the callback
-    # path to /api/auth/callback/custom on the realm client.
-    - name: AUTH_CUSTOM_NAME
+    # below remains a working local login.
+    #
+    # Langfuse's *named* Keycloak provider, not the generic AUTH_CUSTOM_* one,
+    # and the difference is not cosmetic. Keycloak's token response carries two
+    # non-standard fields, `refresh_expires_in` and `not-before-policy`, which
+    # next-auth hands straight to the Prisma adapter's linkAccount() — and the
+    # Account model has no such columns, so the insert dies with
+    # PrismaClientValidationError and the browser lands back on
+    # /auth/sign-in?error=Callback. Langfuse strips both, but only on the branch
+    # guarded by `provider.endsWith("keycloak")`; registered as `custom` the
+    # provider id is `custom` and the fix never fires. The id also fixes the
+    # callback path to /api/auth/callback/keycloak on the realm client.
+    - name: AUTH_KEYCLOAK_NAME
       value: Keycloak
-    - name: AUTH_CUSTOM_CLIENT_ID
+    - name: AUTH_KEYCLOAK_CLIENT_ID
       value: langfuse
-    - name: AUTH_CUSTOM_CLIENT_SECRET
+    - name: AUTH_KEYCLOAK_CLIENT_SECRET
       valueFrom:
         secretKeyRef:
           name: keycloak-sso
           key: LANGFUSE_CLIENT_SECRET
-    - name: AUTH_CUSTOM_ISSUER
+    - name: AUTH_KEYCLOAK_ISSUER
       value: http://keycloak.test/realms/mini-platform
-    - name: AUTH_CUSTOM_SCOPE
+    - name: AUTH_KEYCLOAK_SCOPE
       value: openid email profile
-    # Lets the Keycloak identity attach to the init user's existing account
-    # when the email matches, instead of failing as a duplicate — which is what
-    # keeps the seeded org and project visible after the first SSO login.
-    - name: AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING
+    # Attach the Keycloak identity to an existing Langfuse account with the same
+    # email rather than failing the login as a duplicate. This is what carries
+    # the seeded org and project across to the SSO login: the init user below is
+    # seeded under the realm's platform-admin address
+    # (scripts/bootstrap-vault-secrets.sh), so the first Keycloak login links to
+    # the account that already owns the Mini Platform org and its LiteLLM
+    # project rather than starting an empty one. Change either address and they
+    # stop matching — the login still succeeds, it just lands nowhere useful.
+    - name: AUTH_KEYCLOAK_ALLOW_ACCOUNT_LINKING
       value: "true"
     # ---- Project bootstrap -------------------------------------------------
     - name: LANGFUSE_INIT_ORG_ID

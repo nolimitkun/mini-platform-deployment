@@ -304,9 +304,11 @@ keycloakConfigCli:
           rootUrl: http://langfuse.test
           baseUrl: http://langfuse.test
           # NextAuth builds the callback from the provider id, and Langfuse
-          # registers its generic OIDC provider under the id `custom`.
+          # registers its named Keycloak provider under the id `keycloak` —
+          # which is also what makes it strip the two non-standard fields
+          # Keycloak returns with the token. See langfuse-values.yaml.
           redirectUris:
-            - http://langfuse.test/api/auth/callback/custom
+            - http://langfuse.test/api/auth/callback/keycloak
           webOrigins:
             - +
           attributes:

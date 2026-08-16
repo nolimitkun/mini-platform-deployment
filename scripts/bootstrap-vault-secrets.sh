@@ -121,10 +121,26 @@ kv_put mini-platform/litellm-langfuse \
   LANGFUSE_HOST=http://langfuse-web.mini-platform.svc.cluster.local:3000
 # Langfuse headless init user: makes the auto-provisioned org/project visible in
 # the UI (org/project alone are API-only; a fresh signup joins no org).
-kv_put mini-platform/langfuse-init-user \
-  LANGFUSE_INIT_USER_EMAIL=admin@mini-platform.test \
-  LANGFUSE_INIT_USER_NAME=Admin \
-  LANGFUSE_INIT_USER_PASSWORD="$(rand_b64)"
+#
+# The address is the realm's platform-admin, deliberately, and it is the only
+# thing making SSO useful here. Langfuse links an OIDC identity to an existing
+# account by matching email; seeded under any other address, nothing matches, a
+# Keycloak login lands on a brand-new account belonging to no organization, and
+# the seeded org and its LiteLLM project stay invisible to the person who just
+# logged in. Matching it makes the SSO login *be* the owner account. Keep it in
+# step with the seed user in minikube/values/keycloak-values.yaml.
+#
+# Written directly rather than through kv_put, because a seed-missing pass is
+# exactly the case that has to change: an existing cluster already holds this
+# path under the old admin@ address, kv_put would keep it, and the mismatch
+# above would survive the upgrade that is meant to fix it. Only the password is
+# a credential, so carry that forward and rewrite the rest.
+LANGFUSE_INIT_USER_PASSWORD="${LANGFUSE_INIT_USER_PASSWORD:-$(reuse_or_generate mini-platform/langfuse-init-user LANGFUSE_INIT_USER_PASSWORD)}"
+LANGFUSE_INIT_USER_PASSWORD="${LANGFUSE_INIT_USER_PASSWORD:-$(rand_b64)}"
+vault_cli kv put mini-platform/langfuse-init-user \
+  LANGFUSE_INIT_USER_EMAIL=platform-admin@mini-platform.test \
+  LANGFUSE_INIT_USER_NAME="Platform Admin" \
+  LANGFUSE_INIT_USER_PASSWORD="$LANGFUSE_INIT_USER_PASSWORD"
 
 kv_put mini-platform/mlflow-auth \
   admin-user=admin \

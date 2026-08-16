@@ -436,11 +436,17 @@ ensure_litellm_schema() {
     'select to_regclass('"'"'public."LiteLLM_UserTable"'"'"') is not null' \
     2>/dev/null | tr -d '[:space:]' || true)"
   if [[ "$exists" == t ]]; then
-    log "LiteLLM schema already present"
-    return 0
+    # Present is not the same as current. An image bump moves the schema on
+    # without anything re-running the migration, and the drift surfaces far
+    # from its cause: the admin UI's own /login mints a key, that insert hits a
+    # column the database does not have, and the browser gets a 500 from a
+    # proxy whose pods are all Ready and whose /v1 traffic is fine. So the
+    # migration runs either way -- `prisma migrate deploy` is idempotent and a
+    # no-op against an up-to-date database.
+    log "LiteLLM schema present; reconciling any pending migrations"
+  else
+    warn "LiteLLM schema missing; applying Prisma migration (PreSync hook did not)"
   fi
-
-  warn "LiteLLM schema missing; applying Prisma migration (PreSync hook did not)"
   deadline=$((SECONDS + 300))
   pod=""
   while [[ "$SECONDS" -lt "$deadline" ]]; do
@@ -461,12 +467,108 @@ ensure_litellm_schema() {
 
   if kubectl -n "$NS" exec "$pod" -- sh -c \
       'DISABLE_SCHEMA_UPDATE=false python litellm/proxy/prisma_migration.py'; then
-    log "LiteLLM schema migration applied; restarting deployment"
-    kubectl -n "$NS" rollout restart deployment/litellm >/dev/null
-    kubectl -n "$NS" rollout status deployment/litellm --timeout=180s || true
+    if [[ "$exists" == t ]]; then
+      # Only a drift reconcile. The running pod already expects the columns the
+      # migration just added -- that mismatch is what made it fail -- so there
+      # is nothing to restart it for.
+      log "LiteLLM migrations reconciled"
+    else
+      log "LiteLLM schema migration applied; restarting deployment"
+      kubectl -n "$NS" rollout restart deployment/litellm >/dev/null
+      kubectl -n "$NS" rollout status deployment/litellm --timeout=180s || true
+    fi
   else
     warn "LiteLLM Prisma migration failed; inspect 'kubectl -n $NS logs deploy/litellm'"
   fi
+}
+
+# MinIO resolves its OIDC discovery URL once, during IAM init at startup. If
+# that lookup fails it logs "Unable to initialize OpenID" and serves on without
+# a provider: the console offers username/password and no Keycloak button, and
+# it never retries. Any transient is enough -- Keycloak not up yet, the CoreDNS
+# rollout this script performs a few steps earlier, a pod sandbox being
+# recreated -- and the result outlives the transient, because only a restart
+# re-runs the lookup. Sync waves order the initial rollout but cannot help a
+# container that restarts later, so the bring-up ends by checking the console's
+# own view of itself and restarting MinIO if it came up blind.
+# The console's own view of how it authenticates. Answers "" if it never
+# replies, and never fails: the API refuses connections for a few seconds after
+# a restart, and under `set -o pipefail` returning that failure would take the
+# whole deploy down at the very last step, after every bit of real work.
+minio_login_strategy() {
+  local deadline out
+  deadline=$((SECONDS + 60))
+  while :; do
+    out="$(kubectl -n "$NS" exec deployment/minio -- \
+      curl -sf --max-time 10 http://localhost:9001/api/v1/login 2>/dev/null || true)"
+    out="$(printf '%s' "$out" | sed -n 's/.*"loginStrategy":"\([^"]*\)".*/\1/p')"
+    if [[ -n "$out" || "$SECONDS" -ge "$deadline" ]]; then
+      printf '%s' "$out"
+      return 0
+    fi
+    sleep 5
+  done
+}
+
+ensure_minio_sso() {
+  kubectl -n "$NS" get deployment minio >/dev/null 2>&1 || return 0
+  # Only meaningful when the overlay asked for SSO in the first place.
+  kubectl -n "$NS" get deployment minio \
+    -o jsonpath='{.spec.template.spec.containers[0].env[*].name}' 2>/dev/null |
+    grep -q MINIO_IDENTITY_OPENID_CONFIG_URL || return 0
+
+  log "Verifying MinIO console SSO"
+  local strategy
+
+  strategy="$(minio_login_strategy)"
+  if [[ "$strategy" == redirect ]]; then
+    log "MinIO console offers Keycloak SSO"
+    return 0
+  fi
+  if [[ -z "$strategy" ]]; then
+    warn "MinIO console did not answer; skipping SSO check"
+    return 0
+  fi
+
+  warn "MinIO console has no SSO button (loginStrategy=$strategy); restarting to retry OIDC discovery"
+  kubectl -n "$NS" rollout restart deployment/minio >/dev/null
+  kubectl -n "$NS" rollout status deployment/minio --timeout=300s >/dev/null ||
+    { warn "MinIO did not roll out; inspect 'kubectl -n $NS logs deploy/minio'"; return 0; }
+
+  strategy="$(minio_login_strategy)"
+  if [[ "$strategy" == redirect ]]; then
+    log "MinIO console offers Keycloak SSO"
+  else
+    warn "MinIO console still has no SSO button; inspect 'kubectl -n $NS logs deploy/minio' for 'Unable to initialize OpenID'"
+  fi
+}
+
+# Langfuse re-runs its headless init at startup, and the init user's email is
+# what links the Keycloak identity to the account owning the seeded org. A
+# seed-missing run can change that address in Vault, but langfuse-web resolved
+# it into its environment when the pod was created, so until it restarts the
+# SSO login keeps landing in an empty workspace -- the same secretKeyRef blind
+# spot reconcile_after_secret_rotation handles for the rotation path.
+#
+# Compares the running pod against the synced Secret rather than a hardcoded
+# address, so it stays right whichever side moves, and it is a no-op on the
+# runs where they already agree.
+ensure_langfuse_init_user() {
+  kubectl -n "$NS" get deployment langfuse-web >/dev/null 2>&1 || return 0
+
+  local desired running
+  desired="$(kubectl -n "$NS" get secret langfuse-init-user \
+    -o jsonpath='{.data.LANGFUSE_INIT_USER_EMAIL}' 2>/dev/null | base64 -d 2>/dev/null || true)"
+  running="$(kubectl -n "$NS" exec deployment/langfuse-web -- \
+    printenv LANGFUSE_INIT_USER_EMAIL 2>/dev/null || true)"
+  # Either side unreadable means there is nothing to compare, not a mismatch.
+  [[ -n "$desired" && -n "$running" ]] || return 0
+  [[ "$desired" != "$running" ]] || return 0
+
+  log "Langfuse init user is now $desired; restarting langfuse-web to re-run the headless init"
+  kubectl -n "$NS" rollout restart deployment/langfuse-web >/dev/null
+  kubectl -n "$NS" rollout status deployment/langfuse-web --timeout=300s >/dev/null ||
+    warn "langfuse-web did not roll out; inspect 'kubectl -n $NS logs deploy/langfuse-web'"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -935,6 +1037,8 @@ if [[ "$WAIT_FOR_WORKLOADS" == true ]]; then
 fi
 
 ensure_litellm_schema
+ensure_langfuse_init_user
+ensure_minio_sso
 
 log "Deployment bootstrap finished"
 kubectl -n "$ARGO_NS" get applications
