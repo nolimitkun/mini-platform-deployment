@@ -172,6 +172,32 @@ toolsets:
   robusta:
     enabled: false
 
+  # Several optional toolsets ship enabled in Holmes' upstream defaults. This
+  # cluster does not run these products (or their CLIs), so disable them
+  # explicitly instead of leaving ten permanently failed health checks in
+  # /api/info. Keep this list explicit because a chart upgrade can otherwise
+  # re-enable defaults that are unrelated to this platform.
+  openshift/core:
+    enabled: false
+  openshift/logs:
+    enabled: false
+  openshift/live-metrics:
+    enabled: false
+  openshift/security:
+    enabled: false
+  slab:
+    enabled: false
+  crossplane/core:
+    enabled: false
+  kubevela/core:
+    enabled: false
+  kubernetes/live-metrics:
+    enabled: false
+  notion:
+    enabled: false
+  opensearch/query_assist:
+    enabled: false
+
 # ==============================================================================
 # SERVER AUTHENTICATION
 # ==============================================================================
@@ -253,10 +279,11 @@ mcpAddons:
       secretName: holmes-github
       secretKey: token
     config:
-      # Clear the chart's broad default groups: GITHUB_TOOLS and
-      # GITHUB_TOOLSETS are additive in the server, so leaving those defaults
-      # would re-enable write-capable issue and pull-request tools.
-      toolsets: ""
+      # GitHub treats an absent/empty GITHUB_TOOLSETS as its broad default set,
+      # and GITHUB_TOOLS is additive. Keep only the read-only `context`
+      # toolset (get_me, also used for the PAT health check), then add the
+      # exact read-only investigation tools below.
+      toolsets: "context"
       tools: "get_me,get_file_contents,list_commits,get_commit,search_code,list_pull_requests,pull_request_read,list_workflows,list_workflow_runs,get_workflow_run,get_workflow_run_logs,get_job_logs"
     llmInstructions: |
       This GitHub connection is strictly read-only. Use it to inspect repository
