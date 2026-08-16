@@ -103,6 +103,7 @@ class Pipe:
         await self._status(emitter, "HolmesGPT is investigating the cluster")
 
         event_type = "message"
+        emitted_answer = False
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(self.url, json=payload, headers=headers) as response:
                 if response.status >= 400:
@@ -127,6 +128,12 @@ class Pipe:
                             if event == "ai_message":
                                 content = event_payload.get("content", "")
                                 if content:
+                                    emitted_answer = True
+                                    yield content
+                            elif event == "ai_answer_end" and not emitted_answer:
+                                content = event_payload.get("analysis", "")
+                                if content:
+                                    emitted_answer = True
                                     yield content
                             elif event == "start_tool_calling":
                                 tool = event_payload.get("tool_name", "cluster tool")
