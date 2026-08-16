@@ -4,6 +4,8 @@ set -euo pipefail
 : "${VAULT_ADDR:?Set VAULT_ADDR to the initialized Vault server address.}"
 : "${VAULT_TOKEN:?Set VAULT_TOKEN to a token allowed to write mini-platform/ secrets.}"
 HF_TOKEN="${HF_TOKEN:-}"
+HOLMES_GITHUB_TOKEN="${HOLMES_GITHUB_TOKEN:-}"
+HOLMES_ARGOCD_AUTH_TOKEN="${HOLMES_ARGOCD_AUTH_TOKEN:-}"
 
 # When true, only secret paths that do not already exist are written. This lets
 # upgrades seed newly introduced secrets without rotating credentials that
@@ -321,6 +323,20 @@ kv_put mini-platform/holmes-litellm LITELLM_API_KEY="$LITELLM_MASTER_KEY"
 kv_put mini-platform/holmes-grafana \
   GRAFANA_USERNAME="$GRAFANA_ADMIN_USER" \
   GRAFANA_PASSWORD="$GRAFANA_ADMIN_PASSWORD"
+
+# External, read-only credentials for Holmes' GitHub MCP and Argo CD toolsets.
+# Require each only when its Vault path will actually be written, matching the
+# HF/DeepSeek upgrade behavior above. Existing tokens survive seed-missing
+# upgrades; --rotate-secrets deliberately demands replacements.
+if [[ "$SEED_MISSING_ONLY" != true ]] || ! vault_cli kv get mini-platform/holmes-github >/dev/null 2>&1; then
+  : "${HOLMES_GITHUB_TOKEN:?Set HOLMES_GITHUB_TOKEN to a read-only GitHub PAT for Holmes MCP.}"
+fi
+kv_put mini-platform/holmes-github token="$HOLMES_GITHUB_TOKEN"
+
+if [[ "$SEED_MISSING_ONLY" != true ]] || ! vault_cli kv get mini-platform/holmes-argocd >/dev/null 2>&1; then
+  : "${HOLMES_ARGOCD_AUTH_TOKEN:?Set HOLMES_ARGOCD_AUTH_TOKEN to a token for the Argo CD holmes account.}"
+fi
+kv_put mini-platform/holmes-argocd ARGOCD_AUTH_TOKEN="$HOLMES_ARGOCD_AUTH_TOKEN"
 
 # Holmes has no login of its own, so HOLMES_API_KEY is the whole of its
 # authentication: with it set, every route except /healthz and /readyz demands

@@ -58,11 +58,13 @@ modelList:
 #   holmes-grafana  GRAFANA_USERNAME/PASSWORD     — the Loki and Tempo toolsets
 #   holmes-api      HOLMES_API_KEY,
 #                   HOLMES_APPROVAL_SIGNING_KEY   — the server's own auth
+#   holmes-argocd   ARGOCD_AUTH_TOKEN             — read-only GitOps access
 #   holmes-langfuse OTEL_EXPORTER_OTLP_TRACES_HEADERS — direct trace auth
 extraEnvVarsSecrets:
   - holmes-litellm
   - holmes-grafana
   - holmes-api
+  - holmes-argocd
   - holmes-langfuse
 
 # ==============================================================================
@@ -120,7 +122,32 @@ toolsets:
       grafana_datasource_uid: tempo
       external_url: http://grafana.test
 
-  # Shell access, bounded by the read-only ClusterRole above. `extended` is the
+  # Dashboard metadata and queries use the same read-only API calls as a
+  # Grafana Viewer. Holmes 0.38.2 supports basic auth here, so reuse the
+  # Vault-managed credentials already mounted for Loki and Tempo instead of
+  # introducing a second Grafana credential lifecycle.
+  grafana/dashboards:
+    enabled: true
+    config:
+      api_url: http://grafana.mini-platform.svc.cluster.local:80
+      external_url: http://grafana.test
+      username: "{{ env.GRAFANA_USERNAME }}"
+      password: "{{ env.GRAFANA_PASSWORD }}"
+      enable_rendering: false
+
+  # The token belongs to the `holmes` Argo CD local account configured with a
+  # read-only role in argo-cd-values.yaml. ARGOCD_SERVER/OPTS below keep the
+  # CLI on the cluster-internal plaintext gRPC-web endpoint.
+  argocd/core:
+    enabled: true
+
+  # The image already includes the Helm CLI. The registered commands only read
+  # releases; holmes-resources.yaml grants the namespace-scoped Secret access
+  # Helm 3 needs for its storage driver.
+  helm/core:
+    enabled: true
+
+  # Shell access, bounded by Holmes' RBAC and command allowlist. `extended` is the
   # chart default and the level upstream recommends for containers: it adds
   # cat/ls/find on top of kubectl get/describe/logs, which Holmes needs because
   # its image has no interactive shell to fall back on.
@@ -143,6 +170,32 @@ toolsets:
   # hosted Robusta platform. Enabled in the chart's defaults, but there is no
   # Robusta account behind this cluster, so it would only fail its health check.
   robusta:
+    enabled: false
+
+  # Several optional toolsets ship enabled in Holmes' upstream defaults. This
+  # cluster does not run these products (or their CLIs), so disable them
+  # explicitly instead of leaving ten permanently failed health checks in
+  # /api/info. Keep this list explicit because a chart upgrade can otherwise
+  # re-enable defaults that are unrelated to this platform.
+  openshift/core:
+    enabled: false
+  openshift/logs:
+    enabled: false
+  openshift/live-metrics:
+    enabled: false
+  openshift/security:
+    enabled: false
+  slab:
+    enabled: false
+  crossplane/core:
+    enabled: false
+  kubevela/core:
+    enabled: false
+  kubernetes/live-metrics:
+    enabled: false
+  notion:
+    enabled: false
+  opensearch/query_assist:
     enabled: false
 
 # ==============================================================================
@@ -191,6 +244,10 @@ additionalEnvVars:
     # `mini-platform` is the Minikube profile, the kube context and the node
     # name.
     value: mini-platform
+  - name: ARGOCD_SERVER
+    value: argocd-server.argocd.svc.cluster.local:80
+  - name: ARGOCD_OPTS
+    value: --plaintext --grpc-web
   - name: OTEL_EXPORTER_OTLP_ENDPOINT
     # Holmes appends /v1/traces to this base URL.
     value: http://langfuse-web.mini-platform.svc.cluster.local:3000/api/public/otel
@@ -210,6 +267,43 @@ additionalEnvVars:
     # Python loads sitecustomize.py automatically. The mounted middleware
     # extracts an incoming traceparent before Holmes starts its investigation.
     value: /etc/holmes/otel-context:.:/app/holmes
+
+# github-mcp-server's native HTTP mode deliberately ignores its process-wide
+# GITHUB_TOOLS/GITHUB_TOOLSETS settings and configures capabilities per request.
+# Override the generated MCP connection so Holmes sends the HTTP-mode headers
+# that form the actual server-side boundary. X-MCP-Readonly is defense in depth
+# on top of the exact read-only allowlist.
+mcp_servers:
+  github:
+    config:
+      url: http://holmes-github-mcp-server.mini-platform.svc.cluster.local:8000/
+      mode: streamable-http
+      health_check_tool: get_me
+      extra_headers:
+        Authorization: "Bearer {{ env.GITHUB_PERSONAL_ACCESS_TOKEN }}"
+        X-MCP-Readonly: "true"
+        X-MCP-Tools: "get_me,get_file_contents,list_commits,get_commit,search_code,list_pull_requests,pull_request_read,list_workflows,list_workflow_runs,get_workflow_run,get_workflow_run_logs,get_job_logs"
+
+# A self-hosted, cluster-internal GitHub MCP server. The PAT is materialized by
+# VSO as `holmes-github`; the chart injects it only into Holmes so it can attach
+# per-request bearer auth. A hard tool allowlist keeps the integration
+# read-only even if a broader PAT is supplied accidentally.
+mcpAddons:
+  github:
+    enabled: true
+    auth:
+      secretName: holmes-github
+      secretKey: token
+    config:
+      # These process-wide settings apply to stdio mode only. HTTP mode is
+      # restricted by the X-MCP-* headers on mcp_servers.github above.
+      toolsets: ""
+      tools: ""
+    llmInstructions: |
+      This GitHub connection is strictly read-only. Use it to inspect repository
+      content, commits, pull requests, and Actions runs while diagnosing runtime
+      failures. Never claim to create branches, issues, comments, reviews, or
+      pull requests; no write-capable tools are exposed.
 
 # ==============================================================================
 # WRITABLE STATE

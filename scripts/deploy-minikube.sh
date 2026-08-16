@@ -1,6 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PLATFORM_ENV_FILE="${PLATFORM_ENV_FILE:-$ROOT/.env}"
+if [[ -f "$PLATFORM_ENV_FILE" ]]; then
+  # This is a shell environment file, not a generic dotenv parser. Keep it
+  # local and trusted; `set -a` exports each assignment for the Vault bootstrap.
+  # Snapshot the caller's exported environment first and replay it afterwards,
+  # so an explicit `VAR=value ./scripts/deploy-minikube.sh` or prior export has
+  # higher precedence than a stale or empty assignment in the file.
+  _PLATFORM_CALLER_EXPORTS="$(export -p)"
+  set -a
+  # shellcheck disable=SC1090
+  source "$PLATFORM_ENV_FILE"
+  set +a
+  eval "${_PLATFORM_CALLER_EXPORTS//declare -x /export }"
+  unset _PLATFORM_CALLER_EXPORTS
+fi
+
 PROFILE="${PROFILE:-mini-platform}"
 NS="${NS:-mini-platform}"
 ARGO_NS="${ARGO_NS:-argocd}"
@@ -23,7 +40,6 @@ RETRIED_PODS_FILE=""
 RESTARTED_PENDING_PODS_FILE=""
 OPERATOR_RESTARTED=false
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Vendored charts live in a sibling repository checkout. Argo CD pulls them from
 # CHARTS_REPO_URL; this local path is only used to bootstrap Argo CD itself and,
 # in --local-source mode, to serve the charts repo from inside the cluster.
@@ -51,6 +67,9 @@ Options:
   --help                   Show this help.
 
 Environment:
+  PLATFORM_ENV_FILE       Shell environment file loaded before defaults
+                          (default: <repository>/.env; set to /dev/null to skip).
+                          Existing process environment values take precedence.
   WORKLOAD_TIMEOUT        Seconds to wait for platform pods (default: 1800).
                           Raise it for a --reset run: that empties Minikube's
                           image store, and pulling the whole platform back over
@@ -59,7 +78,10 @@ Environment:
                           to ~/.cache/huggingface/token (HF_TOKEN_FILE).
   DEEPSEEK_API_KEY        DeepSeek key for the hosted model kagent's agents run
                           on. Falls back to ~/.deepseek-key (DEEPSEEK_KEY_FILE).
-                          Both are required only when their Vault secret is
+  HOLMES_GITHUB_TOKEN     Read-only GitHub PAT for Holmes' MCP server.
+  HOLMES_ARGOCD_AUTH_TOKEN
+                          API token for the read-only Argo CD `holmes` account.
+                          All four are required only when their Vault secret is
                           actually written: a fresh install, a --rotate-secrets
                           run, or the first upgrade after the secret was added.
 

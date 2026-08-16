@@ -54,11 +54,12 @@ Keycloak, Trino, vLLM, LiteLLM, Open WebUI, kagent, Argo CD
 kagent ──▶ LiteLLM                    (agents; DeepSeek through the gateway)
        └─▶ Grafana MCP ──▶ Prometheus, Loki, Tempo
 HolmesGPT ──▶ LiteLLM                 (root-cause analysis; same gateway)
-          ├─▶ Kubernetes API          (read-only ClusterRole)
+          ├─▶ Kubernetes API          (read-only RBAC)
           ├─▶ Prometheus              (direct)
-          ├─▶ Grafana ──▶ Loki, Tempo (datasource proxy)
+          ├─▶ Grafana ──▶ dashboards, Loki, Tempo
+          ├─▶ Argo CD + Helm          (read-only deployment state)
+          ├─▶ GitHub MCP              (read-only code, PR and Actions context)
           └─OTLP/HTTP─▶ Langfuse      (native traces; dedicated HolmesGPT project)
-LiteLLM /a2a/holmesgpt ──▶ Holmes A2A adapter ──▶ HolmesGPT /api/chat
 MLflow                                (experiment + artifact tracking)
 Qdrant                                (vector store for notebook/RAG examples)
 Spark Operator ──▶ Spark batch jobs
@@ -140,21 +141,44 @@ On a GPU-enabled Minikube host, with both repos pushed somewhere Argo CD can
 reach:
 
 ```bash
-# Two external credentials are seeded into Vault during the run. Both are
+# Four external credentials are seeded into Vault during the run. They are
 # demanded well after the cluster and Vault are already up, so a missing one
 # aborts the deploy midway rather than at the start.
 export HF_TOKEN='hf_xxxxxxxxxxxxxxxxxxxx'        # vLLM model pull
 export DEEPSEEK_API_KEY='sk-xxxxxxxxxxxxxxxxxxxx' # model kagent's agents run on
+export HOLMES_GITHUB_TOKEN='github_pat_xxxxxxxxx' # read-only GitHub MCP access
+export HOLMES_ARGOCD_AUTH_TOKEN='eyJhbGciOi...'    # Argo CD holmes account
 
 ./scripts/deploy-minikube.sh \
   --charts-repo-url https://github.com/<owner>/mini-platform.git --charts-revision main \
   --deploy-repo-url https://github.com/<owner>/mini-platform-deployment.git --deploy-revision main
 ```
 
-The script picks both up from disk when they are not exported —
+The script picks the model credentials up from disk when they are not exported —
 `~/.cache/huggingface/token` and `~/.deepseek-key` respectively — so the exports
-are only needed the first time. Neither is required on a re-run once its Vault
-secret exists; see the script's `--help` for the exact rule.
+are only needed the first time. The two Holmes integration tokens have no disk
+fallback. None is required on a re-run once its Vault secret exists; see the
+script's `--help` for the exact rule.
+
+The script also loads the repository's git-ignored `.env` automatically. Values
+already exported by the caller take precedence over the file, so a one-off
+`VAR=value ./scripts/deploy-minikube.sh` override is never replaced by a stale
+or empty `.env` assignment. Start from `.env.example`, set its permissions to
+`0600`, and fill the two Holmes tokens there if you prefer not to export them in
+every shell:
+
+```bash
+cp .env.example .env
+chmod 600 .env
+```
+
+`HOLMES_ARGOCD_AUTH_TOKEN` must be generated after Argo CD has loaded the
+`accounts.holmes` configuration in this repository. For an existing cluster,
+sync or upgrade Argo CD first, log in as an administrator, and run
+`argocd account generate-token --account holmes`. A brand-new cluster therefore
+needs a two-stage bootstrap: let the script install Argo CD, generate this token,
+then rerun with all four credentials exported. The rerun retains the installed
+Argo CD release and continues seeding Vault.
 
 The script:
 
@@ -377,6 +401,11 @@ export HF_TOKEN='hf_xxxxxxxxxxxxxxxxxxxx'
 # DeepSeek key for the hosted `deepseek-v4-pro` model LiteLLM serves. kagent's
 # agents and HolmesGPT run on it; nothing else on the platform requires it.
 export DEEPSEEK_API_KEY='sk-xxxxxxxxxxxxxxxxxxxx'
+# Fine-grained PAT with read-only Metadata, Contents, Pull requests and Actions.
+export HOLMES_GITHUB_TOKEN='github_pat_xxxxxxxxx'
+# Generate after the `accounts.holmes: apiKey` Argo CD configuration in
+# minikube/values/argo-cd-values.yaml has synced and you are logged in as admin.
+export HOLMES_ARGOCD_AUTH_TOKEN="$(argocd account generate-token --account holmes)"
 
 vault secrets enable -path=mini-platform kv-v2
 vault auth enable kubernetes
@@ -407,7 +436,9 @@ vault audit enable file file_path=/vault/audit/audit.log
 and writes them under `mini-platform/`. It also writes the `HF_TOKEN` you export
 to `mini-platform/vllm-hf-token`, which vLLM uses to pull the model weights, and
 the `DEEPSEEK_API_KEY` to `mini-platform/litellm-deepseek` for the hosted model
-kagent runs on. Four of the secrets it writes are copies rather than fresh
+kagent runs on. It stores the two Holmes read-only integration credentials at
+`mini-platform/holmes-github` and `mini-platform/holmes-argocd`. Four of the
+secrets it writes are copies rather than fresh
 credentials — `mini-platform/kagent-litellm` and `mini-platform/holmes-litellm`
 mirror the LiteLLM master key, `mini-platform/kagent-grafana` and
 `mini-platform/holmes-grafana` the Grafana admin login — so on a
@@ -471,7 +502,6 @@ shared `minikube/gitops/app-resources` chart rendered against a sibling
 | `mini-platform-kagent-crds` | `charts/kagent-crds` | `minikube/values/kagent-crds-values.yaml` |
 | `mini-platform-kagent` | `charts/kagent` | `minikube/values/kagent-values.yaml` |
 | `mini-platform-holmes` | `charts/holmes` | `minikube/values/holmes-values.yaml` |
-| `mini-platform-holmes-a2a` | `minikube/gitops/holmes-a2a` | `minikube/gitops/holmes-a2a/values.yaml` |
 | `mini-platform-oauth2-proxy` | `charts/oauth2-proxy` | `minikube/values/oauth2-proxy-values.yaml` |
 
 † **llm-d serving path** (disabled by default): an alternative to the
@@ -877,12 +907,22 @@ query actually executed.
 **HolmesGPT.** An investigation API at `http://holmes.test`, on the same
 `deepseek-v4-pro` model through LiteLLM. Where kagent is a chat UI you drive, this
 is one HTTP call that reads the cluster and its telemetry and answers with what
-it found and how it got there. Its toolsets cover the Kubernetes API (over a
-read-only ClusterRole with no access to Secrets), Prometheus directly, and Loki
-and Tempo through Grafana's datasource proxy — so an answer can cite a metric, a
-log line, and a trace in the same breath, with links back into Grafana.
+it found and how it got there. Its toolsets cover the Kubernetes API (over
+read-only RBAC), Prometheus directly, and
+Grafana dashboards plus Loki and Tempo through Grafana's API. It also reads Helm
+release state, Argo CD applications through a dedicated read-only account, and
+GitHub repositories, pull requests and Actions through a hard-allowlisted MCP
+server. An answer can therefore correlate a metric, log or trace with the
+dashboard, release, Git commit and CI run that produced it.
 
-There is no UI and no SSO. Every request carries the API key instead:
+Helm 3 stores release records as Kubernetes Secrets. The Holmes application
+therefore adds `get/list` permission for Secrets in `mini-platform` only; it is
+not cluster-wide. This lets the read-only Helm commands work, but it also means
+the Holmes ServiceAccount can technically read application credentials in that
+namespace. Remove `helm/core` and the `holmes-helm-release-reader` Role if that
+tradeoff is unacceptable for a less trusted deployment.
+
+Holmes has no native UI or SSO. Every direct API request carries the API key:
 
 ```bash
 export HOLMES_API_KEY="$(kubectl -n "$NS" get secret holmes-api \
@@ -902,35 +942,8 @@ the Prometheus URL actually resolved:
 curl -sS http://holmes.test/api/info -H "X-API-Key: $HOLMES_API_KEY" | jq
 ```
 
-Holmes is also registered in LiteLLM's A2A agent gateway as `holmesgpt`.
-LiteLLM authenticates the caller with its normal API key, then the internal
-adapter translates the A2A `message/send` request into Holmes' `/api/chat`
-contract and authenticates that hop with `holmes-api` from Vault:
-
-```bash
-export LITELLM_API_KEY="$(kubectl -n "$NS" get secret litellm-master-key \
-  -o jsonpath='{.data.PROXY_MASTER_KEY}' | base64 -d)"
-
-curl -sS http://litellm.test/v1/agents \
-  -H "Authorization: Bearer $LITELLM_API_KEY" | jq
-
-curl -sS http://litellm.test/a2a/holmesgpt \
-  -H "Authorization: Bearer $LITELLM_API_KEY" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": "investigation-1",
-    "method": "message/send",
-    "params": {
-      "message": {
-        "kind": "message",
-        "role": "user",
-        "messageId": "question-1",
-        "parts": [{"kind": "text", "text": "Which pods are unhealthy, and why?"}]
-      }
-    }
-  }' | jq -r '.result.parts[0].text'
-```
+For a browser UI, use the provisioned `HolmesGPT` Pipe in Open WebUI. Holmes is
+not registered in LiteLLM's agent gateway and no A2A adapter is deployed.
 
 Investigations are slow (tens of seconds to minutes) and cost tokens on every
 turn. Holmes sends one native investigation trace directly to Langfuse over
