@@ -20,8 +20,6 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["python", "/provision/install.py"]
           env:
-            - name: OPEN_WEBUI_URL
-              value: {{ .Values.openWebUI.serviceUrl | quote }}
             - name: OPEN_WEBUI_DATABASE
               value: {{ .Values.openWebUI.databasePath | quote }}
           resources:

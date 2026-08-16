@@ -4,7 +4,6 @@ image:
   pullPolicy: IfNotPresent
 
 openWebUI:
-  serviceUrl: http://open-webui.mini-platform.svc.cluster.local
   databasePvc: open-webui
   databasePath: /data/webui.db
 
