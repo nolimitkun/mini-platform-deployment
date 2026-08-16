@@ -58,6 +58,7 @@ HolmesGPT ──▶ LiteLLM                 (root-cause analysis; same gateway)
           ├─▶ Prometheus              (direct)
           ├─▶ Grafana ──▶ Loki, Tempo (datasource proxy)
           └─OTLP/HTTP─▶ Langfuse      (native investigation traces)
+LiteLLM /a2a/holmesgpt ──▶ Holmes A2A adapter ──▶ HolmesGPT /api/chat
 MLflow                                (experiment + artifact tracking)
 Qdrant                                (vector store for notebook/RAG examples)
 Spark Operator ──▶ Spark batch jobs
@@ -466,6 +467,7 @@ shared `minikube/gitops/app-resources` chart rendered against a sibling
 | `mini-platform-kagent-crds` | `charts/kagent-crds` | `minikube/values/kagent-crds-values.yaml` |
 | `mini-platform-kagent` | `charts/kagent` | `minikube/values/kagent-values.yaml` |
 | `mini-platform-holmes` | `charts/holmes` | `minikube/values/holmes-values.yaml` |
+| `mini-platform-holmes-a2a` | `minikube/gitops/holmes-a2a` | `minikube/gitops/holmes-a2a/values.yaml` |
 | `mini-platform-oauth2-proxy` | `charts/oauth2-proxy` | `minikube/values/oauth2-proxy-values.yaml` |
 
 † **llm-d serving path** (disabled by default): an alternative to the
@@ -894,6 +896,36 @@ the Prometheus URL actually resolved:
 
 ```bash
 curl -sS http://holmes.test/api/info -H "X-API-Key: $HOLMES_API_KEY" | jq
+```
+
+Holmes is also registered in LiteLLM's A2A agent gateway as `holmesgpt`.
+LiteLLM authenticates the caller with its normal API key, then the internal
+adapter translates the A2A `message/send` request into Holmes' `/api/chat`
+contract and authenticates that hop with `holmes-api` from Vault:
+
+```bash
+export LITELLM_API_KEY="$(kubectl -n "$NS" get secret litellm-master-key \
+  -o jsonpath='{.data.PROXY_MASTER_KEY}' | base64 -d)"
+
+curl -sS http://litellm.test/v1/agents \
+  -H "Authorization: Bearer $LITELLM_API_KEY" | jq
+
+curl -sS http://litellm.test/a2a/holmesgpt \
+  -H "Authorization: Bearer $LITELLM_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "investigation-1",
+    "method": "message/send",
+    "params": {
+      "message": {
+        "kind": "message",
+        "role": "user",
+        "messageId": "question-1",
+        "parts": [{"kind": "text", "text": "Which pods are unhealthy, and why?"}]
+      }
+    }
+  }' | jq -r '.result.parts[0].text'
 ```
 
 Investigations are slow (tens of seconds to minutes) and cost tokens on every

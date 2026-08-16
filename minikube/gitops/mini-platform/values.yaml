@@ -209,6 +209,14 @@ applications:
     resourcesFile: minikube/values/holmes-resources.yaml
     releaseName: holmes
     wave: "2"
+  # LiteLLM's A2A-facing adapter for the Holmes /api/chat API. It waits until
+  # the Holmes application and its Vault-managed API key are healthy, then
+  # serves the agent card registered in litellm-values.yaml.
+  holmes-a2a:
+    chartPath: minikube/gitops/holmes-a2a
+    valuesFile: minikube/gitops/holmes-a2a/values.yaml
+    releaseName: holmes-a2a
+    wave: "3"
   # Forward-auth for MLflow, kagent and the LiteLLM UI. Fails its OIDC discovery
   # call and restarts until Keycloak (wave -2) has finished importing the realm,
   # so it is ordered late. The routes that name it as an auth backend are

@@ -108,6 +108,9 @@ through LiteLLM**: kagent (chat UI, agents, Grafana MCP) and HolmesGPT (an
 investigation API, no UI). kagent's model calls use LiteLLM's global Langfuse
 callback. Holmes instead marks those gateway calls `no-log` and sends its richer
 native investigation trace directly to Langfuse over authenticated OTLP/HTTP.
+LiteLLM also publishes Holmes in its A2A agent registry: the first-party
+`minikube/gitops/holmes-a2a` adapter translates A2A `message/send` calls into
+Holmes' authenticated `/api/chat` contract.
 Holmes reads Kubernetes over a read-only ClusterRole and reaches Prometheus
 directly but Loki and Tempo through Grafana's datasource proxy — trading a
 credential (basic auth from `holmes-grafana`, the same compromise `kagent-grafana`
@@ -205,6 +208,7 @@ Each entry maps a `chartPath` (under `charts/` in the charts repo, or
 | `-2` | Keycloak, Langfuse, MLflow, Trino, vLLM |
 | `-1` → `0` | MinIO, Prometheus, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset |
 | `1` → `2` | LiteLLM, then Open WebUI, kagent, HolmesGPT and oauth2-proxy |
+| `3` | Holmes A2A adapter, after Holmes and its API-key mapping are healthy |
 
 All generated Applications use `automated` sync with `prune: true`,
 `selfHeal: true`, `CreateNamespace=true`, and `ServerSideApply=true`.
