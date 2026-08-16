@@ -2,6 +2,10 @@ nameOverride: litellm
 
 image:
   tag: main-latest
+  # The mutable tag makes Kubernetes default to Always, which takes a healthy
+  # local cluster down whenever GHCR is unavailable after a node restart even
+  # though the image is already cached. Updates remain explicit GitOps rollouts.
+  pullPolicy: IfNotPresent
 
 masterkeySecretName: litellm-master-key
 masterkeySecretKey: PROXY_MASTER_KEY
