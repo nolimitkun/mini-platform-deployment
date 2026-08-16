@@ -13,6 +13,25 @@ data:
 
     HOLMES_URL = os.environ["HOLMES_URL"]
     HOLMES_API_KEY = os.environ["HOLMES_API_KEY"]
+    AGENT_CARD = {
+        "protocolVersion": "0.3.0",
+        "name": "HolmesGPT",
+        "description": "Investigates Kubernetes incidents using cluster state, metrics, logs, and traces.",
+        "url": "http://holmes-a2a.mini-platform.svc.cluster.local:8080",
+        "version": "1.0.0",
+        "preferredTransport": "JSONRPC",
+        "capabilities": {"streaming": False},
+        "defaultInputModes": ["text/plain"],
+        "defaultOutputModes": ["text/plain"],
+        "skills": [
+            {
+                "id": "investigate-kubernetes",
+                "name": "Investigate Kubernetes incidents",
+                "description": "Find root causes using the Kubernetes API, Prometheus, Loki, and Tempo.",
+                "tags": ["kubernetes", "sre", "observability", "root-cause-analysis"],
+            }
+        ],
+    }
 
 
     def jsonrpc_error(request_id, code, message, data=None):
@@ -36,6 +55,9 @@ data:
         def do_GET(self):
             if self.path in ("/healthz", "/readyz"):
                 self.write_json(200, {"status": "ok"})
+                return
+            if self.path in ("/.well-known/agent-card.json", "/.well-known/agent.json"):
+                self.write_json(200, AGENT_CARD)
                 return
             self.write_json(404, {"error": "not found"})
 
