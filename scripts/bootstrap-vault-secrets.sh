@@ -85,6 +85,10 @@ HOLMES_LANGFUSE_PUBLIC_KEY="${HOLMES_LANGFUSE_PUBLIC_KEY:-$(reuse_or_generate mi
 HOLMES_LANGFUSE_PUBLIC_KEY="${HOLMES_LANGFUSE_PUBLIC_KEY:-lf_pk_$(rand_hex)}"
 HOLMES_LANGFUSE_SECRET_KEY="${HOLMES_LANGFUSE_SECRET_KEY:-$(reuse_or_generate mini-platform/holmes-langfuse-project LANGFUSE_SECRET_KEY)}"
 HOLMES_LANGFUSE_SECRET_KEY="${HOLMES_LANGFUSE_SECRET_KEY:-lf_sk_$(rand_hex)}"
+OPEN_WEBUI_LANGFUSE_PUBLIC_KEY="${OPEN_WEBUI_LANGFUSE_PUBLIC_KEY:-$(reuse_or_generate mini-platform/open-webui-langfuse-project LANGFUSE_PUBLIC_KEY)}"
+OPEN_WEBUI_LANGFUSE_PUBLIC_KEY="${OPEN_WEBUI_LANGFUSE_PUBLIC_KEY:-lf_pk_$(rand_hex)}"
+OPEN_WEBUI_LANGFUSE_SECRET_KEY="${OPEN_WEBUI_LANGFUSE_SECRET_KEY:-$(reuse_or_generate mini-platform/open-webui-langfuse-project LANGFUSE_SECRET_KEY)}"
+OPEN_WEBUI_LANGFUSE_SECRET_KEY="${OPEN_WEBUI_LANGFUSE_SECRET_KEY:-lf_sk_$(rand_hex)}"
 SUPERSET_DB_PASSWORD="${SUPERSET_DB_PASSWORD:-$(rand_hex)}"
 SUPERSET_REDIS_PASSWORD="${SUPERSET_REDIS_PASSWORD:-$(rand_hex)}"
 SUPERSET_ADMIN_PASSWORD="${SUPERSET_ADMIN_PASSWORD:-$(rand_b64)}"
@@ -141,6 +145,16 @@ LANGFUSE_BASIC_AUTH="$(printf '%s' "${HOLMES_LANGFUSE_PUBLIC_KEY}:${HOLMES_LANGF
 # new project keys above must replace that old header without rotating them.
 vault_cli kv put mini-platform/holmes-langfuse \
   OTEL_EXPORTER_OTLP_TRACES_HEADERS="Authorization=Basic ${LANGFUSE_BASIC_AUTH}"
+
+# Open WebUI's built-in HTTP OTLP exporter accepts a username/password pair
+# rather than a pre-encoded header. Keep the provisioning and runtime mirrors
+# separate so each Argo CD application owns only the Secret it consumes.
+kv_put mini-platform/open-webui-langfuse-project \
+  LANGFUSE_PUBLIC_KEY="$OPEN_WEBUI_LANGFUSE_PUBLIC_KEY" \
+  LANGFUSE_SECRET_KEY="$OPEN_WEBUI_LANGFUSE_SECRET_KEY"
+kv_put mini-platform/open-webui-langfuse \
+  OTEL_BASIC_AUTH_USERNAME="$OPEN_WEBUI_LANGFUSE_PUBLIC_KEY" \
+  OTEL_BASIC_AUTH_PASSWORD="$OPEN_WEBUI_LANGFUSE_SECRET_KEY"
 # Langfuse headless init user: makes the auto-provisioned org/project visible in
 # the UI (org/project alone are API-only; a fresh signup joins no org).
 #

@@ -92,13 +92,18 @@ applications:
     valuesFile: minikube/values/langfuse-values.yaml
     resourcesFile: minikube/values/langfuse-resources.yaml
     wave: "-2"
-  # Langfuse headless initialization supports one project only. This
-  # idempotent job provisions the second, Holmes-only project after Langfuse
-  # and its VaultStaticSecrets are healthy.
+  # Langfuse headless initialization supports one project only. These
+  # idempotent jobs provision service-specific projects after Langfuse and its
+  # VaultStaticSecrets are healthy.
   langfuse-holmes-project:
     chartPath: minikube/gitops/langfuse-project
     valuesFile: minikube/gitops/langfuse-project/values.yaml
     releaseName: langfuse-holmes-project
+    wave: "-1"
+  langfuse-open-webui-project:
+    chartPath: minikube/gitops/langfuse-project
+    valuesFile: minikube/gitops/langfuse-project/open-webui-values.yaml
+    releaseName: langfuse-open-webui-project
     wave: "-1"
   mlflow:
     chartPath: charts/mlflow

@@ -22,8 +22,8 @@ extraEnvFrom:
 
 # Open WebUI serves no Prometheus endpoint — OTLP is the only way to get
 # anything numeric out of it, which is the reason the Alloy gateway exists.
-# Alloy splits the stream: traces to Tempo, metrics remote-written to
-# Prometheus.
+# Traces go directly to the dedicated Open WebUI project in Langfuse. Metrics
+# still go to Alloy and are remote-written to Prometheus.
 extraEnvVars:
   - name: HOLMES_URL
     value: http://holmes-holmes.mini-platform.svc.cluster.local/api/chat
@@ -83,11 +83,31 @@ extraEnvVars:
   - name: ENABLE_OTEL_LOGS
     value: "false"
   - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: http://langfuse-web.mini-platform.svc.cluster.local:3000/api/public/otel/v1/traces
+  - name: OTEL_OTLP_SPAN_EXPORTER
+    value: http
+  - name: OTEL_BASIC_AUTH_USERNAME
+    valueFrom:
+      secretKeyRef:
+        name: open-webui-langfuse
+        key: OTEL_BASIC_AUTH_USERNAME
+  - name: OTEL_BASIC_AUTH_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: open-webui-langfuse
+        key: OTEL_BASIC_AUTH_PASSWORD
+  # Open WebUI gives metrics their own endpoint and protocol. Empty metric auth
+  # prevents the trace credentials from being inherited and sent to Alloy.
+  - name: OTEL_METRICS_EXPORTER_OTLP_ENDPOINT
     value: http://alloy.mini-platform.svc.cluster.local:4317
-  # Required. Open WebUI passes `insecure` to the gRPC exporter explicitly and
-  # defaults it to False, so it negotiates TLS regardless of the http:// scheme
-  # on the endpoint above and every export fails with StatusCode.UNAVAILABLE.
-  # The metrics and logs exporters inherit this value.
+  - name: OTEL_METRICS_OTLP_SPAN_EXPORTER
+    value: grpc
+  - name: OTEL_METRICS_BASIC_AUTH_USERNAME
+    value: ""
+  - name: OTEL_METRICS_BASIC_AUTH_PASSWORD
+    value: ""
+  # Required for the metrics gRPC exporter. Without it, Open WebUI attempts TLS
+  # against Alloy's plaintext receiver.
   - name: OTEL_EXPORTER_OTLP_INSECURE
     value: "true"
   # Matches the `app` label Alloy derives from app.kubernetes.io/instance, so

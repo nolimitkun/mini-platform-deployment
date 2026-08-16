@@ -3,14 +3,14 @@ image:
   tag: 3.174.1
   pullPolicy: IfNotPresent
 
-resourceName: langfuse-holmes-project
+resourceName: langfuse-open-webui-project
 
 project:
-  id: holmes
-  name: HolmesGPT
+  id: open-webui
+  name: Open WebUI
   organizationId: mini-platform
-  credentialsSecret: holmes-langfuse-project
-  apiKeyNote: Provisioned HolmesGPT API Key
+  credentialsSecret: open-webui-langfuse-project
+  apiKeyNote: Provisioned Open WebUI API Key
 
 database:
   host: langfuse-postgresql

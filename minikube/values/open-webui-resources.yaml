@@ -1,6 +1,9 @@
 # Open WebUI does OIDC against Keycloak itself and reaches models through
-# LiteLLM with the master key, both of which come from Secrets declared on
-# earlier releases — so it owns no secret of its own.
+# LiteLLM with the master key. Its own Vault mirror contains only the Langfuse
+# project credentials used by the server-side OTel exporter.
+vaultSecrets:
+  - open-webui-langfuse
+
 routes:
   - name: open-webui
     host: open-webui.test

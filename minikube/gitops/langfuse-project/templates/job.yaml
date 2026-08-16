@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: langfuse-holmes-project
+  name: {{ .Values.resourceName }}
   annotations:
     argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
@@ -11,7 +11,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: langfuse-holmes-project
+        app.kubernetes.io/name: {{ .Values.resourceName }}
     spec:
       restartPolicy: Never
       containers:
@@ -46,6 +46,8 @@ spec:
               value: {{ .Values.project.name | quote }}
             - name: LANGFUSE_ORGANIZATION_ID
               value: {{ .Values.project.organizationId | quote }}
+            - name: LANGFUSE_API_KEY_NOTE
+              value: {{ .Values.project.apiKeyNote | quote }}
             - name: LANGFUSE_PUBLIC_KEY
               valueFrom:
                 secretKeyRef:
@@ -65,4 +67,4 @@ spec:
       volumes:
         - name: provisioner
           configMap:
-            name: langfuse-holmes-project
+            name: {{ .Values.resourceName }}
