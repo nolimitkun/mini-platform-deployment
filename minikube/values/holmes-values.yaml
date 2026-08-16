@@ -268,6 +268,22 @@ additionalEnvVars:
     # extracts an incoming traceparent before Holmes starts its investigation.
     value: /etc/holmes/otel-context:.:/app/holmes
 
+# github-mcp-server's native HTTP mode deliberately ignores its process-wide
+# GITHUB_TOOLS/GITHUB_TOOLSETS settings and configures capabilities per request.
+# Override the generated MCP connection so Holmes sends the HTTP-mode headers
+# that form the actual server-side boundary. X-MCP-Readonly is defense in depth
+# on top of the exact read-only allowlist.
+mcp_servers:
+  github:
+    config:
+      url: http://holmes-github-mcp-server.mini-platform.svc.cluster.local:8000/
+      mode: streamable-http
+      health_check_tool: get_me
+      extra_headers:
+        Authorization: "Bearer {{ env.GITHUB_PERSONAL_ACCESS_TOKEN }}"
+        X-MCP-Readonly: "true"
+        X-MCP-Tools: "get_me,get_file_contents,list_commits,get_commit,search_code,list_pull_requests,pull_request_read,list_workflows,list_workflow_runs,get_workflow_run,get_workflow_run_logs,get_job_logs"
+
 # A self-hosted, cluster-internal GitHub MCP server. The PAT is materialized by
 # VSO as `holmes-github`; the chart injects it only into Holmes so it can attach
 # per-request bearer auth. A hard tool allowlist keeps the integration
@@ -279,12 +295,10 @@ mcpAddons:
       secretName: holmes-github
       secretKey: token
     config:
-      # GitHub treats an absent/empty GITHUB_TOOLSETS as its broad default set,
-      # and GITHUB_TOOLS is additive. Keep only the read-only `context`
-      # toolset (get_me, also used for the PAT health check), then add the
-      # exact read-only investigation tools below.
-      toolsets: "context"
-      tools: "get_me,get_file_contents,list_commits,get_commit,search_code,list_pull_requests,pull_request_read,list_workflows,list_workflow_runs,get_workflow_run,get_workflow_run_logs,get_job_logs"
+      # These process-wide settings apply to stdio mode only. HTTP mode is
+      # restricted by the X-MCP-* headers on mcp_servers.github above.
+      toolsets: ""
+      tools: ""
     llmInstructions: |
       This GitHub connection is strictly read-only. Use it to inspect repository
       content, commits, pull requests, and Actions runs while diagnosing runtime
