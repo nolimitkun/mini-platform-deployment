@@ -56,7 +56,8 @@ kagent ──▶ LiteLLM                    (agents; DeepSeek through the gatewa
 HolmesGPT ──▶ LiteLLM                 (root-cause analysis; same gateway)
           ├─▶ Kubernetes API          (read-only ClusterRole)
           ├─▶ Prometheus              (direct)
-          └─▶ Grafana ──▶ Loki, Tempo (datasource proxy)
+          ├─▶ Grafana ──▶ Loki, Tempo (datasource proxy)
+          └─OTLP/HTTP─▶ Langfuse      (native investigation traces)
 MLflow                                (experiment + artifact tracking)
 Qdrant                                (vector store for notebook/RAG examples)
 Spark Operator ──▶ Spark batch jobs
@@ -411,11 +412,12 @@ mirror the LiteLLM master key, `mini-platform/kagent-grafana` and
 `mini-platform/holmes-grafana` the Grafana admin login — so on a
 `SEED_MISSING_ONLY=true` upgrade the script reads the existing values back out
 of Vault instead of generating new ones that the owning service would reject.
-Notably, it writes shared Langfuse
-project keys to `mini-platform/litellm-langfuse`: Langfuse's headless init
-provisions the starter organization and project from those keys, and LiteLLM
-consumes the same Vault-managed secret for tracing — no browser setup is needed
-before LiteLLM is ready.
+Notably, it writes shared Langfuse project keys to
+`mini-platform/litellm-langfuse`: Langfuse's headless init provisions the
+starter organization and project from those keys, and LiteLLM consumes the same
+Vault-managed secret for tracing. It also derives the Basic-auth header in
+`mini-platform/holmes-langfuse`, which lets Holmes send its own investigation
+traces directly to that project without mounting the raw project keys.
 
 VSO then creates the destination Kubernetes Secrets. Check synchronization:
 
@@ -895,8 +897,11 @@ curl -sS http://holmes.test/api/info -H "X-API-Key: $HOLMES_API_KEY" | jq
 ```
 
 Investigations are slow (tens of seconds to minutes) and cost tokens on every
-turn; they show up in Langfuse like any other LiteLLM traffic, and Holmes' own
-spans go to Tempo under the service name `holmes`.
+turn. Holmes sends one native investigation trace directly to Langfuse over
+OTLP/HTTP, including its LLM turns, reasoning, tool calls and results, initiating
+user/session, and final answer. Its model requests still route through LiteLLM,
+but carry `no-log: true` so the gateway does not create duplicate Langfuse
+traces.
 
 **Observability.** All three signals are read through Grafana, which ships
 provisioned `prometheus`, `loki` and `tempo` data sources with fixed uids so

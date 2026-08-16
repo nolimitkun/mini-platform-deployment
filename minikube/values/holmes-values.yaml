@@ -13,9 +13,9 @@
 # ==============================================================================
 # Same arrangement as kagent: Holmes speaks the OpenAI protocol to LiteLLM
 # rather than to api.deepseek.com, so the DeepSeek key stays in one place
-# (litellm-values.yaml, from Vault) and every investigation's token spend shows
-# up in Langfuse and in LiteLLM's Prometheus metrics next to the rest of the
-# platform's LLM traffic.
+# (litellm-values.yaml, from Vault). Holmes exports the complete investigation
+# trace directly to Langfuse below; the gateway is only the model endpoint for
+# this client.
 #
 # The chart rewrites `envRef:NAME` into the runtime `{{ env.NAME }}` templating
 # the model list file uses, so the key itself never appears here — it arrives as
@@ -33,17 +33,24 @@ modelList:
     # every request omitting `model` would go to OpenAI with the gateway's key
     # and 401. Naming the key anything else keeps this the only model loaded.
     api_key: envRef:LITELLM_API_KEY
+    # The platform gateway has global Langfuse callbacks for its other clients.
+    # Holmes emits a richer, investigation-level trace directly, so tell the
+    # proxy not to log these individual model calls a second time.
+    extra_body:
+      no-log: true
 
 # Loaded onto the pod with envFrom, so each Secret's keys are consumed verbatim
-# as env vars. All three are Vault-managed; see holmes-resources.yaml.
+# as env vars. All four are Vault-managed; see holmes-resources.yaml.
 #   holmes-litellm  LITELLM_API_KEY               — the model list entry above
 #   holmes-grafana  GRAFANA_USERNAME/PASSWORD     — the Loki and Tempo toolsets
 #   holmes-api      HOLMES_API_KEY,
 #                   HOLMES_APPROVAL_SIGNING_KEY   — the server's own auth
+#   holmes-langfuse OTEL_EXPORTER_OTLP_TRACES_HEADERS — direct trace auth
 extraEnvVarsSecrets:
   - holmes-litellm
   - holmes-grafana
   - holmes-api
+  - holmes-langfuse
 
 # ==============================================================================
 # TOOLSETS — what Holmes is allowed to look at
@@ -142,16 +149,17 @@ toolsets:
 # ==============================================================================
 # TELEMETRY AND IDENTITY
 # ==============================================================================
-# Traces and metrics over OTLP to the Alloy gateway, matching LiteLLM and
-# kagent — one endpoint for every producer, and alloy-values.yaml alone decides
-# that spans go to Tempo and metrics to Prometheus. Setting the endpoint is what
-# turns instrumentation on; Holmes auto-detects it at startup.
+# The generic OTLP/HTTP endpoint activates Holmes instrumentation and keeps its
+# metrics flowing through Alloy to Prometheus. The signal-specific traces
+# endpoint overrides that path: investigation spans go straight from Holmes to
+# Langfuse, authenticated by OTEL_EXPORTER_OTLP_TRACES_HEADERS from the
+# holmes-langfuse Secret. LiteLLM is not involved in trace delivery.
 #
 # Both signals are emitted per investigation rather than exposed for scraping,
 # so an idle Holmes publishes no series and no spans at all. That is not a gap:
-# `{job="holmes"}` and a `holmes` service in Tempo only appear once someone has
-# asked it something. Its own /metrics sits behind HOLMES_API_KEY, which is why
-# prometheus-values.yaml carries no holmes job.
+# `{job="holmes"}` in Prometheus and traces in Langfuse only appear once someone
+# has asked it something. Its own /metrics sits behind HOLMES_API_KEY, which is
+# why prometheus-values.yaml carries no holmes job.
 additionalEnvVars:
   - name: CLUSTER_NAME
     # Required, despite this cluster having no Robusta account to sync to.
@@ -170,15 +178,21 @@ additionalEnvVars:
     # name.
     value: mini-platform
   - name: OTEL_EXPORTER_OTLP_ENDPOINT
-    # gRPC on 4317 is the OTel SDK's default protocol, and the http:// scheme is
-    # how it is told the connection is plaintext.
-    value: http://alloy.mini-platform.svc.cluster.local:4317
+    # Generic endpoint is retained for metrics; the traces endpoint below wins
+    # for spans. HTTP/protobuf is shared by Alloy and Langfuse.
+    value: http://alloy.mini-platform.svc.cluster.local:4318
+  - name: OTEL_EXPORTER_OTLP_PROTOCOL
+    value: http/protobuf
+  - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+    # Signal-specific endpoints include /v1/traces; the OTel SDK does not append
+    # it as it does for the generic endpoint.
+    value: http://langfuse-web.mini-platform.svc.cluster.local:3000/api/public/otel/v1/traces
+  - name: HOLMES_LANGFUSE_ATTRIBUTES
+    # Adds Langfuse's trace input/output, observation content, user/session,
+    # tags, and investigation metadata attributes to Holmes' native spans.
+    value: "true"
   - name: OTEL_SERVICE_NAME
-    # Must equal the Loki `app` label on this pod's logs, or Tempo's
-    # tracesToLogsV2 jump lands on nothing. The chart labels its pod `app:
-    # holmes` and never sets app.kubernetes.io/instance, which is the label
-    # alloy-values.yaml reads first — see the fallback rule it keeps for
-    # exactly this case.
+    # Stable service identity on Holmes' native Langfuse spans and OTLP metrics.
     value: holmes
 
 # ==============================================================================

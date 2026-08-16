@@ -104,8 +104,10 @@ hostnames), MLflow (experiments), Qdrant
 MinIO (S3 object store), all reconciled by Argo CD.
 
 **Two agentic-AI consumers sit on top of the stack, both running their model
-through LiteLLM** so their spend lands in Langfuse with everything else: kagent
-(chat UI, agents, Grafana MCP) and HolmesGPT (an investigation API, no UI).
+through LiteLLM**: kagent (chat UI, agents, Grafana MCP) and HolmesGPT (an
+investigation API, no UI). kagent's model calls use LiteLLM's global Langfuse
+callback. Holmes instead marks those gateway calls `no-log` and sends its richer
+native investigation trace directly to Langfuse over authenticated OTLP/HTTP.
 Holmes reads Kubernetes over a read-only ClusterRole and reaches Prometheus
 directly but Loki and Tempo through Grafana's datasource proxy — trading a
 credential (basic auth from `holmes-grafana`, the same compromise `kagent-grafana`
@@ -114,8 +116,7 @@ makes) for clickable links back into Grafana and for keeping
 the fixed datasource uids. Its overlay is also the reason `alloy-values.yaml`
 carries an `app`-label fallback: the holmes chart labels its pod `app: holmes`
 and never sets `app.kubernetes.io/instance`, which is what Alloy reads first,
-so without the fallback its logs would arrive with an empty `app` and Tempo's
-trace→logs jump (`OTEL_SERVICE_NAME: holmes`) would land on nothing.
+so without the fallback its logs would arrive with an empty `app` label.
 
 **Observability is three signals behind one Grafana.** Prometheus scrapes
 metrics; Grafana Alloy (a DaemonSet, Promtail's successor) tails pod logs
