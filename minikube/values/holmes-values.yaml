@@ -13,6 +13,17 @@
 podAnnotations:
   mini-platform.dev/langfuse-project: holmes
 
+# Holmes wraps every shell tool in a virtual-memory limit. The x86 default of
+# 800 MB is too small for this image's Go-based kubectl binary to initialize,
+# even for tiny requests such as `kubectl cluster-info`. 1500 MB is verified in
+# the running container and remains comfortably below the pod ceiling.
+resources:
+  requests:
+    cpu: 100m
+    memory: 2Gi
+  limits:
+    memory: 3Gi
+
 # ==============================================================================
 # MODEL — DeepSeek, reached through the platform's LiteLLM gateway
 # ==============================================================================
@@ -166,6 +177,8 @@ toolsets:
 # has asked it something. Its own /metrics sits behind HOLMES_API_KEY, which is
 # why prometheus-values.yaml carries no holmes job.
 additionalEnvVars:
+  - name: TOOL_MEMORY_LIMIT_MB
+    value: "1500"
   - name: CLUSTER_NAME
     # Required, despite this cluster having no Robusta account to sync to.
     # holmes_sync_toolsets_status() raises outright when it cannot resolve a
