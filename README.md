@@ -50,7 +50,8 @@ Prometheus     ──▶ Grafana            (metrics + dashboards)
 Alloy ──▶ Loki ──▶ Grafana            (pod logs, every pod in every namespace)
 Keycloak, Trino, vLLM, LiteLLM, Open WebUI, kagent, Argo CD
       ─OTLP─▶ Alloy ─┬─▶ Tempo        (traces)
-                     └─▶ Prometheus   (OTLP metrics, remote write)
+                     ├─▶ Prometheus   (OTLP metrics, remote write)
+                     └─▶ Langfuse     (kagent's agent spans only)
 kagent ──▶ LiteLLM                    (agents; DeepSeek through the gateway)
        └─▶ Grafana MCP ──▶ Prometheus, Loki, Tempo
 HolmesGPT ──▶ LiteLLM                 (root-cause analysis; same gateway)
@@ -864,6 +865,15 @@ kubectl -n "$NS" get pods -l app.kubernetes.io/instance=langfuse
 kubectl -n "$NS" get pods -l app.kubernetes.io/name=litellm
 ```
 
+Alloy reads the same secret, to authenticate the kagent spans it forwards into
+that project. It is the one component that will not start without it — the keys
+arrive as `secretKeyRef` environment variables, so a missing secret leaves the
+DaemonSet in `CreateContainerConfigError` and stops log shipping too:
+
+```bash
+kubectl -n "$NS" get pods -l app.kubernetes.io/name=alloy
+```
+
 **LLM gateway smoke test.** LiteLLM serves the `qwen3.6-27b` model backed by
 `http://vllm-router-service.mini-platform.svc.cluster.local/v1`:
 
@@ -887,7 +897,13 @@ configure TLS and authentication before exposing it.
 **kagent.** The chat UI is at `http://kagent.test`. Four agents ship enabled —
 `k8s-agent`, `helm-agent`, `promql-agent`, and `observability-agent` — all
 running on `deepseek-v4-pro` through LiteLLM, so their turns appear in Langfuse
-alongside every other LLM call. The agents that target components this platform
+alongside every other LLM call. They also appear there a second time, and more
+usefully: Alloy forwards kagent's own spans to Langfuse, so a conversation shows
+up as one trace with each LLM turn's prompt and completion, each tool call's
+arguments and result, and the token usage per turn — the run itself, not the
+scattered gateway calls it produced. Traces are named after the agent's HTTP
+entrypoint (`POST /`) and the observations underneath carry the agent, tool and
+generation detail. The agents that target components this platform
 does not run (Istio, kgateway, Cilium, Argo Rollouts) are disabled in the
 overlay. `observability-agent` is the one wired to live telemetry: it reaches
 Prometheus, Loki, and Tempo through `grafana-mcp`, which proxies Grafana's

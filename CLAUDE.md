@@ -108,6 +108,14 @@ through LiteLLM**: kagent (chat UI, agents, Grafana MCP) and HolmesGPT (an
 investigation API surfaced in Open WebUI through a Pipe). Both retain LiteLLM's
 gateway callback, while Holmes also sends its richer native investigation trace
 directly to its dedicated Langfuse project over authenticated OTLP/HTTP.
+
+kagent's own spans reach Langfuse as well, by a third route and into a `kagent`
+project of their own: Alloy forwards them. A conversation then reads as one
+trace — the LLM turns with their prompts and completions, the tool calls with
+their arguments and results — rather than as the run of unrelated gateway calls
+LiteLLM sees. The fan-out is configured in `alloy-values.yaml`, not in
+`kagent-values.yaml`; see the tracing block there for why.
+
 Holmes reads Kubernetes over read-only RBAC and reaches Prometheus
 directly but dashboards, Loki and Tempo through Grafana. It also reads Helm and
 Argo CD deployment state, and uses a hard-allowlisted GitHub MCP server for
@@ -140,6 +148,15 @@ is why the Prometheus overlay must keep `--web.enable-remote-write-receiver`.
 Loki and Tempo both run single-binary against a filesystem PVC — neither is
 sized for real volume, and the vendored `tempo` chart is deprecated upstream in
 favour of `tempo-distributed` (kept deliberately; see `tempo-values.yaml`).
+
+Tempo is the default destination for traces but not the only one: Alloy also
+copies kagent's spans to Langfuse. The selector is kagent's own
+`service.namespace` resource attribute (`mini_platform`), which nothing else on
+this platform sets, and the A2A transport's spans are dropped on the way — two
+thirds of a conversation, one per queued event, carrying no attributes. Tempo
+still receives everything, so nothing about the existing cross-links changes.
+Any producer that starts setting `service.namespace` would silently join that
+feed.
 
 **Keycloak is the identity provider for every browser-facing service.** The
 `mini-platform` realm — clients, the two realm roles, the two groups, and two

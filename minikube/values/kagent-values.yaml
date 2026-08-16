@@ -73,6 +73,22 @@ controller:
 # one endpoint for every OTLP producer, and alloy-values.yaml alone decides
 # where each signal lands. gRPC on 4317 is what the chart's default protocol
 # expects.
+#
+# These spans are the agent's own account of a conversation — each LLM turn with
+# its prompt and completion, each tool call with its arguments and result — so
+# alloy-values.yaml forwards them to Langfuse as well as Tempo. That is a
+# different view from the one LiteLLM already reports there: the gateway sees
+# individual model calls and what they cost, not the run that strung them
+# together.
+#
+# The fan-out is configured there rather than here for two reasons. The OTel SDK
+# takes a single traces endpoint, so pointing kagent straight at Langfuse would
+# take it out of Tempo, off the service graph and out of the trace→logs jump.
+# And Langfuse authenticates ingestion with a project key pair: the controller
+# copies its own OTEL_* environment into every agent Deployment it generates
+# (collectOtelEnvFromProcess), values and all, so a credential handed to it here
+# would be readable in `kubectl get deploy k8s-agent -o yaml` rather than
+# staying in a Secret.
 otel:
   tracing:
     enabled: true

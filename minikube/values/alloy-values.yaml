@@ -114,7 +114,10 @@ alloy:
       // of spans from a busy LLM request path from being sent one at a time.
       otelcol.processor.batch "default" {
         output {
-          traces  = [otelcol.exporter.otlp.tempo.input]
+          traces  = [
+            otelcol.exporter.otlp.tempo.input,
+            otelcol.processor.filter.kagent_langfuse.input,
+          ]
           metrics = [otelcol.exporter.prometheus.default.input]
         }
       }
@@ -126,6 +129,64 @@ alloy:
           tls {
             insecure = true
           }
+        }
+      }
+
+      // ---------------------------------------------------------------------
+      // Second trace destination: kagent's agent spans also go to Langfuse, so
+      // an agent run can be read as an LLM trace -- prompts, completions, token
+      // usage and tool calls -- next to the gateway traffic LiteLLM already
+      // reports there. This is the only place that decision is made: kagent
+      // still emits to this one collector, and Tempo keeps its copy, so the
+      // trace->logs jump and the service graph are unaffected.
+      //
+      // Everything else that reaches this receiver keeps going to Tempo alone.
+      // The selector is kagent's own resource attribute: its agent runtime
+      // stamps every span with service.namespace set to the release's
+      // Kubernetes namespace (dashes as underscores) and service.name set to
+      // the agent, and no other producer on this platform sets
+      // service.namespace at all. Spans without it compare unequal here and are
+      // dropped.
+      //
+      // The second rule drops the A2A transport's own spans, which are two
+      // thirds of a conversation (one per event queued or dequeued), carry no
+      // attributes, and describe nothing about the agent's reasoning. Tempo
+      // still has them if a transport-level question ever comes up. Dropping
+      // them leaves kagent's `invocation` span with a parent Langfuse never
+      // receives; that is fine, it is ingested as-is with its own subtree
+      // intact.
+      otelcol.processor.filter "kagent_langfuse" {
+        error_mode = "ignore"
+
+        traces {
+          span = [
+            `resource.attributes["service.namespace"] != "mini_platform"`,
+            `instrumentation_scope.name == "a2a-python-sdk"`,
+          ]
+        }
+
+        output {
+          traces = [otelcol.exporter.otlphttp.langfuse.input]
+        }
+      }
+
+      // Langfuse authenticates OTLP ingestion with a project's public/secret
+      // key pair as HTTP Basic credentials, and routes the spans to the project
+      // that pair belongs to -- the same one LiteLLM writes to. The keys arrive
+      // as environment variables from the Vault-managed litellm-langfuse
+      // Secret; see the extraEnv block below.
+      otelcol.auth.basic "langfuse" {
+        username = sys.env("LANGFUSE_PUBLIC_KEY")
+        password = sys.env("LANGFUSE_SECRET_KEY")
+      }
+
+      // OTLP/HTTP, not gRPC: Langfuse serves ingestion on its web port only.
+      // The exporter appends /v1/traces itself, so the endpoint stops at the
+      // OTel base path.
+      otelcol.exporter.otlphttp "langfuse" {
+        client {
+          endpoint = "http://langfuse-web.mini-platform.svc.cluster.local:3000/api/public/otel"
+          auth     = otelcol.auth.basic.langfuse.handler
         }
       }
 
@@ -160,6 +221,21 @@ alloy:
       valueFrom:
         fieldRef:
           fieldPath: spec.nodeName
+    # Read by otelcol.auth.basic above. The Secret is the Langfuse project pair
+    # LiteLLM also uses; it is declared on the Langfuse application
+    # (langfuse-resources.yaml), which syncs two waves ahead of this one — a
+    # missing secretKeyRef would leave Alloy stuck in
+    # CreateContainerConfigError, taking the cluster's log shipping with it.
+    - name: LANGFUSE_PUBLIC_KEY
+      valueFrom:
+        secretKeyRef:
+          name: litellm-langfuse
+          key: LANGFUSE_PUBLIC_KEY
+    - name: LANGFUSE_SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          name: litellm-langfuse
+          key: LANGFUSE_SECRET_KEY
 
   resources:
     requests:
