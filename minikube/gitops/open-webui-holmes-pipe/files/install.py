@@ -18,7 +18,7 @@ META = {
 }
 
 
-def wait_for_database():
+def wait_for_database_and_admin():
     deadline = time.time() + 600
     while time.time() < deadline:
         try:
@@ -30,20 +30,22 @@ def wait_for_database():
                 )
             }
             if {"function", "user", "api_key"}.issubset(tables):
-                return connection
+                admin = connection.execute(
+                    "SELECT id FROM user WHERE role = 'admin' "
+                    "ORDER BY created_at LIMIT 1"
+                ).fetchone()
+                if admin is not None:
+                    return connection, admin
             connection.close()
         except sqlite3.Error:
             pass
         time.sleep(5)
-    raise RuntimeError("Open WebUI database migrations did not become ready")
+    raise RuntimeError(
+        "Open WebUI database migrations and first admin did not become ready"
+    )
 
 
-connection = wait_for_database()
-admin = connection.execute(
-    "SELECT id FROM user WHERE role = 'admin' ORDER BY created_at LIMIT 1"
-).fetchone()
-if admin is None:
-    raise RuntimeError("Open WebUI has no admin user to own the HolmesGPT Pipe")
+connection, admin = wait_for_database_and_admin()
 
 now = int(time.time())
 connection.execute(
