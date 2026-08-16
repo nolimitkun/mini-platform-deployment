@@ -129,10 +129,18 @@ kv_put mini-platform/litellm-langfuse \
 # the seeded org and its LiteLLM project stay invisible to the person who just
 # logged in. Matching it makes the SSO login *be* the owner account. Keep it in
 # step with the seed user in minikube/values/keycloak-values.yaml.
-kv_put mini-platform/langfuse-init-user \
+#
+# Written directly rather than through kv_put, because a seed-missing pass is
+# exactly the case that has to change: an existing cluster already holds this
+# path under the old admin@ address, kv_put would keep it, and the mismatch
+# above would survive the upgrade that is meant to fix it. Only the password is
+# a credential, so carry that forward and rewrite the rest.
+LANGFUSE_INIT_USER_PASSWORD="${LANGFUSE_INIT_USER_PASSWORD:-$(reuse_or_generate mini-platform/langfuse-init-user LANGFUSE_INIT_USER_PASSWORD)}"
+LANGFUSE_INIT_USER_PASSWORD="${LANGFUSE_INIT_USER_PASSWORD:-$(rand_b64)}"
+vault_cli kv put mini-platform/langfuse-init-user \
   LANGFUSE_INIT_USER_EMAIL=platform-admin@mini-platform.test \
   LANGFUSE_INIT_USER_NAME="Platform Admin" \
-  LANGFUSE_INIT_USER_PASSWORD="$(rand_b64)"
+  LANGFUSE_INIT_USER_PASSWORD="$LANGFUSE_INIT_USER_PASSWORD"
 
 kv_put mini-platform/mlflow-auth \
   admin-user=admin \

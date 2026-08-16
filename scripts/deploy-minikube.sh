@@ -543,6 +543,34 @@ ensure_minio_sso() {
   fi
 }
 
+# Langfuse re-runs its headless init at startup, and the init user's email is
+# what links the Keycloak identity to the account owning the seeded org. A
+# seed-missing run can change that address in Vault, but langfuse-web resolved
+# it into its environment when the pod was created, so until it restarts the
+# SSO login keeps landing in an empty workspace -- the same secretKeyRef blind
+# spot reconcile_after_secret_rotation handles for the rotation path.
+#
+# Compares the running pod against the synced Secret rather than a hardcoded
+# address, so it stays right whichever side moves, and it is a no-op on the
+# runs where they already agree.
+ensure_langfuse_init_user() {
+  kubectl -n "$NS" get deployment langfuse-web >/dev/null 2>&1 || return 0
+
+  local desired running
+  desired="$(kubectl -n "$NS" get secret langfuse-init-user \
+    -o jsonpath='{.data.LANGFUSE_INIT_USER_EMAIL}' 2>/dev/null | base64 -d 2>/dev/null || true)"
+  running="$(kubectl -n "$NS" exec deployment/langfuse-web -- \
+    printenv LANGFUSE_INIT_USER_EMAIL 2>/dev/null || true)"
+  # Either side unreadable means there is nothing to compare, not a mismatch.
+  [[ -n "$desired" && -n "$running" ]] || return 0
+  [[ "$desired" != "$running" ]] || return 0
+
+  log "Langfuse init user is now $desired; restarting langfuse-web to re-run the headless init"
+  kubectl -n "$NS" rollout restart deployment/langfuse-web >/dev/null
+  kubectl -n "$NS" rollout status deployment/langfuse-web --timeout=300s >/dev/null ||
+    warn "langfuse-web did not roll out; inspect 'kubectl -n $NS logs deploy/langfuse-web'"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --reset)
@@ -1009,6 +1037,7 @@ if [[ "$WAIT_FOR_WORKLOADS" == true ]]; then
 fi
 
 ensure_litellm_schema
+ensure_langfuse_init_user
 ensure_minio_sso
 
 log "Deployment bootstrap finished"
