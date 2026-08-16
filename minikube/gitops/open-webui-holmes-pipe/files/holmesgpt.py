@@ -10,6 +10,7 @@ import os
 from typing import Any, AsyncGenerator, Awaitable, Callable, Optional
 
 import aiohttp
+from opentelemetry.propagate import inject
 
 
 class Pipe:
@@ -100,6 +101,10 @@ class Pipe:
 
         timeout = aiohttp.ClientTimeout(total=self.timeout)
         headers = {"X-API-Key": self.api_key, "Accept": "text/event-stream"}
+        # Carry Open WebUI's active server span into Holmes. Holmes extracts
+        # this W3C context and its httpx instrumentation forwards it again to
+        # LiteLLM, giving all three services one distributed trace ID.
+        inject(headers)
         await self._status(emitter, "HolmesGPT is investigating the cluster")
 
         event_type = "message"

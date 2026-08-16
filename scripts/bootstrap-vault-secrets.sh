@@ -144,6 +144,7 @@ LANGFUSE_BASIC_AUTH="$(printf '%s' "${HOLMES_LANGFUSE_PUBLIC_KEY}:${HOLMES_LANGF
 # cluster upgrading from the shared LiteLLM project already has this path; the
 # new project keys above must replace that old header without rotating them.
 vault_cli kv put mini-platform/holmes-langfuse \
+  OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic ${LANGFUSE_BASIC_AUTH}" \
   OTEL_EXPORTER_OTLP_TRACES_HEADERS="Authorization=Basic ${LANGFUSE_BASIC_AUTH}"
 
 # Open WebUI's built-in HTTP OTLP exporter accepts a username/password pair

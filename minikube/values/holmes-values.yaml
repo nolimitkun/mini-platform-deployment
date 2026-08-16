@@ -49,11 +49,8 @@ modelList:
     # every request omitting `model` would go to OpenAI with the gateway's key
     # and 401. Naming the key anything else keeps this the only model loaded.
     api_key: envRef:LITELLM_API_KEY
-    # The platform gateway has global Langfuse callbacks for its other clients.
-    # Holmes emits a richer, investigation-level trace directly, so tell the
-    # proxy not to log these individual model calls a second time.
-    extra_body:
-      no-log: true
+    # Keep LiteLLM logging enabled. Each model iteration is recorded in the
+    # LiteLLM Langfuse project and inherits Holmes's W3C trace ID.
 
 # Loaded onto the pod with envFrom, so each Secret's keys are consumed verbatim
 # as env vars. All four are Vault-managed; see holmes-resources.yaml.
@@ -165,11 +162,10 @@ toolsets:
 # ==============================================================================
 # TELEMETRY AND IDENTITY
 # ==============================================================================
-# The generic OTLP/HTTP endpoint activates Holmes instrumentation and keeps its
-# metrics flowing through Alloy to Prometheus. The signal-specific traces
-# endpoint overrides that path: investigation spans go straight from Holmes to
-# Langfuse, authenticated by OTEL_EXPORTER_OTLP_TRACES_HEADERS from the
-# holmes-langfuse Secret. LiteLLM is not involved in trace delivery.
+# Holmes 0.38.2 does not honor the standard signal-specific trace variables.
+# It reads OTEL_EXPORTER_OTLP_ENDPOINT/HEADERS for traces and
+# OTEL_EXPORTER_OTLP_METRICS_ENDPOINT for the metrics override. Investigation
+# spans therefore go directly to Langfuse while metrics continue through Alloy.
 #
 # Both signals are emitted per investigation rather than exposed for scraping,
 # so an idle Holmes publishes no series and no spans at all. That is not a gap:
@@ -196,15 +192,13 @@ additionalEnvVars:
     # name.
     value: mini-platform
   - name: OTEL_EXPORTER_OTLP_ENDPOINT
-    # Generic endpoint is retained for metrics; the traces endpoint below wins
-    # for spans. HTTP/protobuf is shared by Alloy and Langfuse.
-    value: http://alloy.mini-platform.svc.cluster.local:4318
+    # Holmes appends /v1/traces to this base URL.
+    value: http://langfuse-web.mini-platform.svc.cluster.local:3000/api/public/otel
   - name: OTEL_EXPORTER_OTLP_PROTOCOL
     value: http/protobuf
-  - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
-    # Signal-specific endpoints include /v1/traces; the OTel SDK does not append
-    # it as it does for the generic endpoint.
-    value: http://langfuse-web.mini-platform.svc.cluster.local:3000/api/public/otel/v1/traces
+  - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+    # Holmes uses this value verbatim, so include the signal path.
+    value: http://alloy.mini-platform.svc.cluster.local:4318/v1/metrics
   - name: HOLMES_LANGFUSE_ATTRIBUTES
     # Adds Langfuse's trace input/output, observation content, user/session,
     # tags, and investigation metadata attributes to Holmes' native spans.
@@ -212,6 +206,10 @@ additionalEnvVars:
   - name: OTEL_SERVICE_NAME
     # Stable service identity on Holmes' native Langfuse spans and OTLP metrics.
     value: holmes
+  - name: PYTHONPATH
+    # Python loads sitecustomize.py automatically. The mounted middleware
+    # extracts an incoming traceparent before Holmes starts its investigation.
+    value: /etc/holmes/otel-context:.:/app/holmes
 
 # ==============================================================================
 # WRITABLE STATE
@@ -231,9 +229,15 @@ additionalEnvVars:
 additionalVolumes:
   - name: holmes-state
     emptyDir: {}
+  - name: otel-context
+    configMap:
+      name: holmes-otel-context
 additionalVolumeMounts:
   - name: holmes-state
     mountPath: /root/.holmes
+  - name: otel-context
+    mountPath: /etc/holmes/otel-context
+    readOnly: true
 
 # Usage reporting to Robusta's servers. The chart turns this on whenever
 # ROBUSTA_UI_DOMAIN is unset, which on a standalone install is always.
