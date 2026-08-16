@@ -57,7 +57,21 @@ def api(method, path, token, body=None):
         return json.load(response)
 
 
+def wait_for_api():
+    deadline = time.time() + 600
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(BASE_URL + "/health", timeout=10) as response:
+                if response.status == 200:
+                    return
+        except (urllib.error.URLError, TimeoutError):
+            pass
+        time.sleep(5)
+    raise RuntimeError("Open WebUI API did not become ready")
+
+
 connection = wait_for_database()
+wait_for_api()
 admin = connection.execute(
     "SELECT id FROM user WHERE role = 'admin' ORDER BY created_at LIMIT 1"
 ).fetchone()
