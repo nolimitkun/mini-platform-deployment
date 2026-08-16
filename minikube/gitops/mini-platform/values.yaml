@@ -225,6 +225,13 @@ applications:
     valuesFile: minikube/gitops/holmes-a2a/values.yaml
     releaseName: holmes-a2a
     wave: "3"
+  # Installs HolmesGPT as an Open WebUI Pipe after both applications and the
+  # Vault-managed Holmes API key are ready.
+  open-webui-holmes-pipe:
+    chartPath: minikube/gitops/open-webui-holmes-pipe
+    valuesFile: minikube/gitops/open-webui-holmes-pipe/values.yaml
+    releaseName: open-webui-holmes-pipe
+    wave: "3"
   # Forward-auth for MLflow, kagent and the LiteLLM UI. Fails its OIDC discovery
   # call and restarts until Keycloak (wave -2) has finished importing the realm,
   # so it is ordered late. The routes that name it as an auth backend are

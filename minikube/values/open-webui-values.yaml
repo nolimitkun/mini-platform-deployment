@@ -14,11 +14,21 @@ openaiBaseApiUrl: http://litellm.mini-platform.svc.cluster.local:4000/v1
 openaiApiKeyExistingSecret: litellm-master-key
 openaiApiKeyExistingSecretKey: PROXY_MASTER_KEY
 
+# The Holmes Pipe reads its credential only on the Open WebUI server. It is
+# never exposed as a Function valve or sent to the browser.
+extraEnvFrom:
+  - secretRef:
+      name: holmes-api
+
 # Open WebUI serves no Prometheus endpoint — OTLP is the only way to get
 # anything numeric out of it, which is the reason the Alloy gateway exists.
 # Alloy splits the stream: traces to Tempo, metrics remote-written to
 # Prometheus.
 extraEnvVars:
+  - name: HOLMES_URL
+    value: http://holmes-holmes.mini-platform.svc.cluster.local/api/chat
+  - name: HOLMES_REQUEST_TIMEOUT_SECONDS
+    value: "900"
   # ---- Keycloak SSO ----------------------------------------------------
   # ENABLE_LOGIN_FORM is left at its default so the local account that Open
   # WebUI creates for the first signup stays usable as break-glass.

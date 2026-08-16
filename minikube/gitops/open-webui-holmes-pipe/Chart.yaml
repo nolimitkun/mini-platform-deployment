@@ -1,0 +1,6 @@
+apiVersion: v2
+name: open-webui-holmes-pipe
+description: Provisions HolmesGPT as a streaming Open WebUI Pipe
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

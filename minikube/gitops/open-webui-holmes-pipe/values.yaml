@@ -1,0 +1,17 @@
+image:
+  repository: ghcr.io/open-webui/open-webui
+  tag: 0.9.5
+  pullPolicy: IfNotPresent
+
+openWebUI:
+  serviceUrl: http://open-webui.mini-platform.svc.cluster.local
+  databasePvc: open-webui
+  databasePath: /data/webui.db
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
