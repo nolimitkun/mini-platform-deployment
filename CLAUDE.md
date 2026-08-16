@@ -105,21 +105,23 @@ MinIO (S3 object store), all reconciled by Argo CD.
 
 **Two agentic-AI consumers sit on top of the stack, both running their model
 through LiteLLM**: kagent (chat UI, agents, Grafana MCP) and HolmesGPT (an
-investigation API, no UI). kagent's model calls use LiteLLM's global Langfuse
-callback. Holmes instead marks those gateway calls `no-log` and sends its richer
-native investigation trace directly to Langfuse over authenticated OTLP/HTTP.
-LiteLLM also publishes Holmes in its A2A agent registry: the first-party
-`minikube/gitops/holmes-a2a` adapter translates A2A `message/send` calls into
-Holmes' authenticated `/api/chat` contract.
-Holmes reads Kubernetes over a read-only ClusterRole and reaches Prometheus
-directly but Loki and Tempo through Grafana's datasource proxy — trading a
-credential (basic auth from `holmes-grafana`, the same compromise `kagent-grafana`
-makes) for clickable links back into Grafana and for keeping
+investigation API surfaced in Open WebUI through a Pipe). Both retain LiteLLM's
+gateway callback, while Holmes also sends its richer native investigation trace
+directly to its dedicated Langfuse project over authenticated OTLP/HTTP.
+Holmes reads Kubernetes over read-only RBAC and reaches Prometheus
+directly but dashboards, Loki and Tempo through Grafana. It also reads Helm and
+Argo CD deployment state, and uses a hard-allowlisted GitHub MCP server for
+repository, pull-request and Actions context. Grafana basic auth comes from
+`holmes-grafana`, the same compromise `kagent-grafana` makes, providing clickable
+links back into Grafana and keeping
 `grafana-values.yaml` the only description of where each backend lives, keyed on
 the fixed datasource uids. Its overlay is also the reason `alloy-values.yaml`
 carries an `app`-label fallback: the holmes chart labels its pod `app: holmes`
 and never sets `app.kubernetes.io/instance`, which is what Alloy reads first,
 so without the fallback its logs would arrive with an empty `app` label.
+Helm release state is stored in Secrets, so the second-source resources chart
+binds a namespace-scoped `holmes-helm-release-reader` Role; never widen that
+permission to a ClusterRole.
 
 **Observability is three signals behind one Grafana.** Prometheus scrapes
 metrics; Grafana Alloy (a DaemonSet, Promtail's successor) tails pod logs
@@ -208,7 +210,7 @@ Each entry maps a `chartPath` (under `charts/` in the charts repo, or
 | `-2` | Keycloak, Langfuse, MLflow, Trino, vLLM |
 | `-1` → `0` | MinIO, Prometheus, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset |
 | `1` → `2` | LiteLLM, then Open WebUI, kagent, HolmesGPT and oauth2-proxy |
-| `3` | Holmes A2A adapter, after Holmes and its API-key mapping are healthy |
+| `3` | Open WebUI Holmes Pipe, after Holmes and its API-key mapping are healthy |
 
 All generated Applications use `automated` sync with `prune: true`,
 `selfHeal: true`, `CreateNamespace=true`, and `ServerSideApply=true`.

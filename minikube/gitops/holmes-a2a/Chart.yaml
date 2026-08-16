@@ -1,6 +1,0 @@
-apiVersion: v2
-name: holmes-a2a
-description: A2A adapter that exposes HolmesGPT through the LiteLLM agent gateway
-type: application
-version: 0.1.0
-appVersion: "1.0.0"

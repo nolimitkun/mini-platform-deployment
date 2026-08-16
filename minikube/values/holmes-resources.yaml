@@ -1,5 +1,5 @@
 vaultSecrets:
-  # HolmesGPT's four envFrom mounts: its credential for calling LiteLLM, its
+  # HolmesGPT's envFrom mounts and GitHub MCP credential: its LiteLLM key,
   # Grafana basic-auth pair for the Loki and Tempo toolsets, the API key its
   # own HTTP server authenticates callers with, and its direct Langfuse OTLP
   # authentication header. See
@@ -8,7 +8,28 @@ vaultSecrets:
   - holmes-litellm
   - holmes-grafana
   - holmes-api
+  - holmes-argocd
+  - holmes-github
   - holmes-langfuse
+
+# Helm 3 stores release records as Secrets. Scope that read access to the
+# platform namespace instead of widening Holmes' upstream ClusterRole across
+# the whole cluster. The built-in Helm toolset is read-only, but this Role does
+# mean the Holmes ServiceAccount can read other Secrets in mini-platform; do
+# not enable it in a namespace whose credentials Holmes must never see.
+roles:
+  - name: holmes-helm-release-reader
+    rules:
+      - apiGroups: [""]
+        resources: ["secrets"]
+        verbs: ["get", "list"]
+roleBindings:
+  - name: holmes-helm-release-reader
+    roleName: holmes-helm-release-reader
+    subjects:
+      - kind: ServiceAccount
+        name: holmes-holmes-service-account
+        namespace: mini-platform
 
 configMaps:
   - name: holmes-otel-context

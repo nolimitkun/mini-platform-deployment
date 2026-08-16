@@ -39,6 +39,12 @@ routes: []
 # adapters that must roll and prune with the consuming Argo CD application.
 configMaps: []
 
+# Optional namespace-scoped RBAC owned by an application. Keep this here rather
+# than adding broad rules to an upstream chart's ClusterRole when a consumer
+# only needs access inside its own destination namespace.
+roles: []
+roleBindings: []
+
 # ==============================================================================
 # VAULT
 # ==============================================================================

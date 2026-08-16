@@ -59,7 +59,10 @@ Environment:
                           to ~/.cache/huggingface/token (HF_TOKEN_FILE).
   DEEPSEEK_API_KEY        DeepSeek key for the hosted model kagent's agents run
                           on. Falls back to ~/.deepseek-key (DEEPSEEK_KEY_FILE).
-                          Both are required only when their Vault secret is
+  HOLMES_GITHUB_TOKEN     Read-only GitHub PAT for Holmes' MCP server.
+  HOLMES_ARGOCD_AUTH_TOKEN
+                          API token for the read-only Argo CD `holmes` account.
+                          All four are required only when their Vault secret is
                           actually written: a fresh install, a --rotate-secrets
                           run, or the first upgrade after the secret was added.
 
