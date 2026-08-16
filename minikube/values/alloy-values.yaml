@@ -133,12 +133,14 @@ alloy:
       }
 
       // ---------------------------------------------------------------------
-      // Second trace destination: kagent's agent spans also go to Langfuse, so
-      // an agent run can be read as an LLM trace -- prompts, completions, token
-      // usage and tool calls -- next to the gateway traffic LiteLLM already
-      // reports there. This is the only place that decision is made: kagent
-      // still emits to this one collector, and Tempo keeps its copy, so the
-      // trace->logs jump and the service graph are unaffected.
+      // Second trace destination: kagent's agent spans also go to Langfuse --
+      // into the `kagent` project, alongside the ones Holmes and Open WebUI
+      // have -- so an agent run can be read as an LLM trace, with its prompts,
+      // completions, token usage and tool calls, and without LiteLLM's
+      // per-call gateway traffic interleaved. This is the only place that
+      // decision is made: kagent still emits to this one collector, and Tempo
+      // keeps its copy, so the trace->logs jump and the service graph are
+      // unaffected.
       //
       // Everything else that reaches this receiver keeps going to Tempo alone.
       // The selector is kagent's own resource attribute: its agent runtime
@@ -171,10 +173,12 @@ alloy:
       }
 
       // Langfuse authenticates OTLP ingestion with a project's public/secret
-      // key pair as HTTP Basic credentials, and routes the spans to the project
-      // that pair belongs to -- the same one LiteLLM writes to. The keys arrive
-      // as environment variables from the Vault-managed litellm-langfuse
-      // Secret; see the extraEnv block below.
+      // key pair as HTTP Basic credentials, and the pair is also what selects
+      // the project. Langfuse's headless init provisions one project only and
+      // its project API needs an enterprise licence, so the `kagent` project
+      // these keys belong to is created by the langfuse-kagent-project release
+      // of minikube/gitops/langfuse-project, one wave earlier. The keys arrive
+      // as environment variables; see the extraEnv block below.
       otelcol.auth.basic "langfuse" {
         username = sys.env("LANGFUSE_PUBLIC_KEY")
         password = sys.env("LANGFUSE_SECRET_KEY")
@@ -221,20 +225,19 @@ alloy:
       valueFrom:
         fieldRef:
           fieldPath: spec.nodeName
-    # Read by otelcol.auth.basic above. The Secret is the Langfuse project pair
-    # LiteLLM also uses; it is declared on the Langfuse application
-    # (langfuse-resources.yaml), which syncs two waves ahead of this one — a
-    # missing secretKeyRef would leave Alloy stuck in
-    # CreateContainerConfigError, taking the cluster's log shipping with it.
+    # Read by otelcol.auth.basic above. The kagent project's key pair, declared
+    # on the Langfuse application (langfuse-resources.yaml), which syncs two
+    # waves ahead of this one — a missing secretKeyRef would leave Alloy stuck
+    # in CreateContainerConfigError, taking the cluster's log shipping with it.
     - name: LANGFUSE_PUBLIC_KEY
       valueFrom:
         secretKeyRef:
-          name: litellm-langfuse
+          name: kagent-langfuse-project
           key: LANGFUSE_PUBLIC_KEY
     - name: LANGFUSE_SECRET_KEY
       valueFrom:
         secretKeyRef:
-          name: litellm-langfuse
+          name: kagent-langfuse-project
           key: LANGFUSE_SECRET_KEY
 
   resources:

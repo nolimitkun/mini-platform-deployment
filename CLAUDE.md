@@ -150,7 +150,8 @@ sized for real volume, and the vendored `tempo` chart is deprecated upstream in
 favour of `tempo-distributed` (kept deliberately; see `tempo-values.yaml`).
 
 Tempo is the default destination for traces but not the only one: Alloy also
-copies kagent's spans to Langfuse. The selector is kagent's own
+copies kagent's spans to Langfuse, into the `kagent` project the
+`langfuse-kagent-project` release provisions. The selector is kagent's own
 `service.namespace` resource attribute (`mini_platform`), which nothing else on
 this platform sets, and the A2A transport's spans are dropped on the way — two
 thirds of a conversation, one per queued event, carrying no attributes. Tempo
@@ -277,7 +278,10 @@ listed in some release's resources file. `litellm-langfuse` is consumed by
 Langfuse's headless init and LiteLLM for the starter project. Holmes is isolated
 in a second project: `holmes-langfuse-project` is mounted only by the
 `minikube/gitops/langfuse-project` provisioning job, while Holmes itself mounts
-the derived exporter header from `holmes-langfuse`.
+the derived exporter header from `holmes-langfuse`. Open WebUI follows the same
+split. kagent's `kagent-langfuse-project` has no runtime mirror, because kagent
+exports nothing itself — Alloy does, and mounts the provisioning pair as it
+stands.
 
 ## Common conventions / recipes
 

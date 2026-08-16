@@ -1,0 +1,38 @@
+image:
+  repository: langfuse/langfuse
+  tag: 3.174.1
+  pullPolicy: IfNotPresent
+
+resourceName: langfuse-kagent-project
+
+# Unlike the Holmes and Open WebUI projects, the workload named here never sees
+# these keys: kagent exports nothing to Langfuse itself. Alloy does, filtering
+# kagent's spans out of the OTLP stream every workload shares, so the same
+# Secret is mounted by this job and by the Alloy DaemonSet. No runtime mirror is
+# needed either — otelcol.auth.basic reads whichever env vars alloy-values.yaml
+# points at, so the provisioning key names carry through unchanged.
+project:
+  id: kagent
+  name: kagent
+  organizationId: mini-platform
+  credentialsSecret: kagent-langfuse-project
+  apiKeyNote: Provisioned kagent API Key
+
+database:
+  host: langfuse-postgresql
+  name: postgres_langfuse
+  username: postgres
+  credentialsSecret: langfuse-postgresql
+  passwordKey: password
+
+langfuseAppSecret:
+  name: langfuse-app-secrets
+  saltKey: salt
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi

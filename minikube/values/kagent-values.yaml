@@ -76,10 +76,10 @@ controller:
 #
 # These spans are the agent's own account of a conversation — each LLM turn with
 # its prompt and completion, each tool call with its arguments and result — so
-# alloy-values.yaml forwards them to Langfuse as well as Tempo. That is a
-# different view from the one LiteLLM already reports there: the gateway sees
-# individual model calls and what they cost, not the run that strung them
-# together.
+# alloy-values.yaml forwards them to Langfuse as well as Tempo, into a `kagent`
+# project of their own. That is a different view from the one LiteLLM reports in
+# its project: the gateway sees individual model calls and what they cost, not
+# the run that strung them together.
 #
 # The fan-out is configured there rather than here for two reasons. The OTel SDK
 # takes a single traces endpoint, so pointing kagent straight at Langfuse would
