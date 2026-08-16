@@ -160,9 +160,12 @@ are only needed the first time. The two Holmes integration tokens have no disk
 fallback. None is required on a re-run once its Vault secret exists; see the
 script's `--help` for the exact rule.
 
-The script also loads the repository's git-ignored `.env` automatically. Start
-from `.env.example`, set its permissions to `0600`, and fill the two Holmes
-tokens there if you prefer not to export them in every shell:
+The script also loads the repository's git-ignored `.env` automatically. Values
+already exported by the caller take precedence over the file, so a one-off
+`VAR=value ./scripts/deploy-minikube.sh` override is never replaced by a stale
+or empty `.env` assignment. Start from `.env.example`, set its permissions to
+`0600`, and fill the two Holmes tokens there if you prefer not to export them in
+every shell:
 
 ```bash
 cp .env.example .env

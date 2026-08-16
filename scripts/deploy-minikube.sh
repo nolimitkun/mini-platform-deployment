@@ -6,10 +6,16 @@ PLATFORM_ENV_FILE="${PLATFORM_ENV_FILE:-$ROOT/.env}"
 if [[ -f "$PLATFORM_ENV_FILE" ]]; then
   # This is a shell environment file, not a generic dotenv parser. Keep it
   # local and trusted; `set -a` exports each assignment for the Vault bootstrap.
+  # Snapshot the caller's exported environment first and replay it afterwards,
+  # so an explicit `VAR=value ./scripts/deploy-minikube.sh` or prior export has
+  # higher precedence than a stale or empty assignment in the file.
+  _PLATFORM_CALLER_EXPORTS="$(export -p)"
   set -a
   # shellcheck disable=SC1090
   source "$PLATFORM_ENV_FILE"
   set +a
+  eval "${_PLATFORM_CALLER_EXPORTS//declare -x /export }"
+  unset _PLATFORM_CALLER_EXPORTS
 fi
 
 PROFILE="${PROFILE:-mini-platform}"
@@ -63,6 +69,7 @@ Options:
 Environment:
   PLATFORM_ENV_FILE       Shell environment file loaded before defaults
                           (default: <repository>/.env; set to /dev/null to skip).
+                          Existing process environment values take precedence.
   WORKLOAD_TIMEOUT        Seconds to wait for platform pods (default: 1800).
                           Raise it for a --reset run: that empties Minikube's
                           image store, and pulling the whole platform back over
