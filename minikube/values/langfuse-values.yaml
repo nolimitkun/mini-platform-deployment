@@ -1,4 +1,8 @@
 langfuse:
+  # Local restarts must reuse the images preloaded into Minikube when the
+  # upstream registry is unavailable.
+  image:
+    pullPolicy: IfNotPresent
   salt:
     secretKeyRef:
       name: langfuse-app-secrets
