@@ -94,7 +94,13 @@ otel:
     enabled: true
     exporter:
       otlp:
-        endpoint: alloy.mini-platform.svc.cluster.local:4317
+        # The scheme is not optional, even for gRPC. The chart hands this value
+        # to both runtimes: opentelemetry-python accepts a bare host:port, but
+        # the Go controller feeds it to url.Parse, which reads everything up to
+        # the colon as the scheme and leaves the host empty -- the exporter then
+        # fails every batch with `invalid target address "": missing address`
+        # and the controller's span, the root of every conversation, is lost.
+        endpoint: http://alloy.mini-platform.svc.cluster.local:4317
         protocol: grpc
         insecure: true
   # Container stdout is already picked up by Alloy's pod-log scraper and shipped
