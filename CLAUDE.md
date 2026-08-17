@@ -149,6 +149,21 @@ Loki and Tempo both run single-binary against a filesystem PVC — neither is
 sized for real volume, and the vendored `tempo` chart is deprecated upstream in
 favour of `tempo-distributed` (kept deliberately; see `tempo-values.yaml`).
 
+**GPU metrics come from dcgm-exporter, and how it reaches the card is the one
+surprising thing about it.** It requests no `nvidia.com/gpu` — the node has
+exactly one and vLLM holds it — so nothing injects the driver the way the
+device plugin does for vLLM. Upstream expects `runtimeClassName: nvidia` or
+CDI; this node has neither, and a pod that asks for nothing NVIDIA-shaped sees
+no `/dev/nvidia*` at all. The overlay instead sets `NVIDIA_VISIBLE_DEVICES`,
+which is what the container toolkit's prestart hook actually triggers on, and
+the hook bind-mounts devices and driver libraries in. **Don't "clean up" that
+env var** — it is load-bearing, and dropping it costs GPU metrics entirely.
+Its scrape job sets `honor_labels` on purpose: the exporter reads the kubelet
+pod-resources socket, so its `pod`/`namespace`/`container` labels name the
+workload *holding* the GPU (today vLLM), which is what makes `DCGM_FI_*`
+joinable with vLLM's own series. The chart's ServiceMonitor stays off — there
+is no Prometheus operator here, so `monitoring.coreos.com` does not exist.
+
 Tempo is the default destination for traces but not the only one: Alloy also
 copies kagent's spans to Langfuse, into the `kagent` project the
 `langfuse-kagent-project` release provisions. The selector is kagent's own
@@ -226,7 +241,7 @@ Each entry maps a `chartPath` (under `charts/` in the charts repo, or
 | `-4` | Vault, VSO, kagent CRDs |
 | `-3` | Stateful deps (postgres, redis, qdrant, spark-operator) |
 | `-2` | Keycloak, Langfuse, MLflow, Trino, vLLM |
-| `-1` → `0` | MinIO, Prometheus, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset |
+| `-1` → `0` | MinIO, Prometheus, dcgm-exporter, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset |
 | `1` → `2` | LiteLLM, then Open WebUI, kagent, HolmesGPT and oauth2-proxy |
 | `3` | Open WebUI Holmes Pipe, after Holmes and its API-key mapping are healthy |
 
