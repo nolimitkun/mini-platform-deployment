@@ -105,6 +105,13 @@ applications:
     valuesFile: minikube/gitops/langfuse-project/open-webui-values.yaml
     releaseName: langfuse-open-webui-project
     wave: "-1"
+  # Ahead of Alloy in wave 0, which is what exports kagent's spans and starts
+  # presenting this project's key pair to Langfuse the moment it comes up.
+  langfuse-kagent-project:
+    chartPath: minikube/gitops/langfuse-project
+    valuesFile: minikube/gitops/langfuse-project/kagent-values.yaml
+    releaseName: langfuse-kagent-project
+    wave: "-1"
   mlflow:
     chartPath: charts/mlflow
     valuesFile: minikube/values/mlflow-values.yaml

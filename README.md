@@ -50,7 +50,8 @@ Prometheus     ──▶ Grafana            (metrics + dashboards)
 Alloy ──▶ Loki ──▶ Grafana            (pod logs, every pod in every namespace)
 Keycloak, Trino, vLLM, LiteLLM, Open WebUI, kagent, Argo CD
       ─OTLP─▶ Alloy ─┬─▶ Tempo        (traces)
-                     └─▶ Prometheus   (OTLP metrics, remote write)
+                     ├─▶ Prometheus   (OTLP metrics, remote write)
+                     └─▶ Langfuse     (kagent's agent spans only)
 kagent ──▶ LiteLLM                    (agents; DeepSeek through the gateway)
        └─▶ Grafana MCP ──▶ Prometheus, Loki, Tempo
 HolmesGPT ──▶ LiteLLM                 (root-cause analysis; same gateway)
@@ -452,7 +453,11 @@ Vault-managed secret for tracing. Holmes uses a separate `HolmesGPT` project:
 idempotent `mini-platform-langfuse-holmes-project` provisioning job, while
 `mini-platform/holmes-langfuse` contains only the derived Basic-auth header
 mounted by Holmes. Native investigation traces therefore never mix with the
-LiteLLM gateway project, and Holmes never mounts its raw Langfuse keys.
+LiteLLM gateway project, and Holmes never mounts its raw Langfuse keys. kagent
+gets a `kagent` project the same way, from
+`mini-platform/kagent-langfuse-project` — but with no runtime mirror beside it,
+because kagent exports nothing itself and the Alloy DaemonSet that exports for
+it mounts the provisioning pair directly.
 
 VSO then creates the destination Kubernetes Secrets. Check synchronization:
 
@@ -485,6 +490,8 @@ shared `minikube/gitops/app-resources` chart rendered against a sibling
 | `mini-platform-keycloak` | `charts/keycloak` | `minikube/values/keycloak-values.yaml` |
 | `mini-platform-langfuse` | `charts/langfuse` | `minikube/values/langfuse-values.yaml` |
 | `mini-platform-langfuse-holmes-project` | `minikube/gitops/langfuse-project` | `minikube/gitops/langfuse-project/values.yaml` |
+| `mini-platform-langfuse-open-webui-project` | `minikube/gitops/langfuse-project` | `minikube/gitops/langfuse-project/open-webui-values.yaml` |
+| `mini-platform-langfuse-kagent-project` | `minikube/gitops/langfuse-project` | `minikube/gitops/langfuse-project/kagent-values.yaml` |
 | `mini-platform-mlflow` | `charts/mlflow` | `minikube/values/mlflow-values.yaml` |
 | `mini-platform-trino` | `charts/trino` | `minikube/values/trino-values.yaml` |
 | `mini-platform-vllm` | `charts/vllm-stack` | `minikube/values/vllm-values.yaml` |
@@ -864,6 +871,24 @@ kubectl -n "$NS" get pods -l app.kubernetes.io/instance=langfuse
 kubectl -n "$NS" get pods -l app.kubernetes.io/name=litellm
 ```
 
+Alloy authenticates with the `kagent` project's keys instead, to forward the
+spans it filters out of the OTLP stream. It is the one component that will not
+start without them — they arrive as `secretKeyRef` environment variables, so a
+missing Secret leaves the DaemonSet in `CreateContainerConfigError` and stops
+log shipping too:
+
+```bash
+kubectl -n "$NS" get vaultstaticsecret kagent-langfuse-project
+kubectl -n "$NS" get pods -l app.kubernetes.io/name=alloy
+```
+
+That project, like Holmes' and Open WebUI's, comes from a Sync-hook Job rather
+than from Langfuse itself. All three are idempotent and re-run on every sync:
+
+```bash
+kubectl -n "$NS" get jobs -l app.kubernetes.io/name=langfuse-kagent-project
+```
+
 **LLM gateway smoke test.** LiteLLM serves the `qwen3.6-27b` model backed by
 `http://vllm-router-service.mini-platform.svc.cluster.local/v1`:
 
@@ -886,8 +911,15 @@ configure TLS and authentication before exposing it.
 
 **kagent.** The chat UI is at `http://kagent.test`. Four agents ship enabled —
 `k8s-agent`, `helm-agent`, `promql-agent`, and `observability-agent` — all
-running on `deepseek-v4-pro` through LiteLLM, so their turns appear in Langfuse
-alongside every other LLM call. The agents that target components this platform
+running on `deepseek-v4-pro` through LiteLLM, so their turns appear in the
+`litellm` Langfuse project alongside every other LLM call. They appear a second
+time in a `kagent` project of their own, and more usefully: Alloy forwards
+kagent's own spans there, so a conversation shows up as one trace with each LLM
+turn's prompt and completion, each tool call's arguments and result, and the
+token usage per turn — the run itself, not the scattered gateway calls it
+produced. Traces are named after the agent's HTTP
+entrypoint (`POST /`) and the observations underneath carry the agent, tool and
+generation detail. The agents that target components this platform
 does not run (Istio, kgateway, Cilium, Argo Rollouts) are disabled in the
 overlay. `observability-agent` is the one wired to live telemetry: it reaches
 Prometheus, Loki, and Tempo through `grafana-mcp`, which proxies Grafana's

@@ -114,7 +114,10 @@ alloy:
       // of spans from a busy LLM request path from being sent one at a time.
       otelcol.processor.batch "default" {
         output {
-          traces  = [otelcol.exporter.otlp.tempo.input]
+          traces  = [
+            otelcol.exporter.otlp.tempo.input,
+            otelcol.processor.filter.kagent_langfuse.input,
+          ]
           metrics = [otelcol.exporter.prometheus.default.input]
         }
       }
@@ -126,6 +129,129 @@ alloy:
           tls {
             insecure = true
           }
+        }
+      }
+
+      // ---------------------------------------------------------------------
+      // Second trace destination: kagent's agent spans also go to Langfuse --
+      // into the `kagent` project, alongside the ones Holmes and Open WebUI
+      // have -- so an agent run can be read as an LLM trace, with its prompts,
+      // completions, token usage and tool calls, and without LiteLLM's
+      // per-call gateway traffic interleaved. This is the only place that
+      // decision is made: kagent still emits to this one collector, and Tempo
+      // keeps its copy, so the trace->logs jump and the service graph are
+      // unaffected.
+      //
+      // Everything else that reaches this receiver keeps going to Tempo alone.
+      // The selector is kagent's own resource attribute, and it takes two
+      // values because a conversation is served by two processes. The Python
+      // agent runtime stamps service.namespace with the release's Kubernetes
+      // namespace (dashes as underscores), so `mini_platform`; the Go
+      // controller in front of it stamps the product name, `kagent`, and
+      // carries the Kubernetes namespace separately in k8s.namespace.name.
+      // Nothing else on this platform sets service.namespace at all, so spans
+      // without either value compare unequal here and are dropped.
+      //
+      // Admitting the controller is what gives the trace a root. It receives
+      // the UI's request and propagates traceparent into the agent, so every
+      // span the agent produces descends from its `POST /api/a2a/...` span;
+      // without it Langfuse receives a set of orphans, and derives the trace's
+      // name and its trace-level input and output from a root that is not
+      // there. It is not chatty either -- outside a conversation the controller
+      // traces only its own API, a handful of spans a minute.
+      //
+      // The second rule drops the A2A transport's own spans, which are two
+      // thirds of a conversation (one per event queued or dequeued), carry no
+      // attributes, and describe nothing about the agent's reasoning. Tempo
+      // still has them if a transport-level question ever comes up. Dropping
+      // them leaves kagent's `invocation` span with a parent Langfuse never
+      // receives; that is fine, it is ingested as-is with its own subtree
+      // intact.
+      otelcol.processor.filter "kagent_langfuse" {
+        error_mode = "ignore"
+
+        traces {
+          span = [
+            `resource.attributes["service.namespace"] != "mini_platform" and resource.attributes["service.namespace"] != "kagent"`,
+            `instrumentation_scope.name == "a2a-python-sdk"`,
+          ]
+        }
+
+        output {
+          traces = [otelcol.processor.transform.kagent_langfuse.input]
+        }
+      }
+
+      // Langfuse reads a trace's name, input and output from its root span, and
+      // kagent's root is an HTTP handler: it knows the route it served, not the
+      // question asked or the answer returned. Both are in the trace already,
+      // just one level down, so name them in the vocabulary Langfuse promotes
+      // to the trace -- otherwise the trace header stays blank and a run can
+      // only be read by opening `call_llm`.
+      //
+      // The values come from the OpenAI instrumentation's indexed prompt and
+      // completion attributes rather than from the ADK's own
+      // gcp.vertex.agent.llm_request, which is the whole conversation plus the
+      // system instruction -- hundreds of kilobytes of context per turn, not a
+      // question. Each mapping is written so that exactly one span in a run
+      // satisfies it, because the last write wins on the trace record and the
+      // order spans arrive in is not guaranteed:
+      //
+      //   input   gen_ai.prompt.1.content is the user's turn, index 0 being the
+      //           system prompt. Every openai.chat span in the run repeats it
+      //           verbatim, so whichever lands last writes the same string.
+      //   output  gen_ai.completion.0.content is set only on the turn that
+      //           answers. The turns in between complete with tool calls, which
+      //           the instrumentation records under gen_ai.completion.0
+      //           .tool_calls.* and leaves .content unset.
+      //
+      // The trace's name is left alone deliberately. Langfuse takes it from the
+      // root span, which is `POST /api/a2a/<namespace>/<agent>` and already
+      // names the agent; writing langfuse.trace.name here as well would leave
+      // two writers on one field with no defined order between them, and a name
+      // that changes from run to run is worse than a verbose one.
+      //
+      // A session that has already exchanged turns pushes the current question
+      // past index 1, and the trace input then shows the first question of the
+      // session instead. kagent opens a session per conversation, so this is
+      // the exception rather than the rule; a faithful mapping would need the
+      // instrumentation to mark which message is current.
+      otelcol.processor.transform "kagent_langfuse" {
+        error_mode = "ignore"
+
+        trace_statements {
+          context = "span"
+
+          statements = [
+            `set(attributes["langfuse.trace.input"], attributes["gen_ai.prompt.1.content"]) where attributes["gen_ai.prompt.1.role"] == "user"`,
+            `set(attributes["langfuse.trace.output"], attributes["gen_ai.completion.0.content"]) where attributes["gen_ai.completion.0.content"] != nil`,
+          ]
+        }
+
+        output {
+          traces = [otelcol.exporter.otlphttp.langfuse.input]
+        }
+      }
+
+      // Langfuse authenticates OTLP ingestion with a project's public/secret
+      // key pair as HTTP Basic credentials, and the pair is also what selects
+      // the project. Langfuse's headless init provisions one project only and
+      // its project API needs an enterprise licence, so the `kagent` project
+      // these keys belong to is created by the langfuse-kagent-project release
+      // of minikube/gitops/langfuse-project, one wave earlier. The keys arrive
+      // as environment variables; see the extraEnv block below.
+      otelcol.auth.basic "langfuse" {
+        username = sys.env("LANGFUSE_PUBLIC_KEY")
+        password = sys.env("LANGFUSE_SECRET_KEY")
+      }
+
+      // OTLP/HTTP, not gRPC: Langfuse serves ingestion on its web port only.
+      // The exporter appends /v1/traces itself, so the endpoint stops at the
+      // OTel base path.
+      otelcol.exporter.otlphttp "langfuse" {
+        client {
+          endpoint = "http://langfuse-web.mini-platform.svc.cluster.local:3000/api/public/otel"
+          auth     = otelcol.auth.basic.langfuse.handler
         }
       }
 
@@ -160,6 +286,20 @@ alloy:
       valueFrom:
         fieldRef:
           fieldPath: spec.nodeName
+    # Read by otelcol.auth.basic above. The kagent project's key pair, declared
+    # on the Langfuse application (langfuse-resources.yaml), which syncs two
+    # waves ahead of this one — a missing secretKeyRef would leave Alloy stuck
+    # in CreateContainerConfigError, taking the cluster's log shipping with it.
+    - name: LANGFUSE_PUBLIC_KEY
+      valueFrom:
+        secretKeyRef:
+          name: kagent-langfuse-project
+          key: LANGFUSE_PUBLIC_KEY
+    - name: LANGFUSE_SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          name: kagent-langfuse-project
+          key: LANGFUSE_SECRET_KEY
 
   resources:
     requests:

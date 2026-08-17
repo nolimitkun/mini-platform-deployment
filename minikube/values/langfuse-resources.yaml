@@ -17,6 +17,10 @@ vaultSecrets:
   # Raw keys for the dedicated Open WebUI project. The provisioning job reads
   # this copy; Open WebUI receives the same pair from its runtime Secret.
   - open-webui-langfuse-project
+  # The kagent project's keys, with no runtime mirror: kagent exports nothing
+  # itself, and the Alloy DaemonSet that exports for it mounts this Secret as
+  # it stands. Declared here because Langfuse syncs two waves ahead of Alloy.
+  - kagent-langfuse-project
 
 routes:
   - name: langfuse

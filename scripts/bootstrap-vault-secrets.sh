@@ -91,6 +91,10 @@ OPEN_WEBUI_LANGFUSE_PUBLIC_KEY="${OPEN_WEBUI_LANGFUSE_PUBLIC_KEY:-$(reuse_or_gen
 OPEN_WEBUI_LANGFUSE_PUBLIC_KEY="${OPEN_WEBUI_LANGFUSE_PUBLIC_KEY:-lf_pk_$(rand_hex)}"
 OPEN_WEBUI_LANGFUSE_SECRET_KEY="${OPEN_WEBUI_LANGFUSE_SECRET_KEY:-$(reuse_or_generate mini-platform/open-webui-langfuse-project LANGFUSE_SECRET_KEY)}"
 OPEN_WEBUI_LANGFUSE_SECRET_KEY="${OPEN_WEBUI_LANGFUSE_SECRET_KEY:-lf_sk_$(rand_hex)}"
+KAGENT_LANGFUSE_PUBLIC_KEY="${KAGENT_LANGFUSE_PUBLIC_KEY:-$(reuse_or_generate mini-platform/kagent-langfuse-project LANGFUSE_PUBLIC_KEY)}"
+KAGENT_LANGFUSE_PUBLIC_KEY="${KAGENT_LANGFUSE_PUBLIC_KEY:-lf_pk_$(rand_hex)}"
+KAGENT_LANGFUSE_SECRET_KEY="${KAGENT_LANGFUSE_SECRET_KEY:-$(reuse_or_generate mini-platform/kagent-langfuse-project LANGFUSE_SECRET_KEY)}"
+KAGENT_LANGFUSE_SECRET_KEY="${KAGENT_LANGFUSE_SECRET_KEY:-lf_sk_$(rand_hex)}"
 SUPERSET_DB_PASSWORD="${SUPERSET_DB_PASSWORD:-$(rand_hex)}"
 SUPERSET_REDIS_PASSWORD="${SUPERSET_REDIS_PASSWORD:-$(rand_hex)}"
 SUPERSET_ADMIN_PASSWORD="${SUPERSET_ADMIN_PASSWORD:-$(rand_b64)}"
@@ -158,6 +162,13 @@ kv_put mini-platform/open-webui-langfuse-project \
 kv_put mini-platform/open-webui-langfuse \
   OTEL_BASIC_AUTH_USERNAME="$OPEN_WEBUI_LANGFUSE_PUBLIC_KEY" \
   OTEL_BASIC_AUTH_PASSWORD="$OPEN_WEBUI_LANGFUSE_SECRET_KEY"
+
+# The kagent project's pair. No runtime mirror here, unlike the two above:
+# kagent exports nothing itself, Alloy exports for it, and otelcol.auth.basic
+# takes whichever env vars alloy-values.yaml maps these keys onto.
+kv_put mini-platform/kagent-langfuse-project \
+  LANGFUSE_PUBLIC_KEY="$KAGENT_LANGFUSE_PUBLIC_KEY" \
+  LANGFUSE_SECRET_KEY="$KAGENT_LANGFUSE_SECRET_KEY"
 # Langfuse headless init user: makes the auto-provisioned org/project visible in
 # the UI (org/project alone are API-only; a fresh signup joins no org).
 #
