@@ -1,0 +1,27 @@
+{{- /*
+Grafana dashboards, one labelled ConfigMap per entry, for Grafana's dashboard
+sidecar to collect. The JSON lives beside this chart in dashboards/ rather than
+inside the vendored grafana chart: chart subtrees are replaced verbatim on an
+upstream bump, so anything first-party stored there is deleted without warning.
+
+The sidecar's label selector is set in grafana-values.yaml and must match the
+label below. Only grafana-resources.yaml populates `dashboards`, so this
+renders nothing for every other release that uses this chart.
+*/}}
+{{- range .Values.dashboards }}
+{{- $path := printf "dashboards/%s.json" . }}
+{{- $body := $.Files.Get $path }}
+{{- if not $body }}
+{{- fail (printf "dashboards: %s is listed in a *-resources.yaml but %s does not exist" . $path) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-{{ . }}
+  labels:
+    grafana_dashboard: "1"
+data:
+  {{ . }}.json: |
+{{ $body | indent 4 }}
+---
+{{- end }}
