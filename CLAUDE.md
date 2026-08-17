@@ -164,6 +164,20 @@ workload *holding* the GPU (today vLLM), which is what makes `DCGM_FI_*`
 joinable with vLLM's own series. The chart's ServiceMonitor stays off — there
 is no Prometheus operator here, so `monitoring.coreos.com` does not exist.
 
+**Grafana dashboards are first-party files, and they do not go in the chart.**
+They live in `minikube/gitops/app-resources/dashboards/*.json`, are listed by
+name in `grafana-resources.yaml`, and render as ConfigMaps labelled
+`grafana_dashboard: "1"` that Grafana's dashboard sidecar collects. To add one,
+drop the JSON in that directory and add its name to that list — nothing else.
+The tempting alternative, the grafana chart's own `dashboards` value with a
+`file:` key, resolves against the **chart** directory, so it only works for
+dashboards committed inside the vendored chart, where the next upstream bump
+deletes them (subtrees are replaced verbatim). Four dashboards used to live
+there for exactly that reason. Note also that enabling any Grafana sidecar
+makes the chart grant its ServiceAccount read on ConfigMaps *and Secrets*, with
+a **ClusterRole** by default; `rbac.namespaced: true` in the overlay keeps that
+a namespace-scoped Role, and should stay.
+
 Tempo is the default destination for traces but not the only one: Alloy also
 copies kagent's spans to Langfuse, into the `kagent` project the
 `langfuse-kagent-project` release provisions. The selector is kagent's own
