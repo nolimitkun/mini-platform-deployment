@@ -204,11 +204,12 @@ alloy:
       //           answers. The turns in between complete with tool calls, which
       //           the instrumentation records under gen_ai.completion.0
       //           .tool_calls.* and leaves .content unset.
-      //   name    gen_ai.agent.name, taken from the controller's
-      //           `invoke_agent` span. The ADK emits an `invoke_agent` of its
-      //           own with the same attribute spelled its way (`k8s_agent`
-      //           against the controller's `k8s-agent`), so the match is on
-      //           gen_ai.agent.id, which only the controller sets.
+      //
+      // The trace's name is left alone deliberately. Langfuse takes it from the
+      // root span, which is `POST /api/a2a/<namespace>/<agent>` and already
+      // names the agent; writing langfuse.trace.name here as well would leave
+      // two writers on one field with no defined order between them, and a name
+      // that changes from run to run is worse than a verbose one.
       //
       // A session that has already exchanged turns pushes the current question
       // past index 1, and the trace input then shows the first question of the
@@ -224,7 +225,6 @@ alloy:
           statements = [
             `set(attributes["langfuse.trace.input"], attributes["gen_ai.prompt.1.content"]) where attributes["gen_ai.prompt.1.role"] == "user"`,
             `set(attributes["langfuse.trace.output"], attributes["gen_ai.completion.0.content"]) where attributes["gen_ai.completion.0.content"] != nil`,
-            `set(attributes["langfuse.trace.name"], attributes["gen_ai.agent.name"]) where attributes["gen_ai.agent.id"] != nil`,
           ]
         }
 
