@@ -143,12 +143,22 @@ alloy:
       // unaffected.
       //
       // Everything else that reaches this receiver keeps going to Tempo alone.
-      // The selector is kagent's own resource attribute: its agent runtime
-      // stamps every span with service.namespace set to the release's
-      // Kubernetes namespace (dashes as underscores) and service.name set to
-      // the agent, and no other producer on this platform sets
-      // service.namespace at all. Spans without it compare unequal here and are
-      // dropped.
+      // The selector is kagent's own resource attribute, and it takes two
+      // values because a conversation is served by two processes. The Python
+      // agent runtime stamps service.namespace with the release's Kubernetes
+      // namespace (dashes as underscores), so `mini_platform`; the Go
+      // controller in front of it stamps the product name, `kagent`, and
+      // carries the Kubernetes namespace separately in k8s.namespace.name.
+      // Nothing else on this platform sets service.namespace at all, so spans
+      // without either value compare unequal here and are dropped.
+      //
+      // Admitting the controller is what gives the trace a root. It receives
+      // the UI's request and propagates traceparent into the agent, so every
+      // span the agent produces descends from its `POST /api/a2a/...` span;
+      // without it Langfuse receives a set of orphans, and derives the trace's
+      // name and its trace-level input and output from a root that is not
+      // there. It is not chatty either -- outside a conversation the controller
+      // traces only its own API, a handful of spans a minute.
       //
       // The second rule drops the A2A transport's own spans, which are two
       // thirds of a conversation (one per event queued or dequeued), carry no
@@ -162,8 +172,59 @@ alloy:
 
         traces {
           span = [
-            `resource.attributes["service.namespace"] != "mini_platform"`,
+            `resource.attributes["service.namespace"] != "mini_platform" and resource.attributes["service.namespace"] != "kagent"`,
             `instrumentation_scope.name == "a2a-python-sdk"`,
+          ]
+        }
+
+        output {
+          traces = [otelcol.processor.transform.kagent_langfuse.input]
+        }
+      }
+
+      // Langfuse reads a trace's name, input and output from its root span, and
+      // kagent's root is an HTTP handler: it knows the route it served, not the
+      // question asked or the answer returned. Both are in the trace already,
+      // just one level down, so name them in the vocabulary Langfuse promotes
+      // to the trace -- otherwise the trace header stays blank and a run can
+      // only be read by opening `call_llm`.
+      //
+      // The values come from the OpenAI instrumentation's indexed prompt and
+      // completion attributes rather than from the ADK's own
+      // gcp.vertex.agent.llm_request, which is the whole conversation plus the
+      // system instruction -- hundreds of kilobytes of context per turn, not a
+      // question. Each mapping is written so that exactly one span in a run
+      // satisfies it, because the last write wins on the trace record and the
+      // order spans arrive in is not guaranteed:
+      //
+      //   input   gen_ai.prompt.1.content is the user's turn, index 0 being the
+      //           system prompt. Every openai.chat span in the run repeats it
+      //           verbatim, so whichever lands last writes the same string.
+      //   output  gen_ai.completion.0.content is set only on the turn that
+      //           answers. The turns in between complete with tool calls, which
+      //           the instrumentation records under gen_ai.completion.0
+      //           .tool_calls.* and leaves .content unset.
+      //   name    gen_ai.agent.name, taken from the controller's
+      //           `invoke_agent` span. The ADK emits an `invoke_agent` of its
+      //           own with the same attribute spelled its way (`k8s_agent`
+      //           against the controller's `k8s-agent`), so the match is on
+      //           gen_ai.agent.id, which only the controller sets.
+      //
+      // A session that has already exchanged turns pushes the current question
+      // past index 1, and the trace input then shows the first question of the
+      // session instead. kagent opens a session per conversation, so this is
+      // the exception rather than the rule; a faithful mapping would need the
+      // instrumentation to mark which message is current.
+      otelcol.processor.transform "kagent_langfuse" {
+        error_mode = "ignore"
+
+        trace_statements {
+          context = "span"
+
+          statements = [
+            `set(attributes["langfuse.trace.input"], attributes["gen_ai.prompt.1.content"]) where attributes["gen_ai.prompt.1.role"] == "user"`,
+            `set(attributes["langfuse.trace.output"], attributes["gen_ai.completion.0.content"]) where attributes["gen_ai.completion.0.content"] != nil`,
+            `set(attributes["langfuse.trace.name"], attributes["gen_ai.agent.name"]) where attributes["gen_ai.agent.id"] != nil`,
           ]
         }
 
