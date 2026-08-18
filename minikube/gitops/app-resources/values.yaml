@@ -39,6 +39,18 @@ routes: []
 # adapters that must roll and prune with the consuming Argo CD application.
 configMaps: []
 
+# Grafana dashboards to publish, named after files in this chart's dashboards/
+# directory (without the .json). Each renders a ConfigMap labelled
+# `grafana_dashboard: "1"`, which Grafana's dashboard sidecar collects — see
+# sidecar.dashboards in minikube/values/grafana-values.yaml.
+#
+# Only grafana-resources.yaml sets this. The JSON lives here rather than in the
+# vendored grafana chart because a chart bump replaces that subtree verbatim
+# and silently deletes anything first-party in it. The grafana chart's own
+# `dashboards` value can read a file, but `file:` resolves against the chart
+# directory, which is exactly what forced these into the vendored tree before.
+dashboards: []
+
 # Optional namespace-scoped RBAC owned by an application. Keep this here rather
 # than adding broad rules to an upstream chart's ClusterRole when a consumer
 # only needs access inside its own destination namespace.

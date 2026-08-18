@@ -9,3 +9,17 @@ routes:
     host: grafana.test
     service: grafana
     port: 80
+
+# Platform dashboards, one ConfigMap each, collected by Grafana's dashboard
+# sidecar. The JSON sits in minikube/gitops/app-resources/dashboards/.
+#
+# They are declared on Grafana's own application so they roll and prune with the
+# release that renders them, the same way its route and admin secret do.
+dashboards:
+  - platform-services-overview
+  - platform-service-detail
+  # The vLLM serving path: queue depth, end-to-end latency, prefix-cache hit
+  # rate, router health. Previously sat unreferenced in the vendored chart, so
+  # nothing ever rendered it.
+  - vllm-dashboard
+  - gpu-dcgm
