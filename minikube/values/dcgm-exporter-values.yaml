@@ -23,9 +23,22 @@
 # on the presence of NVIDIA_VISIBLE_DEVICES and bind-mounts the driver — device
 # nodes, libnvidia-ml, nvidia-smi, ~50 files — into the container. The device
 # plugin normally sets that variable in its Allocate response, which is how the
-# vLLM pod gets its GPU; setting it directly gets the same injection without
-# consuming the allocatable. `utility` is the capability that carries NVML,
-# which is all DCGM needs. It is not asking for compute.
+# vLLM pod gets its GPU; here the hook fires without the device plugin involved,
+# so nothing is taken from the allocatable.
+#
+# This block is not what supplies the variable, though, and it would be wrong to
+# read it that way: the upstream image already bakes in
+# NVIDIA_VISIBLE_DEVICES=all and NVIDIA_DRIVER_CAPABILITIES=compute,utility, so
+# the exporter reaches the card even with no env at all. Restating the first is
+# belt and braces — it keeps the dependency legible and survives an image that
+# stops setting it. The second is a genuine change: `utility` is the capability
+# carrying NVML, which is all DCGM needs, so this drops `compute` and narrows
+# what the hook injects. Profiling metrics were confirmed still working with the
+# narrower set.
+#
+# None of this rescues a node with no GPU. There the exporter exits 1 on
+# startup, which is why its app-of-apps entry has an `enabled` toggle to turn
+# off for CPU-only clusters.
 #
 # The obvious caveat: this bypasses the device plugin as an admission gate. That
 # is exactly why NVIDIA ships
