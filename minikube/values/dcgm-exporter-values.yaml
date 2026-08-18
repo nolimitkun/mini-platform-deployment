@@ -1,0 +1,98 @@
+# NVIDIA DCGM exporter — GPU telemetry for the one card in this node.
+#
+# The overlay is deliberately tiny: the chart's own defaults are right for this
+# platform once the two problems below are dealt with, and both of them come
+# from the cluster rather than from the chart.
+
+# ==============================================================================
+# GPU ACCESS
+# ==============================================================================
+# The chart requests no `nvidia.com/gpu`, which is the only reason this can run
+# here at all: the node advertises exactly one, and vLLM holds it. An exporter
+# that competed for the allocatable would either sit Pending forever or push the
+# inference path off the GPU.
+#
+# But not requesting the resource means nothing hands the container the device.
+# Everywhere NVIDIA documents this, the injection comes from a container runtime
+# the pod selects with `runtimeClassName: nvidia`, or from CDI. This node has
+# neither — containerd knows only `runc`, there is no CDI spec directory, and a
+# pod that asks for nothing NVIDIA-shaped sees no /dev/nvidia* at all (verified
+# against this cluster, not assumed).
+#
+# What it does have is the NVIDIA Container Toolkit's prestart hook, which fires
+# on the presence of NVIDIA_VISIBLE_DEVICES and bind-mounts the driver — device
+# nodes, libnvidia-ml, nvidia-smi, ~50 files — into the container. The device
+# plugin normally sets that variable in its Allocate response, which is how the
+# vLLM pod gets its GPU; here the hook fires without the device plugin involved,
+# so nothing is taken from the allocatable.
+#
+# This block is not what supplies the variable, though, and it would be wrong to
+# read it that way: the upstream image already bakes in
+# NVIDIA_VISIBLE_DEVICES=all and NVIDIA_DRIVER_CAPABILITIES=compute,utility, so
+# the exporter reaches the card even with no env at all. Restating the first is
+# belt and braces — it keeps the dependency legible and survives an image that
+# stops setting it. The second is a genuine change: `utility` is the capability
+# carrying NVML, which is all DCGM needs, so this drops `compute` and narrows
+# what the hook injects. Profiling metrics were confirmed still working with the
+# narrower set.
+#
+# None of this rescues a node with no GPU. There the exporter exits 1 on
+# startup, which is why its app-of-apps entry has an `enabled` toggle to turn
+# off for CPU-only clusters.
+#
+# The obvious caveat: this bypasses the device plugin as an admission gate. That
+# is exactly why NVIDIA ships
+# `accept-nvidia-visible-devices-envvar-when-unprivileged=false` for shared
+# clusters, and it is a fair thing to switch on if this stack ever stops being a
+# single-tenant local one. Here it is the difference between having GPU metrics
+# and not.
+extraEnv:
+  - name: NVIDIA_VISIBLE_DEVICES
+    value: "all"
+  - name: NVIDIA_DRIVER_CAPABILITIES
+    value: "utility"
+
+# ==============================================================================
+# SCRAPING
+# ==============================================================================
+# Prometheus here is the plain prometheus-community chart with no operator, so
+# monitoring.coreos.com/v1 does not exist in this cluster. Left enabled, the
+# chart renders a ServiceMonitor whose CRD is missing and the Argo CD
+# application never reaches Synced. The scrape is declared the way every other
+# target on this platform is: a named job in prometheus-values.yaml.
+serviceMonitor:
+  enabled: false
+
+# ==============================================================================
+# WHAT IS DELIBERATELY LEFT AT THE CHART DEFAULT
+# ==============================================================================
+# The counter list and the securityContext are both worth a note, because both
+# look like things this overlay ought to override and neither turns out to need
+# it. Measured against the RTX 5090 in this node, on driver 595.71.05:
+#
+#   * The default counter list yields 19 series. The DCP/profiling fields it
+#     enables — GR_ENGINE_ACTIVE, PIPE_TENSOR_ACTIVE, DRAM_ACTIVE, and PCIe
+#     TX/RX bytes — do report on this card, which is not a given: profiling is
+#     the part of DCGM most often missing on GeForce silicon. They are also the
+#     interesting half of the set for an inference host, so there is no reason
+#     to trim the list down to the plain NVML fields.
+#
+#   * The fields the card genuinely does not support — XID errors, NVLink
+#     bandwidth, ECC row remapping, all of which assume datacenter hardware —
+#     are dropped silently rather than logged. There is no error noise to
+#     suppress, so a customMetrics override would buy nothing and would have to
+#     be re-audited on every chart bump.
+#
+#   * securityContext keeps the chart's SYS_ADMIN, which upstream documents as
+#     the requirement for those profiling fields. Profiling was only ever
+#     confirmed working *with* it; whether this card would report the same
+#     numbers without it was not tested, so the capability stays.
+#
+# kubernetes.enablePodLabels is also left off. It would copy the consuming pod's
+# labels onto every series at the cost of a ClusterRole granting cluster-wide
+# pod read — and the attribution that actually matters is already there without
+# it. DCGM_EXPORTER_KUBERNETES (set by the chart) reads the kubelet
+# pod-resources socket, so each series already carries the pod, namespace and
+# container holding the GPU: today, `pod="vllm-qwen-deployment-vllm-..."`. That
+# is what makes these joinable with vLLM's own metrics, and it is why the scrape
+# job sets honor_labels.

@@ -97,6 +97,34 @@ extraScrapeConfigs: |
     static_configs:
       - targets: ["kagent-tools-metrics:8085"]
 
+  # NVIDIA DCGM — the GPU's own telemetry. Discovered per pod rather than
+  # pointed at its Service like the static targets above: this is a DaemonSet,
+  # and a Service in front of a DaemonSet round-robins, so one static target
+  # would sample an arbitrary card per interval the day this cluster grows a
+  # second GPU node. Same reasoning as the ingress-nginx job below. The port
+  # filter keeps role:pod from emitting one target per container port.
+  #
+  # honor_labels because the pod, namespace and container labels the exporter
+  # attaches name the workload *holding* the GPU rather than the exporter — it
+  # reads them from the kubelet pod-resources socket, so today they say
+  # pod="vllm-qwen-deployment-vllm-...". That attribution is the point of
+  # scraping this at all: it is what joins DCGM_FI_* to vLLM's own series.
+  # Without it Prometheus would push them aside as exported_pod and set pod to
+  # the exporter's own name, which is the one pod nobody needs to ask about.
+  - job_name: dcgm-exporter
+    honor_labels: true
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ["mini-platform"]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        action: keep
+        regex: dcgm-exporter
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        action: keep
+        regex: "9400"
+
   # ---------------------------------------------------------------------------
   # Platform infrastructure outside the mini-platform namespace, plus the
   # in-namespace endpoints that need credentials. Everything below is reachable
