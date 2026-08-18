@@ -160,7 +160,16 @@ applications:
   # pod-resources socket, not through any Service — so it shares Prometheus's
   # wave instead of earning one of its own. Same wave is enough: a target that
   # is not up yet simply reads as down for a scrape interval or two.
+  #
+  # Set enabled: false on a CPU-only cluster — deploy-minikube.sh --no-gpu, or
+  # any node without an NVIDIA card. dcgm-exporter does not degrade gracefully
+  # when there is no GPU to attach to: it exits 1 on startup rather than serving
+  # an empty /metrics, so the DaemonSet never becomes available and this
+  # Application never reports Healthy. Sitting in wave -1, that would hold the
+  # rollout there and waves 0 through 3 would never sync at all. Same toggle the
+  # llm-d entries above use.
   dcgm-exporter:
+    enabled: true
     chartPath: charts/dcgm-exporter
     valuesFile: minikube/values/dcgm-exporter-values.yaml
     releaseName: dcgm-exporter

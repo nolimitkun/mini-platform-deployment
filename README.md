@@ -197,7 +197,7 @@ Useful flags:
 | --- | --- |
 | `--reset` | Delete and recreate the profile first (backs up any existing Vault init JSON) |
 | `--local-source` | Serve both committed checkouts (charts + deploy) through a cluster-only Git service instead of a remote |
-| `--no-gpu` | Start without GPU passthrough (use only with a CPU-capable vLLM overlay) |
+| `--no-gpu` | Start without GPU passthrough (use only with a CPU-capable vLLM overlay, and set `dcgm-exporter`'s `enabled: false` in the app-of-apps values — it exits on a GPU-less node and would stall wave `-1`) |
 | `--rotate-secrets` | Rewrite Vault credentials on an already-initialized Vault |
 | `--skip-image-preload` | Skip loading host-cached images into Minikube |
 | `--skip-workload-wait` | Return after secret sync instead of waiting for pods |
