@@ -28,6 +28,10 @@ DEPLOY_REVISION="${DEPLOY_REVISION:-main}"
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-$HOME/.vault-mini-platform-init.json}"
 HF_TOKEN_FILE="${HF_TOKEN_FILE:-$HOME/.cache/huggingface/token}"
 DEEPSEEK_KEY_FILE="${DEEPSEEK_KEY_FILE:-$HOME/.deepseek-key}"
+# Private Service Connect IP of the mini-cloud VPN hub. When set, cluster DNS
+# sends the Google API names LiteLLM's chirp-3 model needs over the tunnel
+# (scripts/gcp-psc-dns.sh). Unset leaves them on public DNS.
+GCP_PSC_IP="${GCP_PSC_IP:-}"
 SOURCE_MODE=remote
 GPU=true
 RESET=false
@@ -822,6 +826,10 @@ kubectl -n ingress-nginx patch service ingress-nginx-controller \
   --type merge -p '{"spec":{"type":"LoadBalancer"}}' >/dev/null
 
 install_keycloak_dns_rewrite
+if [[ -n "$GCP_PSC_IP" ]]; then
+  log "Pointing Google API names at the PSC endpoint $GCP_PSC_IP"
+  "$ROOT/scripts/gcp-psc-dns.sh" "$GCP_PSC_IP"
+fi
 
 kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
 kubectl create namespace "$ARGO_NS" --dry-run=client -o yaml | kubectl apply -f -

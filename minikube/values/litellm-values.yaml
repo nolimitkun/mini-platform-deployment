@@ -7,6 +7,30 @@ image:
   # though the image is already cached. Updates remain explicit GitOps rollouts.
   pullPolicy: IfNotPresent
 
+# A named service account rather than the namespace default, because it is the
+# identity GCP trusts for the chirp-3 model (see below). Created by the
+# postgresql release, not here: the chart's PreSync migration Job runs as this
+# account too, and a hook cannot wait for a resource of its own Application.
+serviceAccount:
+  create: false
+  name: litellm
+
+# Keyless Google credentials for chirp-3: a token for this pod's service
+# account, minted for the onprem-k8s pool's audience and rotated by the kubelet
+# (it expires within the hour). google-auth exchanges it for a Google token.
+volumes:
+  - name: gcp-wif
+    projected:
+      sources:
+        - serviceAccountToken:
+            path: token
+            audience: //iam.googleapis.com/projects/311800512343/locations/global/workloadIdentityPools/onprem-k8s/providers/minikube
+            expirationSeconds: 3600
+volumeMounts:
+  - name: gcp-wif
+    mountPath: /var/run/secrets/gcp-wif
+    readOnly: true
+
 masterkeySecretName: litellm-master-key
 masterkeySecretKey: PROXY_MASTER_KEY
 
@@ -41,6 +65,32 @@ proxy_config:
       litellm_params:
         model: deepseek/deepseek-v4-pro
         api_key: os.environ/DEEPSEEK_API_KEY
+    # Google Speech-to-Text (Chirp 3), served as OpenAI /v1/audio/transcriptions.
+    # Runs in the mini-cloud GCP hub and is reached over the site-to-site VPN
+    # (scripts/gcp-psc-dns.sh pins the API names to its PSC endpoint). No key:
+    # the pod's own service-account token is exchanged for a short-lived
+    # Google token through the onprem-k8s workload identity pool, which only
+    # trusts system:serviceaccount:mini-platform:litellm. The synchronous
+    # API behind it takes clips under one minute and 10 MB.
+    - model_name: chirp-3
+      litellm_params:
+        model: vertex_ai/chirp_3
+        vertex_project: mini-cloud-499820
+        vertex_location: eu
+        # ADC external_account config (terraform output stt_credential_config
+        # in mini-cloud). Inline JSON, not a mounted file, so the PreSync
+        # migration Job that shares this pod spec waits on nothing new.
+        # Nothing secret in it: it names the token file and the SA to
+        # impersonate.
+        vertex_credentials: >-
+          {"type": "external_account",
+          "audience": "//iam.googleapis.com/projects/311800512343/locations/global/workloadIdentityPools/onprem-k8s/providers/minikube",
+          "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+          "token_url": "https://sts.googleapis.com/v1/token",
+          "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/litellm-stt@mini-cloud-499820.iam.gserviceaccount.com:generateAccessToken",
+          "credential_source": {"file": "/var/run/secrets/gcp-wif/token"}}
+      model_info:
+        mode: audio_transcription
   general_settings:
     master_key: os.environ/PROXY_MASTER_KEY
     store_model_in_db: true
