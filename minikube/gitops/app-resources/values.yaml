@@ -57,6 +57,10 @@ dashboards: []
 roles: []
 roleBindings: []
 
+# Optional ServiceAccounts owned by an application, for a workload in another
+# release that must not create its own (e.g. one a PreSync hook runs as).
+serviceAccounts: []
+
 # ==============================================================================
 # VAULT
 # ==============================================================================
