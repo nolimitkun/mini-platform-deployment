@@ -107,8 +107,9 @@ proxy_config:
     # Gemini 3.8 TTS on Vertex AI, served as /v1/audio/speech. eu multi-region:
     # LiteLLM calls aiplatform.eu.rep.googleapis.com, which gcp-psc-dns.sh pins
     # to mini-cloud's regional PSC endpoint. Gemini voices (Kore, Charon, Aoede
-    # …); style instructions go in the text. Prices come from LiteLLM's
-    # upstream cost map, fetched at startup.
+    # …); returns WAV. The whole input is spoken, so don't put style
+    # instructions in it. LiteLLM records $0 spend for these (its speech bridge
+    # drops Google's token counts); the cost shows in Google billing only.
     - model_name: gemini-3.8-flash-tts
       litellm_params:
         model: vertex_ai/gemini-3.8-flash-tts
