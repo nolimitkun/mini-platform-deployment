@@ -82,7 +82,7 @@ proxy_config:
         # migration Job that shares this pod spec waits on nothing new.
         # Nothing secret in it: it names the token file and the SA to
         # impersonate.
-        vertex_credentials: >-
+        vertex_credentials: &gcp-wif-credentials >-
           {"type": "external_account",
           "audience": "//iam.googleapis.com/projects/311800512343/locations/global/workloadIdentityPools/onprem-k8s/providers/minikube",
           "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
@@ -91,6 +91,19 @@ proxy_config:
           "credential_source": {"file": "/var/run/secrets/gcp-wif/token"}}
       model_info:
         mode: audio_transcription
+    # Google Text-to-Speech, served as OpenAI /v1/audio/speech, over the same
+    # VPN path and keyless identity as chirp-3. Pass a Google voice, e.g.
+    # voice=en-US-Chirp3-HD-Charon or fr-FR-Chirp3-HD-Aoede; OpenAI voice names
+    # (alloy, nova …) map to older WaveNet voices. The eu endpoint keeps the
+    # text in the EU.
+    - model_name: tts-chirp-3-hd
+      litellm_params:
+        model: vertex_ai/chirp3-hd
+        vertex_project: mini-cloud-499820
+        api_base: https://eu-texttospeech.googleapis.com/v1/text:synthesize
+        vertex_credentials: *gcp-wif-credentials
+      model_info:
+        mode: audio_speech
   general_settings:
     master_key: os.environ/PROXY_MASTER_KEY
     store_model_in_db: true

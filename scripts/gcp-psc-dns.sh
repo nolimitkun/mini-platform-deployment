@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Point the Google API hostnames LiteLLM's chirp-3 model uses at a Private
-# Service Connect endpoint reached over the mini-cloud VPN, so Speech-to-Text
-# traffic and the keyless token exchange stay off the internet.
+# Point the Google API hostnames LiteLLM's chirp-3 and tts-chirp-3-hd models
+# use at a Private Service Connect endpoint reached over the mini-cloud VPN, so
+# speech traffic and the keyless token exchange stay off the internet.
 #
 #   scripts/gcp-psc-dns.sh 10.48.64.2      # add or update
 #   scripts/gcp-psc-dns.sh --remove        # back to public DNS
@@ -13,7 +13,7 @@
 # Idempotent.
 set -euo pipefail
 
-HOSTS=(eu-speech.googleapis.com sts.googleapis.com iamcredentials.googleapis.com)
+HOSTS=(eu-speech.googleapis.com eu-texttospeech.googleapis.com sts.googleapis.com iamcredentials.googleapis.com)
 MARKER="# gcp-psc-dns"
 
 usage() { echo "usage: $0 <psc-ip> | --remove" >&2; exit 2; }
