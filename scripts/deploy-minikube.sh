@@ -29,9 +29,11 @@ VAULT_INIT_FILE="${VAULT_INIT_FILE:-$HOME/.vault-mini-platform-init.json}"
 HF_TOKEN_FILE="${HF_TOKEN_FILE:-$HOME/.cache/huggingface/token}"
 DEEPSEEK_KEY_FILE="${DEEPSEEK_KEY_FILE:-$HOME/.deepseek-key}"
 # Private Service Connect IP of the mini-cloud VPN hub. When set, cluster DNS
-# sends the Google API names LiteLLM's chirp-3 model needs over the tunnel
+# sends the Google API names LiteLLM's Google speech models need over the tunnel
 # (scripts/gcp-psc-dns.sh). Unset leaves them on public DNS.
 GCP_PSC_IP="${GCP_PSC_IP:-}"
+# The regional endpoint for Vertex AI's eu multi-region (Gemini TTS models).
+GCP_PSC_EU_REP_IP="${GCP_PSC_EU_REP_IP:-}"
 SOURCE_MODE=remote
 GPU=true
 RESET=false
@@ -827,8 +829,8 @@ kubectl -n ingress-nginx patch service ingress-nginx-controller \
 
 install_keycloak_dns_rewrite
 if [[ -n "$GCP_PSC_IP" ]]; then
-  log "Pointing Google API names at the PSC endpoint $GCP_PSC_IP"
-  "$ROOT/scripts/gcp-psc-dns.sh" "$GCP_PSC_IP"
+  log "Pointing Google API names at the PSC endpoints $GCP_PSC_IP $GCP_PSC_EU_REP_IP"
+  "$ROOT/scripts/gcp-psc-dns.sh" "$GCP_PSC_IP" ${GCP_PSC_EU_REP_IP:+"$GCP_PSC_EU_REP_IP"}
 fi
 
 kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
