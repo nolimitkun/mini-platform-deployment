@@ -104,6 +104,39 @@ proxy_config:
         vertex_credentials: *gcp-wif-credentials
       model_info:
         mode: audio_speech
+    # Gemini 3.8 TTS on Vertex AI, served as /v1/audio/speech. eu multi-region:
+    # LiteLLM calls aiplatform.eu.rep.googleapis.com, which gcp-psc-dns.sh pins
+    # to mini-cloud's regional PSC endpoint. Gemini voices (Kore, Charon, Aoede
+    # …); style instructions go in the text. Prices come from LiteLLM's
+    # upstream cost map, fetched at startup.
+    - model_name: gemini-3.8-flash-tts
+      litellm_params:
+        model: vertex_ai/gemini-3.8-flash-tts
+        vertex_project: mini-cloud-499820
+        vertex_location: eu
+        vertex_credentials: *gcp-wif-credentials
+      model_info:
+        mode: audio_speech
+    - model_name: gemini-3.8-flash-lite-tts
+      litellm_params:
+        model: vertex_ai/gemini-3.8-flash-lite-tts
+        vertex_project: mini-cloud-499820
+        vertex_location: eu
+        vertex_credentials: *gcp-wif-credentials
+      model_info:
+        mode: audio_speech
+    # Gemini Live on Vertex AI, served as the /v1/realtime websocket: stream
+    # PCM16 audio in, get input transcription events (LiteLLM turns
+    # inputAudioTranscription on) and a spoken reply. europe-west1, through
+    # the all-apis endpoint.
+    - model_name: gemini-live
+      litellm_params:
+        model: vertex_ai/gemini-live-2.5-flash-native-audio
+        vertex_project: mini-cloud-499820
+        vertex_location: europe-west1
+        vertex_credentials: *gcp-wif-credentials
+      model_info:
+        mode: realtime
   general_settings:
     master_key: os.environ/PROXY_MASTER_KEY
     store_model_in_db: true
