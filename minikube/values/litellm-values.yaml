@@ -141,6 +141,12 @@ proxy_config:
     # Gemini chat models on Vertex AI, eu multi-region (same regional PSC
     # endpoint as Gemini TTS; none of these is served in europe-west1).
     # Gemini 3.1 Pro is preview and global-only, so it is left out.
+    - model_name: gemini-4-argon
+      litellm_params:
+        model: vertex_ai/gemini-4-argon
+        vertex_project: mini-cloud-499820
+        vertex_location: eu
+        vertex_credentials: *gcp-wif-credentials
     - model_name: gemini-3.8-flash
       litellm_params:
         model: vertex_ai/gemini-3.8-flash
