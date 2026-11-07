@@ -138,6 +138,33 @@ proxy_config:
         vertex_credentials: *gcp-wif-credentials
       model_info:
         mode: realtime
+    # Gemini chat models on Vertex AI, eu multi-region (same regional PSC
+    # endpoint as Gemini TTS; none of these is served in europe-west1).
+    # Gemini 3.1 Pro is preview and global-only, so it is left out.
+    - model_name: gemini-4-argon
+      litellm_params:
+        model: vertex_ai/gemini-4-argon
+        vertex_project: mini-cloud-499820
+        vertex_location: eu
+        vertex_credentials: *gcp-wif-credentials
+    - model_name: gemini-3.8-flash
+      litellm_params:
+        model: vertex_ai/gemini-3.8-flash
+        vertex_project: mini-cloud-499820
+        vertex_location: eu
+        vertex_credentials: *gcp-wif-credentials
+    - model_name: gemini-3.5-flash
+      litellm_params:
+        model: vertex_ai/gemini-3.5-flash
+        vertex_project: mini-cloud-499820
+        vertex_location: eu
+        vertex_credentials: *gcp-wif-credentials
+    - model_name: gemini-3.5-flash-lite
+      litellm_params:
+        model: vertex_ai/gemini-3.5-flash-lite
+        vertex_project: mini-cloud-499820
+        vertex_location: eu
+        vertex_credentials: *gcp-wif-credentials
   general_settings:
     master_key: os.environ/PROXY_MASTER_KEY
     store_model_in_db: true
