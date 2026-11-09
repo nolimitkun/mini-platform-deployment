@@ -10,9 +10,13 @@ tika:
 websocket:
   enabled: false
 
-openaiBaseApiUrl: http://litellm.mini-platform.svc.cluster.local:4000/v1
-openaiApiKeyExistingSecret: litellm-master-key
-openaiApiKeyExistingSecretKey: PROXY_MASTER_KEY
+# Models through agentgateway with Open WebUI's own API key. Open WebUI is an
+# `internal` client (policies/gateway): on-prem and Gemini models answer; the
+# model list still shows DeepSeek, and choosing it returns the policy's 403
+# with the reason.
+openaiBaseApiUrl: http://agentgateway-proxy.mini-platform.svc.cluster.local/v1
+openaiApiKeyExistingSecret: open-webui-agentgateway
+openaiApiKeyExistingSecretKey: OPENAI_API_KEY
 
 # The Holmes Pipe reads its credential only on the Open WebUI server. It is
 # never exposed as a Function valve or sent to the browser.

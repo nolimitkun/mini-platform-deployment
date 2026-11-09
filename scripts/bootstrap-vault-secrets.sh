@@ -388,6 +388,8 @@ kv_put mini-platform/kagent-agentgateway \
   OPENAI_API_KEY="$(kv_field mini-platform/agentgateway-client-keys kagent)"
 kv_put mini-platform/holmes-agentgateway \
   AGENTGATEWAY_API_KEY="$(kv_field mini-platform/agentgateway-client-keys holmes)"
+kv_put mini-platform/open-webui-agentgateway \
+  OPENAI_API_KEY="$(kv_field mini-platform/agentgateway-client-keys open-webui)"
 
 # agentgateway's DeepSeek model sends this value as the Authorization header
 # (with Bearer added). Carried over from the LiteLLM secret, which owns the key.
