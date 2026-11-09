@@ -153,7 +153,6 @@ applications:
   prometheus:
     chartPath: charts/prometheus
     valuesFile: minikube/values/prometheus-values.yaml
-    resourcesFile: minikube/values/prometheus-resources.yaml
     wave: "-1"
     ignoreDifferences:
       - group: apps
@@ -228,8 +227,8 @@ applications:
         jsonPointers:
           - /spec/persistentVolumeClaimRetentionPolicy
           - /spec/volumeClaimTemplates
-  # The model gateway that replaces LiteLLM: the controller here, the proxy
-  # and its configuration below. Runs beside LiteLLM while clients move over.
+  # The model and tool gateway: the controller here, the proxy and its
+  # configuration below (docs/agentgateway.md).
   agentgateway:
     chartPath: charts/agentgateway
     valuesFile: minikube/values/agentgateway-values.yaml
@@ -270,18 +269,13 @@ applications:
     resourcesFile: minikube/values/agentgateway-resources.yaml
     releaseName: agentgateway-config
     wave: "1"
-  litellm:
-    chartPath: charts/litellm-helm
-    valuesFile: minikube/values/litellm-values.yaml
-    resourcesFile: minikube/values/litellm-resources.yaml
-    wave: "1"
   open-webui:
     chartPath: charts/open-webui
     valuesFile: minikube/values/open-webui-values.yaml
     resourcesFile: minikube/values/open-webui-resources.yaml
     wave: "2"
-  # After LiteLLM (its model endpoint) and Grafana (its telemetry access), both
-  # of which the agents call on startup.
+  # After the gateway config (its model endpoint) and Grafana (its telemetry
+  # access), both of which the agents call on startup.
   kagent:
     chartPath: charts/kagent
     valuesFile: minikube/values/kagent-values.yaml
@@ -289,7 +283,7 @@ applications:
     releaseName: kagent
     wave: "2"
   # LLM root-cause analysis over the cluster and its telemetry. Ordered
-  # alongside kagent and for the same reasons: it calls LiteLLM for its model
+  # alongside kagent and for the same reasons: it calls the gateway for its model
   # and Grafana's datasource proxy for Loki and Tempo, and its toolsets run a
   # health check against both when the pod starts.
   holmes:
@@ -305,7 +299,7 @@ applications:
     valuesFile: minikube/gitops/open-webui-holmes-pipe/values.yaml
     releaseName: open-webui-holmes-pipe
     wave: "3"
-  # Forward-auth for MLflow, kagent and the LiteLLM UI. Fails its OIDC discovery
+  # Forward-auth for MLflow, kagent and agentregistry. Fails its OIDC discovery
   # call and restarts until Keycloak (wave -2) has finished importing the realm,
   # so it is ordered late. The routes that name it as an auth backend are
   # rendered with their own applications, some of them several waves earlier —

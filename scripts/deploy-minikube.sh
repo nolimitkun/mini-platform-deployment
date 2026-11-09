@@ -29,7 +29,7 @@ VAULT_INIT_FILE="${VAULT_INIT_FILE:-$HOME/.vault-mini-platform-init.json}"
 HF_TOKEN_FILE="${HF_TOKEN_FILE:-$HOME/.cache/huggingface/token}"
 DEEPSEEK_KEY_FILE="${DEEPSEEK_KEY_FILE:-$HOME/.deepseek-key}"
 # Private Service Connect IP of the mini-cloud VPN hub. When set, cluster DNS
-# sends the Google API names LiteLLM's Google speech models need over the tunnel
+# sends the Google API names the gateway's Google models need over the tunnel
 # (scripts/gcp-psc-dns.sh). Unset leaves them on public DNS.
 GCP_PSC_IP="${GCP_PSC_IP:-}"
 # The regional endpoint for Vertex AI's eu multi-region (Gemini TTS models).
@@ -320,7 +320,7 @@ reconcile_after_secret_rotation() {
   # left running it keeps honouring the old key while `port-forward-services.sh`
   # and the README's kubectl lookup both hand out the new one, so every caller
   # gets a 401 with nothing to point at. kagent-grafana-mcp has the same shape
-  # (envFrom on the rotated Grafana mirror). kagent-litellm needs no entry --
+  # (envFrom on the rotated Grafana mirror). kagent-agentgateway needs no entry --
   # nothing mounts it, the kagent controller resolves it through the ModelConfig
   # on each reconcile.
   log "Restarting the workloads that hold rotated secrets in their pod spec"
@@ -501,70 +501,6 @@ wait_for_workloads() {
   fail "platform workloads did not become ready within ${WORKLOAD_TIMEOUT}s"
 }
 
-ensure_litellm_schema() {
-  kubectl -n "$NS" get deployment litellm >/dev/null 2>&1 || return 0
-
-  log "Verifying LiteLLM database schema"
-  local pw exists pod deadline
-
-  pw="$(kubectl -n "$NS" get secret litellm-dbcredentials \
-    -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || true)"
-  if [[ -z "$pw" ]]; then
-    warn "litellm-dbcredentials unavailable; skipping LiteLLM schema check"
-    return 0
-  fi
-
-  exists="$(kubectl -n "$NS" exec postgresql-0 -c postgresql -- \
-    env PGPASSWORD="$pw" psql -U litellm -d litellm -tAc \
-    'select to_regclass('"'"'public."LiteLLM_UserTable"'"'"') is not null' \
-    2>/dev/null | tr -d '[:space:]' || true)"
-  if [[ "$exists" == t ]]; then
-    # Present is not the same as current. An image bump moves the schema on
-    # without anything re-running the migration, and the drift surfaces far
-    # from its cause: the admin UI's own /login mints a key, that insert hits a
-    # column the database does not have, and the browser gets a 500 from a
-    # proxy whose pods are all Ready and whose /v1 traffic is fine. So the
-    # migration runs either way -- `prisma migrate deploy` is idempotent and a
-    # no-op against an up-to-date database.
-    log "LiteLLM schema present; reconciling any pending migrations"
-  else
-    warn "LiteLLM schema missing; applying Prisma migration (PreSync hook did not)"
-  fi
-  deadline=$((SECONDS + 300))
-  pod=""
-  while [[ "$SECONDS" -lt "$deadline" ]]; do
-    pod="$(kubectl -n "$NS" get pods -l app.kubernetes.io/name=litellm \
-      --field-selector=status.phase=Running \
-      -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
-    if [[ -n "$pod" ]] && kubectl -n "$NS" exec "$pod" -- true >/dev/null 2>&1; then
-      break
-    fi
-    pod=""
-    preload_cached_pod_images
-    sleep 10
-  done
-  if [[ -z "$pod" ]]; then
-    warn "no running LiteLLM pod to migrate; rerun deploy once its image is pulled"
-    return 0
-  fi
-
-  if kubectl -n "$NS" exec "$pod" -- sh -c \
-      'DISABLE_SCHEMA_UPDATE=false python litellm/proxy/prisma_migration.py'; then
-    if [[ "$exists" == t ]]; then
-      # Only a drift reconcile. The running pod already expects the columns the
-      # migration just added -- that mismatch is what made it fail -- so there
-      # is nothing to restart it for.
-      log "LiteLLM migrations reconciled"
-    else
-      log "LiteLLM schema migration applied; restarting deployment"
-      kubectl -n "$NS" rollout restart deployment/litellm >/dev/null
-      kubectl -n "$NS" rollout status deployment/litellm --timeout=180s || true
-    fi
-  else
-    warn "LiteLLM Prisma migration failed; inspect 'kubectl -n $NS logs deploy/litellm'"
-  fi
-}
-
 # MinIO resolves its OIDC discovery URL once, during IAM init at startup. If
 # that lookup fails it logs "Unable to initialize OpenID" and serves on without
 # a provider: the console offers username/password and no Keycloak button, and
@@ -721,8 +657,8 @@ cd "$ROOT"
 # Auto-load a Hugging Face token from the user's cache when one is not already
 # provided. The Vault seed (bootstrap-vault-secrets.sh) requires HF_TOKEN to
 # store the vLLM model-pull credential; without it a fresh deploy aborts partway
-# through seeding, which leaves Argo CD half-synced (e.g. the LiteLLM PreSync
-# migration hook never runs to success). Set HF_TOKEN explicitly to override.
+# through seeding, which leaves Argo CD half-synced (applications wait on
+# Vault secrets that were never written). Set HF_TOKEN explicitly to override.
 if [[ -z "${HF_TOKEN:-}" && -s "$HF_TOKEN_FILE" ]]; then
   HF_TOKEN="$(tr -d '\r\n' < "$HF_TOKEN_FILE")"
   export HF_TOKEN
@@ -1123,7 +1059,6 @@ if [[ "$WAIT_FOR_WORKLOADS" == true ]]; then
   wait_for_workloads
 fi
 
-ensure_litellm_schema
 ensure_langfuse_init_user
 ensure_minio_sso
 

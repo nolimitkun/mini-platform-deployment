@@ -1,8 +1,8 @@
 # The agentgateway controller only. It creates the GatewayClass `agentgateway`
 # and, for each Gateway of that class, a proxy Deployment/Service/
 # ServiceAccount named after the Gateway — here agentgateway-proxy, from the
-# agentgateway-config chart. It replaces LiteLLM as the platform's model
-# gateway; see docs/agentgateway.md.
+# agentgateway-config chart. It is the platform's model and tool gateway; see
+# docs/agentgateway.md.
 
 controller:
   image:

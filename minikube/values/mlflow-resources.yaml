@@ -18,8 +18,8 @@ routes:
     # credentials and cannot follow an interactive SSO redirect, so leaving /api
     # protected turns every `mlflow.set_tracking_uri("http://mlflow.test")` into
     # a 302 at the ingress. MLflow authenticates these routes itself with the
-    # account in mini-platform/mlflow-auth — the same split LiteLLM uses for
-    # /v1. The UI's own /ajax-api calls stay protected; they come from a browser
+    # account in mini-platform/mlflow-auth — the same reasoning that keeps the
+    # model gateway's API free of a browser login. The UI's own /ajax-api calls stay protected; they come from a browser
     # that already holds the oauth2-proxy cookie.
     openPaths:
       - /api

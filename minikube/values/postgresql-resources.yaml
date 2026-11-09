@@ -2,18 +2,3 @@
 # get their own database and role from a secret of their own.
 vaultSecrets:
   - postgresql-credentials
-  # LiteLLM's database role, declared here rather than with LiteLLM because the
-  # litellm chart runs its schema migrations from a **PreSync hook**, and Argo
-  # CD runs the whole PreSync phase before any regular resource in the same
-  # Application — sync waves order resources within the sync phase, they cannot
-  # put one ahead of a hook. A VaultStaticSecret on the litellm release would
-  # therefore never be applied: the hook Job waits for a Secret that waits for
-  # the hook. Same rule as the other exceptions, one step further — a secret a
-  # PreSync hook mounts has to come from an earlier-syncing application.
-  - litellm-dbcredentials
-
-# LiteLLM's ServiceAccount, here for the same PreSync reason: the migration Job
-# runs as it. It is also the identity GCP's onprem-k8s workload identity pool
-# trusts for LiteLLM's chirp-3 model, so keep the name in step with mini-cloud.
-serviceAccounts:
-  - name: litellm

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Point the Google API hostnames LiteLLM's Google speech models (chirp-3,
-# tts-chirp-3-hd, the Gemini TTS and Live models) use at Private Service Connect
-# endpoints reached over the mini-cloud VPN, so speech traffic and the keyless
-# token exchange stay off the internet.
+# Point the Google API hostnames the gateway's Google models use (Gemini chat
+# and TTS, Gemini Live, Speech-to-Text, Text-to-Speech) at Private Service
+# Connect endpoints reached over the mini-cloud VPN, so that traffic and the
+# keyless token exchange stay off the internet.
 #
 #   scripts/gcp-psc-dns.sh 10.48.64.2               # add or update
 #   scripts/gcp-psc-dns.sh 10.48.64.2 10.48.65.2    # also the regional endpoint

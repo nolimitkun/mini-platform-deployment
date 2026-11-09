@@ -9,15 +9,6 @@ extraScrapeConfigs: |
     metrics_path: /metrics
     static_configs:
       - targets: ["qdrant:6333"]
-  - job_name: litellm
-    # /metrics sits behind the same auth as the rest of the proxy API, so an
-    # anonymous scrape is rejected with 401. The master key doubles as the
-    # bearer token; Prometheus strips the trailing newline from the file.
-    authorization:
-      type: Bearer
-      credentials_file: /etc/prometheus/secrets/litellm-master-key/PROXY_MASTER_KEY
-    static_configs:
-      - targets: ["litellm:4000"]
   - job_name: mlflow
     metrics_path: /metrics
     basic_auth:
@@ -205,12 +196,5 @@ server:
     - name: mlflow-auth
       secretName: mlflow-auth
       mountPath: /etc/prometheus/secrets/mlflow-auth
-      subPath: ""
-      readOnly: true
-    # Bearer token for the litellm job above. Vault-managed, same Secret the
-    # proxy itself reads.
-    - name: litellm-master-key
-      secretName: litellm-master-key
-      mountPath: /etc/prometheus/secrets/litellm-master-key
       subPath: ""
       readOnly: true

@@ -316,10 +316,10 @@ keycloakConfigCli:
           defaultClientScopes: *platformScopes
 
         # One client for every forward-auth host. oauth2-proxy runs as a
-        # single deployment fronting MLflow, kagent, the LiteLLM UI and
-        # agentregistry, so the callback differs only by host.
+        # single deployment fronting MLflow, kagent and agentregistry, so the
+        # callback differs only by host.
         - clientId: oauth2-proxy
-          name: oauth2-proxy (MLflow, kagent, LiteLLM, agentregistry)
+          name: oauth2-proxy (MLflow, kagent, agentregistry)
           enabled: true
           protocol: openid-connect
           publicClient: false
@@ -329,7 +329,6 @@ keycloakConfigCli:
           redirectUris:
             - http://mlflow.test/oauth2/callback
             - http://kagent.test/oauth2/callback
-            - http://litellm.test/oauth2/callback
             - http://agentregistry.test/oauth2/callback
           webOrigins:
             - +

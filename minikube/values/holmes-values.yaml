@@ -9,7 +9,7 @@
 # minikube/values/holmes-resources.yaml points at `holmes-holmes`.
 
 # Marks the project-key cutover and forces existing Holmes pods to reload the
-# Vault-synced OTLP header during upgrades from the shared LiteLLM project.
+# Vault-synced OTLP header when the Holmes Langfuse project was introduced.
 podAnnotations:
   mini-platform.dev/langfuse-project: holmes
 
@@ -204,7 +204,7 @@ toolsets:
 # makes it authenticate its own requests (X-API-Key or a bearer token), which
 # is why holmes.test is *not* behind oauth2-proxy: a client sending its own
 # credential cannot follow an interactive SSO redirect, the same reason
-# LiteLLM's /v1 and MLflow's /api are exempt. /healthz and /readyz stay open so
+# the model gateway's /v1 and MLflow's /api are exempt. /healthz and /readyz stay open so
 # the kubelet probes still work.
 #
 # The key arrives as an env var from holmes-api above, alongside

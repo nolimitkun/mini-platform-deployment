@@ -157,7 +157,9 @@ init_services() {
     "Open WebUI|$NS|svc/open-webui|3000|80"
     "Langfuse|$NS|svc/langfuse-web|3001|3000"
     "Grafana|$NS|svc/grafana|3002|80"
-    "LiteLLM|$NS|svc/litellm|4000|4000"
+    # The model and tool gateway: /v1 (OpenAI API), /mcp, /google/...
+    "agentgateway|$NS|svc/agentgateway-proxy|4000|80"
+    "agentregistry|$NS|svc/agentregistry|12121|12121"
     "MLflow|$NS|svc/mlflow-tracking|5000|80"
     "JupyterHub|$NS|svc/proxy-public|8000|80"
     "Superset|$NS|svc/superset|8088|8088"
@@ -190,7 +192,8 @@ init_credentials() {
     "Argo CD|k8s|$ARGO_NS/argocd-initial-admin-secret|admin|password"
     "Langfuse|vault|mini-platform/langfuse-init-user|@LANGFUSE_INIT_USER_EMAIL|LANGFUSE_INIT_USER_PASSWORD"
     "Grafana|vault|mini-platform/grafana-admin|@admin-user|admin-password"
-    "LiteLLM|vault|mini-platform/litellm-master-key|(bearer token)|PROXY_MASTER_KEY"
+    # The admin client's gateway API key; each client has its own in the same path.
+    "agentgateway|vault|mini-platform/agentgateway-client-keys|(bearer token)|admin"
     "MLflow|vault|mini-platform/mlflow-auth|@admin-user|admin-password"
     "Keycloak|vault|mini-platform/keycloak-admin|admin|admin-password"
     "MinIO Console|vault|mini-platform/minio-root-credentials|@rootUser|rootPassword"

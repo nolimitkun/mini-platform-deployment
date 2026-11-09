@@ -34,8 +34,8 @@ providers:
 # DATABASE
 # ==============================================================================
 # Bundled single-pod Postgres, matching how langfuse, mlflow, superset, and
-# keycloak each carry their own. The shared `postgresql` release is provisioned
-# with a single database (litellm) and adding a second one needs an initdb
+# keycloak each carry their own. The shared `postgresql` release was provisioned
+# without one for kagent, and adding a database needs an initdb
 # script that Bitnami only runs against an empty volume, so it would not apply
 # to the already-initialized cluster.
 database:
@@ -69,7 +69,7 @@ controller:
 # ==============================================================================
 # TRACING
 # ==============================================================================
-# Through the Alloy OTLP gateway rather than Tempo directly, matching LiteLLM —
+# Through the Alloy OTLP gateway rather than Tempo directly, like agentgateway —
 # one endpoint for every OTLP producer, and alloy-values.yaml alone decides
 # where each signal lands. gRPC on 4317 is what the chart's default protocol
 # expects.
@@ -77,9 +77,9 @@ controller:
 # These spans are the agent's own account of a conversation — each LLM turn with
 # its prompt and completion, each tool call with its arguments and result — so
 # alloy-values.yaml forwards them to Langfuse as well as Tempo, into a `kagent`
-# project of their own. That is a different view from the one LiteLLM reports in
-# its project: the gateway sees individual model calls and what they cost, not
-# the run that strung them together.
+# project of their own. That is a different view from the gateway's: it sees
+# individual model calls and what they cost, not the run that strung them
+# together.
 #
 # The fan-out is configured there rather than here for two reasons. The OTel SDK
 # takes a single traces endpoint, so pointing kagent straight at Langfuse would

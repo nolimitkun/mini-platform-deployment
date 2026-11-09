@@ -28,33 +28,43 @@ Two principles shape the design:
 The default AI request path is:
 
 ```text
-Open WebUI ──▶ LiteLLM ──▶ vLLM Router ──▶ vLLM
-                  │
-                  └──▶ Langfuse (request traces)
+Open WebUI ──▶ agentgateway ──▶ vLLM Router ──▶ vLLM
+                  │  ▲
+                  │  └── OPA (allow/deny per client, model and tool)
+                  │        ▲
+                  │        └── OCP ◀── policies/ in Git   (bundles via MinIO)
+                  ├──▶ Vertex AI Gemini, Speech, TTS   (mini-cloud VPN, keyless)
+                  ├──▶ DeepSeek                        (internet)
+                  └──▶ MCP: Grafana MCP, kagent tools
 ```
 
-Open WebUI talks to LiteLLM as an OpenAI-compatible gateway; LiteLLM routes the
-`qwen3.6-27b` model to the vLLM router serving `unsloth/Qwen3.6-27B-MTP-GGUF:Q4_K_M`, and emits
-traces to Langfuse using project keys it shares with Langfuse through Vault.
+Open WebUI, kagent and HolmesGPT each call **agentgateway** with their own API
+key. It serves every model on one OpenAI-compatible endpoint (`qwen3.6-27b` on
+the vLLM router serving `unsloth/Qwen3.6-27B-MTP-GGUF:Q4_K_M`, the Gemini models
+on Vertex AI, `deepseek-v4-pro`), passes Google's speech APIs through, and merges
+the cluster's MCP servers into one endpoint. Before routing, it asks **OPA**,
+whose policy (`policies/gateway`: data class per client, placement per model,
+allowed tools) the **OPA Control Plane** builds from Git. **agentregistry** is the
+catalog of MCP servers and agents. See [docs/agentgateway.md](docs/agentgateway.md).
 
 Supporting subsystems:
 
 ```text
 Vault ──▶ Vault Secrets Operator ──▶ Kubernetes Secrets ──▶ workloads
 
-Ingress NGINX ──▶ Open WebUI, LiteLLM, Langfuse, MLflow, Grafana,
-                  JupyterHub, Superset, MinIO Console, Keycloak, kagent,
-                  HolmesGPT, Argo CD
+Ingress NGINX ──▶ Open WebUI, agentgateway, agentregistry, Langfuse, MLflow,
+                  Grafana, JupyterHub, Superset, MinIO Console, Keycloak,
+                  kagent, HolmesGPT, Argo CD
 
 Prometheus     ──▶ Grafana            (metrics + dashboards)
 Alloy ──▶ Loki ──▶ Grafana            (pod logs, every pod in every namespace)
-Keycloak, Trino, vLLM, LiteLLM, Open WebUI, kagent, Argo CD
+Keycloak, Trino, vLLM, agentgateway, Open WebUI, kagent, Argo CD
       ─OTLP─▶ Alloy ─┬─▶ Tempo        (traces)
                      ├─▶ Prometheus   (OTLP metrics, remote write)
                      └─▶ Langfuse     (kagent's agent spans only)
-kagent ──▶ LiteLLM                    (agents; DeepSeek through the gateway)
+kagent ──▶ agentgateway               (agents; DeepSeek through the gateway)
        └─▶ Grafana MCP ──▶ Prometheus, Loki, Tempo
-HolmesGPT ──▶ LiteLLM                 (root-cause analysis; same gateway)
+HolmesGPT ──▶ agentgateway            (root-cause analysis; same gateway)
           ├─▶ Kubernetes API          (read-only RBAC)
           ├─▶ Prometheus              (direct)
           ├─▶ Grafana ──▶ dashboards, Loki, Tempo
@@ -71,7 +81,7 @@ Argo CD        ──▶ reconciles every release + secret mapping from Git
 ```
 
 Langfuse, MLflow, and Superset each deploy their own isolated stateful
-dependencies so their upgrades stay independent of the LiteLLM gateway. Vault
+dependencies so their upgrades stay independent of the rest of the platform. Vault
 runs as a single persistent standalone server in this starter configuration and
 **must be initialized and unsealed before dependent applications turn healthy.**
 
@@ -306,7 +316,7 @@ Once the tunnel assigns an external IP, map the local hostnames:
 export INGRESS_IP="$(kubectl -n ingress-nginx get service ingress-nginx-controller \
   -o jsonpath='{.status.loadBalancer.ingress[0].ip}')"
 printf '%s %s\n' "$INGRESS_IP" \
-  'argocd.test open-webui.test litellm.test langfuse.test mlflow.test grafana.test jupyterhub.test superset.test minio.test keycloak.test kagent.test holmes.test' \
+  'argocd.test open-webui.test agentgateway.test agentregistry.test langfuse.test mlflow.test grafana.test jupyterhub.test superset.test minio.test keycloak.test kagent.test holmes.test' \
   | sudo tee -a /etc/hosts
 ```
 
@@ -363,8 +373,8 @@ kubectl -n argocd get applications
 ```
 
 Sync waves order the rollout: Argo CD and Vault/VSO come first, then the
-stateful dependencies, then the application tier, and finally LiteLLM, Open
-WebUI and the agents. Each release brings its own ingress route and
+stateful dependencies, then the application tier, and finally the gateway (with
+OPA and OCP ahead of it), Open WebUI and the agents. Each release brings its own ingress route and
 `VaultStaticSecret` mappings with it, so a secret is declared on the
 earliest-syncing application that consumes it — and, where a release needs a
 dependency *running* rather than just a Secret, a wave later still (MinIO reads
@@ -399,7 +409,7 @@ export VAULT_TOKEN='<initial-root-token-from-init-output>'
 # tokenizer (Qwen/Qwen3.6-27B). Accept any gated-model licenses at
 # huggingface.co with this account first, or the vLLM pull will 401.
 export HF_TOKEN='hf_xxxxxxxxxxxxxxxxxxxx'
-# DeepSeek key for the hosted `deepseek-v4-pro` model LiteLLM serves. kagent's
+# DeepSeek key for the hosted `deepseek-v4-pro` model agentgateway serves. kagent's
 # agents and HolmesGPT run on it; nothing else on the platform requires it.
 export DEEPSEEK_API_KEY='sk-xxxxxxxxxxxxxxxxxxxx'
 # Fine-grained PAT with read-only Metadata, Contents, Pull requests and Actions.
@@ -436,24 +446,23 @@ vault audit enable file file_path=/vault/audit/audit.log
 `bootstrap-vault-secrets.sh` generates random credentials for every component
 and writes them under `mini-platform/`. It also writes the `HF_TOKEN` you export
 to `mini-platform/vllm-hf-token`, which vLLM uses to pull the model weights, and
-the `DEEPSEEK_API_KEY` to `mini-platform/litellm-deepseek` for the hosted model
-kagent runs on. It stores the two Holmes read-only integration credentials at
-`mini-platform/holmes-github` and `mini-platform/holmes-argocd`. Four of the
-secrets it writes are copies rather than fresh
-credentials — `mini-platform/kagent-litellm` and `mini-platform/holmes-litellm`
-mirror the LiteLLM master key, `mini-platform/kagent-grafana` and
-`mini-platform/holmes-grafana` the Grafana admin login — so on a
-`SEED_MISSING_ONLY=true` upgrade the script reads the existing values back out
-of Vault instead of generating new ones that the owning service would reject.
-Notably, it writes LiteLLM's Langfuse project keys to
-`mini-platform/litellm-langfuse`: Langfuse's headless init provisions the
-starter organization and project from those keys, and LiteLLM consumes the same
-Vault-managed secret for tracing. Holmes uses a separate `HolmesGPT` project:
-`mini-platform/holmes-langfuse-project` holds its project keys for the
+the `DEEPSEEK_API_KEY` to `mini-platform/agentgateway-deepseek` for the hosted
+model kagent and Holmes run on. It stores the two Holmes read-only integration
+credentials at `mini-platform/holmes-github` and `mini-platform/holmes-argocd`.
+The gateway's API keys are one per client: `mini-platform/agentgateway-api-keys`
+is what the gateway reads, `mini-platform/agentgateway-client-keys` holds the raw
+keys, and each client gets a mirror under the env name it reads
+(`open-webui-agentgateway`, `kagent-agentgateway`, `holmes-agentgateway`). Those
+mirrors, `mini-platform/kagent-grafana` and `mini-platform/holmes-grafana` (the
+Grafana admin login) are copies rather than fresh credentials, so on a
+`SEED_MISSING_ONLY=true` upgrade the script reads the existing values back out of
+Vault instead of generating new ones that the owning service would reject.
+Langfuse's headless init creates the `mini-platform` organization and its owner
+account; each consumer has a project of its own. Holmes uses a `HolmesGPT`
+project: `mini-platform/holmes-langfuse-project` holds its project keys for the
 idempotent `mini-platform-langfuse-holmes-project` provisioning job, while
 `mini-platform/holmes-langfuse` contains only the derived Basic-auth header
-mounted by Holmes. Native investigation traces therefore never mix with the
-LiteLLM gateway project, and Holmes never mounts its raw Langfuse keys. kagent
+mounted by Holmes, so Holmes never mounts its raw Langfuse keys. kagent
 gets a `kagent` project the same way, from
 `mini-platform/kagent-langfuse-project` — but with no runtime mirror beside it,
 because kagent exports nothing itself and the Alloy DaemonSet that exports for
@@ -504,7 +513,13 @@ shared `minikube/gitops/app-resources` chart rendered against a sibling
 | `mini-platform-alloy` | `charts/alloy` | `minikube/values/alloy-values.yaml` |
 | `mini-platform-jupyterhub` | `charts/jupyterhub` | `minikube/values/jupyterhub-values.yaml` |
 | `mini-platform-superset` | `charts/superset` | `minikube/values/superset-values.yaml` |
-| `mini-platform-litellm` | `charts/litellm-helm` | `minikube/values/litellm-values.yaml` |
+| `mini-platform-agentgateway-crds` | `charts/agentgateway-crds` | `minikube/values/agentgateway-crds-values.yaml` |
+| `mini-platform-agentgateway` | `charts/agentgateway` | `minikube/values/agentgateway-values.yaml` |
+| `mini-platform-agentgateway-config` | `minikube/gitops/agentgateway-config` | `minikube/gitops/agentgateway-config/values.yaml` |
+| `mini-platform-opa-policy` | `minikube/gitops/opa-policy` | `minikube/gitops/opa-policy/values.yaml` |
+| `mini-platform-agentregistry-postgresql` | `charts/postgresql` | `minikube/values/agentregistry-postgresql-values.yaml` |
+| `mini-platform-agentregistry` | `charts/agentregistry` | `minikube/values/agentregistry-values.yaml` |
+| `mini-platform-agentregistry-catalog` | `minikube/gitops/agentregistry-catalog` | `minikube/gitops/agentregistry-catalog/values.yaml` |
 | `mini-platform-open-webui` | `charts/open-webui` | `minikube/values/open-webui-values.yaml` |
 | `mini-platform-kagent-crds` | `charts/kagent-crds` | `minikube/values/kagent-crds-values.yaml` |
 | `mini-platform-kagent` | `charts/kagent` | `minikube/values/kagent-values.yaml` |
@@ -536,7 +551,8 @@ service hostnames:
 | --- | --- |
 | Argo CD | `http://argocd.test` |
 | Open WebUI | `http://open-webui.test` |
-| LiteLLM API | `http://litellm.test` |
+| agentgateway API (`/v1`, `/mcp`, `/google/...`) | `http://agentgateway.test` |
+| agentregistry | `http://agentregistry.test` |
 | Langfuse | `http://langfuse.test` |
 | MLflow | `http://mlflow.test` |
 | Grafana | `http://grafana.test` |
@@ -606,7 +622,7 @@ works instead if you would rather not change it. Then point every hosts entry at
 `127.0.0.1`:
 
 ```bash
-echo "127.0.0.1 argocd.test grafana.test holmes.test jupyterhub.test kagent.test keycloak.test langfuse.test litellm.test minio.test mlflow.test open-webui.test superset.test" | sudo tee -a /etc/hosts
+echo "127.0.0.1 argocd.test grafana.test holmes.test jupyterhub.test kagent.test keycloak.test langfuse.test agentgateway.test agentregistry.test minio.test mlflow.test open-webui.test superset.test" | sudo tee -a /etc/hosts
 ```
 
 **From other machines on the LAN.** Bind the same forward to all interfaces:
@@ -693,7 +709,7 @@ vault kv get -field=SUPERSET_ADMIN_PASSWORD mini-platform/superset-env
 vault kv get -field=admin-password mini-platform/keycloak-admin
 vault kv get -field=rootPassword mini-platform/minio-root-credentials
 vault kv get -field=LANGFUSE_INIT_USER_PASSWORD mini-platform/langfuse-init-user
-vault kv get -field=PROXY_MASTER_KEY mini-platform/litellm-master-key
+vault kv get -field=admin mini-platform/agentgateway-client-keys
 ```
 
 The first two are the Keycloak realm logins that work across every UI. The rest
@@ -733,12 +749,12 @@ claim:
 | JupyterHub | admin | user |
 | Argo CD | `role:admin` | `role:readonly` |
 | MinIO Console | `consoleAdmin` | `consoleAdmin` |
-| MLflow, kagent, LiteLLM UI | access | access |
+| MLflow, kagent, agentregistry | access | access |
 
 MinIO authorizes from a claim naming one of its own policies rather than from a
 group list, so both groups currently map to `consoleAdmin`; narrowing that means
-adding a MinIO policy and mapping the realm role onto it. MLflow, kagent and the
-LiteLLM UI sit behind oauth2-proxy, which admits both groups and cannot express
+adding a MinIO policy and mapping the realm role onto it. MLflow, kagent and
+agentregistry sit behind oauth2-proxy, which admits both groups and cannot express
 a role distinction downstream.
 
 ### How each component is wired
@@ -761,16 +777,14 @@ component's `minikube/values/<name>-resources.yaml`):
   established — so the browser prompt is answered with the `mlflow-auth`
   credentials, not a Keycloak account.
 - **kagent** — ships no authentication at all.
-- **LiteLLM** — its built-in SSO is license-gated. Only `/ui` is protected;
-  `/v1` stays open because LiteLLM authenticates API traffic itself with the
-  master key and virtual keys.
+- **agentregistry** — the open-source build has no login of its own.
 
-**HolmesGPT** is outside this scheme entirely. It has no browser UI — every
+**HolmesGPT** and **agentgateway** are outside this scheme entirely. The gateway
+has no browser UI and authenticates every request with a per-client API key. It has no browser UI — every
 route is API — so there is no interactive login to federate, and it
 authenticates each request itself against `HOLMES_API_KEY` from
 `mini-platform/holmes-api`. Putting forward-auth in front of it would 302 every
-caller for no gain, which is the same reasoning that keeps MLflow's `/api` and
-LiteLLM's `/v1` exempt.
+caller for no gain, which is the same reasoning that keeps MLflow's `/api` exempt.
 
 The pattern in both exceptions is the same: a route lists the prefixes it wants
 behind Keycloak in `protectedPaths`, and carves back out any path whose clients
@@ -861,14 +875,12 @@ callback URL on the existing `oauth2-proxy` client.
 
 ## Verifying the Stack
 
-**Langfuse + LiteLLM tracing.** Langfuse creates the `mini-platform` org and
-`litellm` project from the Vault-managed keys written in step 4; VSO exposes the
-same keys to LiteLLM. Confirm the secret synced and both apps are healthy:
+**Langfuse.** Langfuse's headless init creates the `mini-platform` org and its
+owner account; the Holmes, Open WebUI and kagent projects come from their own
+provisioning jobs:
 
 ```bash
-kubectl -n "$NS" get vaultstaticsecret litellm-langfuse
 kubectl -n "$NS" get pods -l app.kubernetes.io/instance=langfuse
-kubectl -n "$NS" get pods -l app.kubernetes.io/name=litellm
 ```
 
 Alloy authenticates with the `kagent` project's keys instead, to forward the
@@ -889,17 +901,21 @@ than from Langfuse itself. All three are idempotent and re-run on every sync:
 kubectl -n "$NS" get jobs -l app.kubernetes.io/name=langfuse-kagent-project
 ```
 
-**LLM gateway smoke test.** LiteLLM serves the `qwen3.6-27b` model backed by
-`http://vllm-router-service.mini-platform.svc.cluster.local/v1`:
+**Model gateway smoke test.** agentgateway serves every model on one
+OpenAI-compatible endpoint, with a per-client API key and OPA deciding each
+request (see [docs/agentgateway.md](docs/agentgateway.md)):
 
 ```bash
-export LITELLM_MASTER_KEY="$(kubectl -n "$NS" get secret litellm-master-key \
-  -o jsonpath='{.data.PROXY_MASTER_KEY}' | base64 -d)"
-curl http://litellm.test/v1/chat/completions \
-  -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" \
+export AGW_KEY="$(vault kv get -field=admin mini-platform/agentgateway-client-keys)"
+curl http://agentgateway.test/v1/models -H "Authorization: Bearer ${AGW_KEY}"
+curl http://agentgateway.test/v1/chat/completions \
+  -H "Authorization: Bearer ${AGW_KEY}" \
   -H 'Content-Type: application/json' \
   -d '{"model":"qwen3.6-27b","messages":[{"role":"user","content":"Say hello in one sentence."}]}'
 ```
+
+A request the policy refuses gets a 403 that names the reason, for example an
+`internal`-class client asking for `deepseek-v4-pro`.
 
 **Analytics.** Superset imports the starter Trino `tpch` catalog at
 `trino://superset@trino.mini-platform.svc.cluster.local:8080/tpch`. Trino is
@@ -911,9 +927,9 @@ configure TLS and authentication before exposing it.
 
 **kagent.** The chat UI is at `http://kagent.test`. Four agents ship enabled —
 `k8s-agent`, `helm-agent`, `promql-agent`, and `observability-agent` — all
-running on `deepseek-v4-pro` through LiteLLM, so their turns appear in the
-`litellm` Langfuse project alongside every other LLM call. They appear a second
-time in a `kagent` project of their own, and more usefully: Alloy forwards
+running on `deepseek-v4-pro` through agentgateway, so every model call shows in
+the gateway's metrics and traces. They also appear in a `kagent` Langfuse
+project of their own, and more usefully: Alloy forwards
 kagent's own spans there, so a conversation shows up as one trace with each LLM
 turn's prompt and completion, each tool call's arguments and result, and the
 token usage per turn — the run itself, not the scattered gateway calls it
@@ -928,7 +944,7 @@ datasource API using the same admin credentials Grafana itself enforces.
 ```bash
 kubectl -n "$NS" get agents
 kubectl -n "$NS" get modelconfig default-model-config -o yaml
-# Should report Accepted; a failure here is usually the LiteLLM key or baseUrl.
+# Should report Accepted; a failure here is usually the gateway key or baseUrl.
 kubectl -n "$NS" get remotemcpservers
 ```
 
@@ -937,7 +953,7 @@ Prometheus connection of its own. Ask `observability-agent` when you want a
 query actually executed.
 
 **HolmesGPT.** An investigation API at `http://holmes.test`, on the same
-`deepseek-v4-pro` model through LiteLLM. Where kagent is a chat UI you drive, this
+`deepseek-v4-pro` model through agentgateway. Where kagent is a chat UI you drive, this
 is one HTTP call that reads the cluster and its telemetry and answers with what
 it found and how it got there. Its toolsets cover the Kubernetes API (over
 read-only RBAC), Prometheus directly, and
@@ -975,14 +991,13 @@ curl -sS http://holmes.test/api/info -H "X-API-Key: $HOLMES_API_KEY" | jq
 ```
 
 For a browser UI, use the provisioned `HolmesGPT` Pipe in Open WebUI. Holmes is
-not registered in LiteLLM's agent gateway and no A2A adapter is deployed.
+not registered in agentregistry and no A2A adapter is deployed.
 
 Investigations are slow (tens of seconds to minutes) and cost tokens on every
 turn. Holmes sends one native investigation trace directly to Langfuse over
 OTLP/HTTP, including its LLM turns, reasoning, tool calls and results, initiating
-user/session, and final answer. Its model requests still route through LiteLLM,
-but carry `no-log: true` so the gateway does not create duplicate Langfuse
-traces.
+user/session, and final answer. Its model requests route through agentgateway,
+which traces them to Tempo, not to Langfuse, so there are no duplicates.
 
 **Observability.** All three signals are read through Grafana, which ships
 provisioned `prometheus`, `loki` and `tempo` data sources with fixed uids so
@@ -1005,7 +1020,7 @@ kubectl -n "$NS" exec deploy/grafana -- wget -qO- 'http://loki:3100/loki/api/v1/
 ```
 
 Traces come from the components that ship an OTel SDK — Keycloak, Trino, vLLM,
-LiteLLM, Open WebUI and Argo CD. They export to Alloy rather than to Tempo
+agentgateway, Open WebUI and Argo CD. They export to Alloy rather than to Tempo
 directly, so one endpoint covers every producer and Alloy decides where each
 signal lands:
 
@@ -1055,9 +1070,8 @@ kubectl -n "$NS" run authcheck --rm -it --restart=Never --image=curlimages/curl 
 ```
 
 Expect `302 http://mlflow.test/oauth2/start?rd=%2F`. Swapping the host header
-for `litellm.test` with path `/v1/models` should instead return `401` and no
-redirect — LiteLLM authenticates API traffic itself, and only `/ui` sits behind
-oauth2-proxy.
+for `agentgateway.test` with path `/v1/models` should instead return `401` and no
+redirect — the gateway authenticates API traffic itself with per-client keys.
 
 **General health:**
 
