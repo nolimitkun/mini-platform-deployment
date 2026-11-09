@@ -43,6 +43,13 @@ applications:
     valuesFile: minikube/values/kagent-crds-values.yaml
     releaseName: kagent-crds
     wave: "-4"
+  # agentgateway's CRDs, ahead of the controller and of the Gateway, models
+  # and policies that instantiate them (agentgateway-config).
+  agentgateway-crds:
+    chartPath: charts/agentgateway-crds
+    valuesFile: minikube/values/agentgateway-crds-values.yaml
+    releaseName: agentgateway-crds
+    wave: "-4"
   postgresql:
     chartPath: charts/postgresql
     valuesFile: minikube/values/postgresql-values.yaml
@@ -146,7 +153,6 @@ applications:
   prometheus:
     chartPath: charts/prometheus
     valuesFile: minikube/values/prometheus-values.yaml
-    resourcesFile: minikube/values/prometheus-resources.yaml
     wave: "-1"
     ignoreDifferences:
       - group: apps
@@ -221,18 +227,55 @@ applications:
         jsonPointers:
           - /spec/persistentVolumeClaimRetentionPolicy
           - /spec/volumeClaimTemplates
-  litellm:
-    chartPath: charts/litellm-helm
-    valuesFile: minikube/values/litellm-values.yaml
-    resourcesFile: minikube/values/litellm-resources.yaml
+  # The model and tool gateway: the controller here, the proxy and its
+  # configuration below (docs/agentgateway.md).
+  agentgateway:
+    chartPath: charts/agentgateway
+    valuesFile: minikube/values/agentgateway-values.yaml
+    releaseName: agentgateway
+    wave: "0"
+  # OCP builds the Rego in policies/ into bundles in MinIO (wave -2, which
+  # also creates the bucket and both accounts); OPA serves them to the
+  # gateway. Before the gateway config, which fails closed without OPA.
+  opa-policy:
+    chartPath: minikube/gitops/opa-policy
+    valuesFile: minikube/gitops/opa-policy/values.yaml
+    releaseName: opa-policy
+    wave: "0"
+  # agentregistry and its own database. After kagent's CRDs (wave -4), which
+  # it writes Agent and MCPServer resources of.
+  agentregistry-postgresql:
+    chartPath: charts/postgresql
+    valuesFile: minikube/values/agentregistry-postgresql-values.yaml
+    resourcesFile: minikube/values/agentregistry-postgresql-resources.yaml
+    releaseName: agentregistry-postgresql
+    wave: "0"
+  agentregistry:
+    chartPath: charts/agentregistry
+    valuesFile: minikube/values/agentregistry-values.yaml
+    resourcesFile: minikube/values/agentregistry-resources.yaml
+    releaseName: agentregistry
+    wave: "1"
+  # The registry's catalog, in Git (agentregistry-catalog/files/catalog.yaml),
+  # applied to its API by a PostSync Job once the registry is up.
+  agentregistry-catalog:
+    chartPath: minikube/gitops/agentregistry-catalog
+    valuesFile: minikube/gitops/agentregistry-catalog/values.yaml
+    releaseName: agentregistry-catalog
+    wave: "2"
+  agentgateway-config:
+    chartPath: minikube/gitops/agentgateway-config
+    valuesFile: minikube/gitops/agentgateway-config/values.yaml
+    resourcesFile: minikube/values/agentgateway-resources.yaml
+    releaseName: agentgateway-config
     wave: "1"
   open-webui:
     chartPath: charts/open-webui
     valuesFile: minikube/values/open-webui-values.yaml
     resourcesFile: minikube/values/open-webui-resources.yaml
     wave: "2"
-  # After LiteLLM (its model endpoint) and Grafana (its telemetry access), both
-  # of which the agents call on startup.
+  # After the gateway config (its model endpoint) and Grafana (its telemetry
+  # access), both of which the agents call on startup.
   kagent:
     chartPath: charts/kagent
     valuesFile: minikube/values/kagent-values.yaml
@@ -240,7 +283,7 @@ applications:
     releaseName: kagent
     wave: "2"
   # LLM root-cause analysis over the cluster and its telemetry. Ordered
-  # alongside kagent and for the same reasons: it calls LiteLLM for its model
+  # alongside kagent and for the same reasons: it calls the gateway for its model
   # and Grafana's datasource proxy for Loki and Tempo, and its toolsets run a
   # health check against both when the pod starts.
   holmes:
@@ -256,7 +299,7 @@ applications:
     valuesFile: minikube/gitops/open-webui-holmes-pipe/values.yaml
     releaseName: open-webui-holmes-pipe
     wave: "3"
-  # Forward-auth for MLflow, kagent and the LiteLLM UI. Fails its OIDC discovery
+  # Forward-auth for MLflow, kagent and agentregistry. Fails its OIDC discovery
   # call and restarts until Keycloak (wave -2) has finished importing the realm,
   # so it is ordered late. The routes that name it as an auth backend are
   # rendered with their own applications, some of them several waves earlier —

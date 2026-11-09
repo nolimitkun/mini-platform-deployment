@@ -1,0 +1,5 @@
+apiVersion: v2
+name: opa-policy
+description: OPA Control Plane (OCP), which builds policy bundles from Git into MinIO, and the OPA-Envoy authorizer agentgateway asks.
+type: application
+version: 0.1.0

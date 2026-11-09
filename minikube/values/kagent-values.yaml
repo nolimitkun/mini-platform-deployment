@@ -6,13 +6,13 @@
 # which the chart derives from the release name.
 
 # ==============================================================================
-# MODEL — DeepSeek, reached through the platform's LiteLLM gateway
+# MODEL — DeepSeek, reached through the platform's model gateway (agentgateway)
 # ==============================================================================
-# kagent talks OpenAI-protocol to LiteLLM rather than to api.deepseek.com
-# directly. Going through the gateway means the DeepSeek key lives in exactly
-# one place (litellm-values.yaml, from Vault), and every agent turn shows up in
-# Langfuse and in LiteLLM's Prometheus metrics alongside the rest of the
-# platform's LLM traffic.
+# kagent talks OpenAI-protocol to agentgateway rather than to api.deepseek.com
+# directly. Going through the gateway keeps the DeepSeek key in one place
+# (agentgateway-deepseek, from Vault), puts every agent turn in the gateway's
+# metrics and traces, and lets OPA decide which models kagent may use
+# (policies/gateway: kagent is `internal`, with a named exception for DeepSeek).
 #
 # To bypass the gateway instead, set baseUrl to https://api.deepseek.com/v1 and
 # point apiKeySecretRef at a secret holding the raw DeepSeek key.
@@ -20,22 +20,22 @@ providers:
   default: openAI
   openAI:
     provider: OpenAI
-    # Must match a model_name in litellm-values.yaml's model_list.
+    # Must match an AgentgatewayModel (agentgateway-config values.yaml, models).
     model: deepseek-v4-pro
-    # Vault-managed; carries the LiteLLM master key under an OPENAI_API_KEY key
-    # because that is the env name the OpenAI-protocol client expects.
-    apiKeySecretRef: kagent-litellm
+    # Vault-managed: kagent's own gateway API key, under OPENAI_API_KEY because
+    # that is the env name the OpenAI-protocol client expects.
+    apiKeySecretRef: kagent-agentgateway
     apiKeySecretKey: OPENAI_API_KEY
     # Rendered into the ModelConfig's `openAI` block by the chart.
     config:
-      baseUrl: http://litellm.mini-platform.svc.cluster.local:4000/v1
+      baseUrl: http://agentgateway-proxy.mini-platform.svc.cluster.local/v1
 
 # ==============================================================================
 # DATABASE
 # ==============================================================================
 # Bundled single-pod Postgres, matching how langfuse, mlflow, superset, and
-# keycloak each carry their own. The shared `postgresql` release is provisioned
-# with a single database (litellm) and adding a second one needs an initdb
+# keycloak each carry their own. The shared `postgresql` release was provisioned
+# without one for kagent, and adding a database needs an initdb
 # script that Bitnami only runs against an empty volume, so it would not apply
 # to the already-initialized cluster.
 database:
@@ -69,7 +69,7 @@ controller:
 # ==============================================================================
 # TRACING
 # ==============================================================================
-# Through the Alloy OTLP gateway rather than Tempo directly, matching LiteLLM —
+# Through the Alloy OTLP gateway rather than Tempo directly, like agentgateway —
 # one endpoint for every OTLP producer, and alloy-values.yaml alone decides
 # where each signal lands. gRPC on 4317 is what the chart's default protocol
 # expects.
@@ -77,9 +77,9 @@ controller:
 # These spans are the agent's own account of a conversation — each LLM turn with
 # its prompt and completion, each tool call with its arguments and result — so
 # alloy-values.yaml forwards them to Langfuse as well as Tempo, into a `kagent`
-# project of their own. That is a different view from the one LiteLLM reports in
-# its project: the gateway sees individual model calls and what they cost, not
-# the run that strung them together.
+# project of their own. That is a different view from the gateway's: it sees
+# individual model calls and what they cost, not the run that strung them
+# together.
 #
 # The fan-out is configured there rather than here for two reasons. The OTel SDK
 # takes a single traces endpoint, so pointing kagent straight at Langfuse would
@@ -149,10 +149,12 @@ grafana-mcp:
   # Upstream kagent 0.9.12 ships no value for this, so it is broken out of the
   # box on any cluster; the allowlist below is the Service DNS the controller
   # actually dials. Kept explicit rather than "*", which upstream documents as
-  # safe only behind a Host-rewriting reverse proxy.
+  # safe only behind a Host-rewriting reverse proxy. The last entry, without a
+  # port, is how agentgateway names it when it fronts this server at /mcp
+  # (agentgateway-config values.yaml, mcp.targets).
   args:
     - --allowed-hosts
-    - kagent-grafana-mcp.mini-platform:8000,kagent-grafana-mcp.mini-platform.svc.cluster.local:8000,kagent-grafana-mcp:8000
+    - kagent-grafana-mcp.mini-platform:8000,kagent-grafana-mcp.mini-platform.svc.cluster.local:8000,kagent-grafana-mcp:8000,kagent-grafana-mcp.mini-platform.svc.cluster.local
   grafana:
     # Base URL only. mcp-grafana builds "/api/..." itself, so a trailing /api
     # here produces /api/api/datasources and every Grafana call 404s. The

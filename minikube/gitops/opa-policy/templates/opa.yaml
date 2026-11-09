@@ -1,0 +1,83 @@
+{{- $v := .Values }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opa
+  labels: {app.kubernetes.io/name: opa}
+spec:
+  replicas: {{ $v.opa.replicas }}
+  selector:
+    matchLabels: {app.kubernetes.io/name: opa}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: opa}
+      annotations:
+        # Decision latency, bundle loads, gRPC errors: picked up by
+        # Prometheus's annotation-driven pod discovery.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8181"
+        prometheus.io/path: /metrics
+        checksum/config: {{ include (print $.Template.BasePath "/opa-config.yaml") . | sha256sum | trunc 16 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: opa
+          image: {{ $v.opa.image }}
+          args:
+            - run
+            - --server
+            - --addr=0.0.0.0:8181
+            - --diagnostic-addr=0.0.0.0:8282
+            - --config-file=/config/config.yaml
+            - --set=persistence_directory=/var/opa
+          env:
+            - {name: AWS_REGION, value: {{ $v.minio.region | quote }}}
+          envFrom:
+            - secretRef:
+                name: {{ $v.minio.readerSecret }}
+          ports:
+            - {name: grpc, containerPort: {{ $v.opa.grpcPort }}}
+            - {name: http, containerPort: 8181}
+            - {name: diag, containerPort: 8282}
+          # Ready only once the bundle is loaded and the plugin is up, so the
+          # gateway never talks to an OPA that would deny everything.
+          readinessProbe:
+            httpGet: {path: "/health?bundles&plugins", port: diag}
+          livenessProbe:
+            httpGet: {path: /health, port: diag}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: persist, mountPath: /var/opa}
+      volumes:
+        - name: config
+          configMap: {name: opa-config}
+        - name: persist
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opa
+  labels: {app.kubernetes.io/name: opa}
+spec:
+  selector: {app.kubernetes.io/name: opa}
+  ports:
+    - name: grpc
+      port: {{ $v.opa.grpcPort }}
+      targetPort: grpc
+      appProtocol: kubernetes.io/h2c
+    - name: http
+      port: 8181
+      targetPort: http

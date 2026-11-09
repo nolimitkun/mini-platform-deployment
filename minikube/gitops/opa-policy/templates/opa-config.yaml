@@ -1,0 +1,32 @@
+{{- $v := .Values }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-config
+data:
+  config.yaml: |
+    services:
+      minio:
+        url: {{ $v.minio.url }}/{{ $v.minio.bucket }}
+        credentials:
+          s3_signing:
+            environment_credentials: {}
+    bundles:
+      {{ $v.opa.bundle }}:
+        service: minio
+        resource: {{ $v.opa.bundle }}/bundle.tar.gz
+        # Keep serving the last good bundle across restarts and MinIO outages.
+        persist: true
+        polling:
+          min_delay_seconds: 10
+          max_delay_seconds: 30
+    plugins:
+      envoy_ext_authz_grpc:
+        addr: 0.0.0.0:{{ $v.opa.grpcPort }}
+        path: {{ $v.opa.decision }}
+    # Every decision to stdout, so Loki has the audit trail (client, model,
+    # verdict). Request bodies are dropped from the log: prompts stay out of it.
+    decision_logs:
+      console: true
+      # policies/gateway/log_mask.rego, part of the bundle.
+      mask_decision: system/log/mask

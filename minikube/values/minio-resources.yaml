@@ -1,6 +1,6 @@
 # The standalone object store. MLflow and Langfuse do not use it — each ships
-# its own MinIO subchart (`mlflow-minio`, `langfuse-s3`) — so nothing in the
-# cluster depends on this release beyond Prometheus scraping it.
+# its own MinIO subchart (`mlflow-minio`, `langfuse-s3`). It holds the OPA
+# policy bundles (opa-policy chart).
 vaultSecrets:
   # The root account, kept as break-glass and for S3 API clients that have no
   # browser to run an OIDC flow in. Console logins go through Keycloak, whose
@@ -8,6 +8,10 @@ vaultSecrets:
   # which is why this one syncs in wave -2 rather than with the other stateful
   # dependencies.
   - minio-root-credentials
+  # The OPA bundle accounts (minio-values.yaml). Declared here, the earliest
+  # consumer; OCP and OPA (opa-policy, a later wave) read the same Secrets.
+  - opa-bundles-writer
+  - opa-bundles-reader
 
 routes:
   - name: minio

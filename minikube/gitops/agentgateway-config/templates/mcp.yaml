@@ -1,0 +1,45 @@
+{{- $v := .Values }}
+{{- with $v.mcp }}
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: platform-mcp
+spec:
+  mcp:
+    # One unavailable server leaves the others usable.
+    failureMode: FailOpen
+    prefixMode: Always
+    targets:
+      {{- range $name, $t := .targets }}
+      - name: {{ $name }}
+        # By host name rather than backendRef: agentgateway then sets Host to
+        # the target (it passes the client's Host through to Service
+        # backends), and mcp-grafana refuses any Host not on its
+        # --allowed-hosts list.
+        static:
+          host: {{ $t.service }}.{{ $.Release.Namespace }}.svc.cluster.local
+          port: {{ $t.port }}
+          protocol: StreamableHTTP
+      {{- end }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: platform-mcp
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $v.gatewayName }}
+      sectionName: http
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .path }}
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: platform-mcp
+          weight: 1
+{{- end }}

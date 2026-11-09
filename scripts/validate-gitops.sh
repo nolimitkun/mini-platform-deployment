@@ -10,13 +10,14 @@
 #     chart lints and renders against each per-application resources file
 #   - rendered manifests pass kubeconform (CRDs are allowed to be unknown)
 #   - shellcheck on scripts/
+#   - opa check, fmt and test on every policy bundle under policies/
 #
 # The vendored charts live in a separate repository. Point CHARTS_DIR at a local
 # checkout of it (default: ../mini-platform) to verify charts/* paths resolve;
 # when absent those checks are skipped, not failed.
 #
 # Tools used if present: helm (required), kubeconform (optional), shellcheck
-# (optional). Missing optional tools are reported and skipped, not failed.
+# (optional), opa (optional). Missing optional tools are reported and skipped, not failed.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -137,6 +138,18 @@ if have shellcheck; then
   if shellcheck scripts/*.sh; then ok "scripts/*.sh"; else bad "scripts/*.sh"; fi
 else
   skip "shellcheck not installed"
+fi
+
+echo "==> opa (policies/)"
+if have opa; then
+  for dir in policies/*/; do
+    dir="${dir%/}"
+    if opa check --strict "$dir" >/dev/null; then ok "opa check $dir"; else bad "opa check $dir"; fi
+    if [[ -z "$(opa fmt --list "$dir")" ]]; then ok "opa fmt $dir"; else bad "opa fmt $dir (run: opa fmt -w $dir)"; fi
+    if opa test "$dir" >/dev/null; then ok "opa test $dir"; else bad "opa test $dir"; opa test "$dir" || true; fi
+  done
+else
+  skip "opa not installed (policy tests skipped)"
 fi
 
 echo

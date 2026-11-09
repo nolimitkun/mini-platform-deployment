@@ -1,0 +1,5 @@
+apiVersion: v2
+name: agentregistry-catalog
+description: Applies registry/catalog.yaml to agentregistry on every sync.
+type: application
+version: 0.1.0

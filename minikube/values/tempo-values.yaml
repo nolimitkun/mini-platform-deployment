@@ -1,5 +1,5 @@
 # Tempo in single-binary mode with local block storage — one pod, one PVC.
-# Traces arrive over OTLP (gRPC 4317 / HTTP 4318) from LiteLLM.
+# Traces arrive over OTLP through the Alloy gateway (agentgateway, kagent, …).
 #
 # NOTE: upstream marks this chart `deprecated: true` in favour of
 # `tempo-distributed`. It is kept here deliberately: the distributed chart needs

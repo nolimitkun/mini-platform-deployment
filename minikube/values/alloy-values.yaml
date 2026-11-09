@@ -136,8 +136,8 @@ alloy:
       // Second trace destination: kagent's agent spans also go to Langfuse --
       // into the `kagent` project, alongside the ones Holmes and Open WebUI
       // have -- so an agent run can be read as an LLM trace, with its prompts,
-      // completions, token usage and tool calls, and without LiteLLM's
-      // per-call gateway traffic interleaved. This is the only place that
+      // completions, token usage and tool calls, and without the model
+      // gateway's per-call spans interleaved. This is the only place that
       // decision is made: kagent still emits to this one collector, and Tempo
       // keeps its copy, so the trace->logs jump and the service graph are
       // unaffected.

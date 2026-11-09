@@ -23,3 +23,8 @@ dashboards:
   # nothing ever rendered it.
   - vllm-dashboard
   - gpu-dcgm
+  # agentgateway, the model gateway: requests, token usage, cost and latency
+  # per model. The JSON is upstream's (charts/agentgateway
+  # files/agentgateway-dashboard.json, 1.7.0), copied verbatim; Prometheus finds
+  # the proxy through its prometheus.io annotations.
+  - agentgateway

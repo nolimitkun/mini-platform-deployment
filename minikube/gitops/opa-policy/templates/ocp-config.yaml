@@ -1,0 +1,40 @@
+{{- $v := .Values }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ocp-config
+data:
+  config.yaml: |
+    database:
+      sql:
+        driver: sqlite3
+        dsn: /data/ocp.db
+    secrets:
+      minio-writer:
+        type: aws_auth
+        access_key_id: ${AWS_ACCESS_KEY_ID}
+        secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+    sources:
+    {{- range $name, $dir := $v.ocp.bundles }}
+      {{ $name }}:
+        git:
+          repo: {{ $v.ocp.repo }}
+          reference: {{ $v.ocp.reference }}
+          path: {{ $dir }}
+          # Tests stay in Git and CI; they are not policy.
+          excluded_files:
+            - "*_test.rego"
+    {{- end }}
+    bundles:
+    {{- range $name, $dir := $v.ocp.bundles }}
+      {{ $name }}:
+        object_storage:
+          aws:
+            url: {{ $v.minio.url }}
+            bucket: {{ $v.minio.bucket }}
+            key: {{ $name }}/bundle.tar.gz
+            region: {{ $v.minio.region }}
+            credentials: minio-writer
+        requirements:
+          - source: {{ $name }}
+    {{- end }}

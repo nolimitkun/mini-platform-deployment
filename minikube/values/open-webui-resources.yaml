@@ -1,7 +1,8 @@
 # Open WebUI does OIDC against Keycloak itself and reaches models through
-# LiteLLM with the master key. Its own Vault mirror contains only the Langfuse
-# project credentials used by the server-side OTel exporter.
+# agentgateway with its own API key. Its Vault mirrors: that key, and the
+# Langfuse project credentials used by the server-side OTel exporter.
 vaultSecrets:
+  - open-webui-agentgateway
   - open-webui-langfuse
 
 routes:

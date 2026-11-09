@@ -1,0 +1,49 @@
+# The catalog itself is files/catalog.yaml: edit it there.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentregistry-catalog
+data:
+  catalog.yaml: |
+{{ .Files.Get "files/catalog.yaml" | indent 4 }}
+---
+# Applies the catalog after every sync. /v0/apply is idempotent: entries that
+# exist are updated, nothing is deleted.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agentregistry-catalog-apply
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: apply
+          image: {{ .Values.image }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              out=$(curl -sS --fail-with-body -X POST -H 'content-type: application/yaml' \
+                --data-binary @/catalog/catalog.yaml {{ .Values.registryURL }}/v0/apply)
+              echo "$out"
+              # Fail the Job (and the sync) if any entry was rejected.
+              ! echo "$out" | grep -q '"status":"failed"'
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: catalog, mountPath: /catalog, readOnly: true}
+      volumes:
+        - name: catalog
+          configMap: {name: agentregistry-catalog}

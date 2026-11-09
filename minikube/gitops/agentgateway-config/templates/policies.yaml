@@ -1,0 +1,63 @@
+{{- $v := .Values }}
+# Every request needs a client API key (Authorization: Bearer <key>). The
+# entries carry {"client": "<name>"} metadata, which the OPA policy keys on.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: {{ $v.gatewayName }}-api-keys
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $v.gatewayName }}
+  traffic:
+    apiKeyAuthentication:
+      mode: Strict
+      secretRef:
+        name: {{ $v.apiKeysSecret }}
+{{- if $v.extAuth.enabled }}
+---
+# Then OPA decides (opa-policy chart, policies/gateway in this repo). It gets
+# the request with its body, plus the authenticated client name; FailClosed,
+# so an unreachable OPA denies everything rather than allowing it.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: {{ $v.gatewayName }}-opa
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $v.gatewayName }}
+  traffic:
+    extAuth:
+      backendRef:
+        name: {{ $v.extAuth.service }}
+        port: {{ $v.extAuth.port }}
+      failureMode: FailClosed
+      forwardBody:
+        maxSize: {{ $v.extAuth.maxBodyBytes }}
+      grpc:
+        # Each entry becomes one metadata_context.filter_metadata struct, so
+        # the value has to be a CEL map, not a bare string.
+        requestMetadata:
+          agentgateway: '{"client": apiKey.client}'
+
+{{- end }}
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: {{ $v.gatewayName }}-tracing
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $v.gatewayName }}
+  frontend:
+    tracing:
+      backendRef:
+        name: {{ $v.tracing.service }}
+        port: {{ $v.tracing.port }}
+      protocol: GRPC
+      randomSampling: {{ $v.tracing.sampling | quote }}

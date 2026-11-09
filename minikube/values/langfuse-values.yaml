@@ -19,7 +19,8 @@ langfuse:
         key: nextauth-secret
   features:
     telemetryEnabled: false
-  # Provision the tracing project using the same Vault-managed keys consumed by LiteLLM.
+  # Headless init: the Mini Platform org and its owner account. The projects
+  # (holmes, open-webui, kagent) are provisioned by minikube/gitops/langfuse-project.
   additionalEnv:
     # ---- Keycloak SSO ------------------------------------------------------
     # AUTH_DISABLE_USERNAME_PASSWORD is left unset, so the headless init user
@@ -53,8 +54,8 @@ langfuse:
     # the seeded org and project across to the SSO login: the init user below is
     # seeded under the realm's platform-admin address
     # (scripts/bootstrap-vault-secrets.sh), so the first Keycloak login links to
-    # the account that already owns the Mini Platform org and its LiteLLM
-    # project rather than starting an empty one. Change either address and they
+    # the account that already owns the Mini Platform org and its projects
+    # rather than starting an empty one. Change either address and they
     # stop matching — the login still succeeds, it just lands nowhere useful.
     - name: AUTH_KEYCLOAK_ALLOW_ACCOUNT_LINKING
       value: "true"
@@ -63,21 +64,7 @@ langfuse:
       value: mini-platform
     - name: LANGFUSE_INIT_ORG_NAME
       value: Mini Platform
-    - name: LANGFUSE_INIT_PROJECT_ID
-      value: litellm
-    - name: LANGFUSE_INIT_PROJECT_NAME
-      value: LiteLLM
-    - name: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
-      valueFrom:
-        secretKeyRef:
-          name: litellm-langfuse
-          key: LANGFUSE_PUBLIC_KEY
-    - name: LANGFUSE_INIT_PROJECT_SECRET_KEY
-      valueFrom:
-        secretKeyRef:
-          name: litellm-langfuse
-          key: LANGFUSE_SECRET_KEY
-    # Without an init user, the org/project are created for API access but no
+    # Without an init user, the org is created for API access but no
     # UI account is a member of the org, so the dashboard appears empty.
     - name: LANGFUSE_INIT_USER_EMAIL
       valueFrom:

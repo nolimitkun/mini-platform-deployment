@@ -37,7 +37,7 @@ spec:
 {{- /*
   Split into its own Ingress because nginx applies auth annotations to every
   path in the object that carries them. Keeping the authenticated prefixes here
-  leaves the /oauth2 endpoints below (and, for LiteLLM, the API paths above)
+  leaves the /oauth2 endpoints below (and any open API paths above)
   reachable without a session -- otherwise the redirect to /oauth2/start would
   itself require a session and loop.
 

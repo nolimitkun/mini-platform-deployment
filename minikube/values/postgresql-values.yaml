@@ -1,6 +1,4 @@
 auth:
-  username: litellm
-  database: litellm
   existingSecret: postgresql-credentials
   secretKeys:
     adminPasswordKey: postgres-password

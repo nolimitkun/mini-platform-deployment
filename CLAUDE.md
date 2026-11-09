@@ -77,17 +77,27 @@ This is exactly what CI (`.github/workflows/validate.yaml`) runs. It:
   that checkout is absent; first-party `minikube/gitops/*` locally),
 - `helm lint`s and `helm template`s the app-of-apps chart (passing all four
   source parameters) and the `app-resources` chart once per `resourcesFile`,
-- runs `kubeconform` over the rendered manifests, and
-- `shellcheck`s `scripts/*.sh`.
+- runs `kubeconform` over the rendered manifests,
+- `shellcheck`s `scripts/*.sh`, and
+- runs `opa check --strict`, `opa fmt` and `opa test` on every bundle under
+  `policies/`.
 
-`helm` is required; `kubeconform` and `shellcheck` are skipped if absent locally
-but always run in CI. There is no test suite beyond this validator — "tests"
+`helm` is required; `kubeconform`, `shellcheck` and `opa` are skipped if absent
+locally but always run in CI. Beyond the Rego unit tests in `policies/`, "tests"
 here means rendering and schema-checking.
 
 ## Architecture
 
-Default AI request path: `Open WebUI → LiteLLM → vLLM Router → vLLM`, with
-LiteLLM emitting traces to Langfuse. LiteLLM is an OpenAI-compatible gateway.
+Default AI request path: `Open WebUI → agentgateway → vLLM Router → vLLM`.
+**agentgateway** is the platform's model and tool gateway (`docs/agentgateway.md`):
+one OpenAI-compatible endpoint for every model (vLLM, Gemini on Vertex AI over the
+mini-cloud VPN, DeepSeek), passthrough routes to Google's speech APIs, and one MCP
+endpoint over the cluster's MCP servers. Every request carries a per-client API key
+and is decided by **OPA** (ext_authz, FailClosed) from the Rego in `policies/gateway`,
+which the **OPA Control Plane (OCP)** builds from this repo's `main` on GitHub into a
+bundle in MinIO — so a policy change goes live on merge, without an Argo CD sync, and
+must pass `opa test` (run by `validate-gitops.sh`). **agentregistry** is the catalog of
+MCP servers and agents; its entries live in `minikube/gitops/agentregistry-catalog`.
 
 An alternative **llm-d serving path** exists behind `enabled: false` app-of-apps
 toggles (`llm-d-scheduler` + `llm-d-modelserver`): the GAIE standalone endpoint
@@ -104,16 +114,16 @@ hostnames), MLflow (experiments), Qdrant
 MinIO (S3 object store), all reconciled by Argo CD.
 
 **Two agentic-AI consumers sit on top of the stack, both running their model
-through LiteLLM**: kagent (chat UI, agents, Grafana MCP) and HolmesGPT (an
-investigation API surfaced in Open WebUI through a Pipe). Both retain LiteLLM's
-gateway callback, while Holmes also sends its richer native investigation trace
-directly to its dedicated Langfuse project over authenticated OTLP/HTTP.
+through agentgateway** with their own API keys: kagent (chat UI, agents, Grafana
+MCP) and HolmesGPT (an investigation API surfaced in Open WebUI through a Pipe).
+Holmes also sends its native investigation trace directly to its dedicated
+Langfuse project over authenticated OTLP/HTTP.
 
 kagent's own spans reach Langfuse as well, by a third route and into a `kagent`
 project of their own: Alloy forwards them. A conversation then reads as one
 trace — the LLM turns with their prompts and completions, the tool calls with
-their arguments and results — rather than as the run of unrelated gateway calls
-LiteLLM sees. The fan-out is configured in `alloy-values.yaml`, not in
+their arguments and results — rather than as the run of unrelated model calls
+the gateway sees. The fan-out is configured in `alloy-values.yaml`, not in
 `kagent-values.yaml`; see the tracing block there for why.
 
 Holmes reads Kubernetes over read-only RBAC and reaches Prometheus
@@ -133,8 +143,8 @@ permission to a ClusterRole.
 
 **Observability is three signals behind one Grafana.** Prometheus scrapes
 metrics; Grafana Alloy (a DaemonSet, Promtail's successor) tails pod logs
-through the Kubernetes API into Loki; LiteLLM's `otel` callback pushes spans
-over OTLP/HTTP into Tempo. All three backends are cluster-internal — Grafana is
+through the Kubernetes API into Loki; agentgateway, kagent and the other OTLP
+producers push spans through Alloy into Tempo. All three backends are cluster-internal — Grafana is
 the only UI, and its provisioned data sources carry fixed uids (`prometheus`,
 `loki`, `tempo`) precisely so the cross-links between them can reference each
 other by name: Loki `derivedFields` → Tempo, Tempo `tracesToLogsV2` → Loki,
@@ -142,7 +152,8 @@ Tempo `serviceMap` → Prometheus. Changing a uid breaks those links, and —
 because `persistence.enabled` keeps the old datasource row — needs a matching
 `deleteDatasources` entry. Two coupling points worth knowing: the trace→logs
 jump matches the span's `service.name` against Loki's `app` label, which Alloy
-derives from `app.kubernetes.io/instance` (hence `OTEL_SERVICE_NAME: litellm`);
+derives from `app.kubernetes.io/instance` (agentgateway's proxy reports
+`agentgateway-proxy`, its instance label);
 and Tempo's metrics generator remote-writes span metrics into Prometheus, which
 is why the Prometheus overlay must keep `--web.enable-remote-write-receiver`.
 Loki and Tempo both run single-binary against a filesystem PVC — neither is
@@ -214,15 +225,15 @@ over a port-forward.
 
 Seven components speak OIDC natively (Grafana, Open WebUI, Superset,
 JupyterHub, Argo CD, MinIO, Langfuse). Three cannot and sit behind a shared
-**oauth2-proxy** as ingress-nginx forward-auth: MLflow, kagent, and LiteLLM's
-`/ui` only. HolmesGPT is outside the scheme altogether: no browser UI, so it
-authenticates its own requests against `HOLMES_API_KEY` and its route is left
-unprotected. A route opts in with `protectedPaths` in its own
+**oauth2-proxy** as ingress-nginx forward-auth: MLflow, kagent, and
+agentregistry. HolmesGPT and agentgateway are outside the scheme altogether: no browser UI, so
+they authenticate their own requests (`HOLMES_API_KEY`, per-client gateway API
+keys) and their routes are left unprotected. A route opts in with `protectedPaths` in its own
 `minikube/values/<name>-resources.yaml`, which renders a second Ingress
 carrying the auth annotations plus an unauthenticated `/oauth2` Ingress; the
 split matters because nginx applies those annotations to every path in an
 Ingress, and a protected `/oauth2/start` would loop. **Any path whose clients
-authenticate themselves must be exempted** — LiteLLM's `/v1` and MLflow's
+authenticate themselves must be exempted** — the gateway's API and MLflow's
 `/api` both are (via `openPaths`, or by not being listed at all), because an
 SDK or CLI sending its own credentials cannot follow an interactive SSO
 redirect and just receives a 302. Local break-glass logins
@@ -258,10 +269,11 @@ Each entry maps a `chartPath` (under `charts/` in the charts repo, or
 | --- | --- |
 | `-5` | Argo CD |
 | `-4` | Vault, VSO, kagent CRDs |
+| `-4` (also) | agentgateway CRDs |
 | `-3` | Stateful deps (postgres, redis, qdrant, spark-operator) |
 | `-2` | Keycloak, Langfuse, MLflow, Trino, vLLM |
-| `-1` → `0` | MinIO, Prometheus, dcgm-exporter, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset |
-| `1` → `2` | LiteLLM, then Open WebUI, kagent, HolmesGPT and oauth2-proxy |
+| `-1` → `0` | MinIO, Prometheus, dcgm-exporter, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset, the agentgateway controller, OPA + OCP (`opa-policy`), agentregistry's PostgreSQL |
+| `1` → `2` | agentgateway's Gateway/models/policies (`agentgateway-config`) and agentregistry, then Open WebUI, kagent, HolmesGPT, oauth2-proxy and the agentregistry catalog |
 | `3` | Open WebUI Holmes Pipe, after Holmes and its API-key mapping are healthy |
 
 All generated Applications use `automated` sync with `prune: true`,
@@ -270,11 +282,12 @@ All generated Applications use `automated` sync with `prune: true`,
 **A secret is declared on the earliest-syncing application that consumes it.**
 A pod cannot go Ready without a Secret it mounts, and Argo CD holds each wave
 until the previous one is healthy, so a secret first needed in wave `-1` but
-declared on an application in wave `1` deadlocks the rollout. Two placements
-follow from that rule rather than from ownership and are commented as such:
-`litellm-master-key` lives with Prometheus (which mounts it as a scrape
-credential in wave `-1`), and MinIO sits well after the stateful tier it would
-otherwise belong to because its console login needs `keycloak-sso`.
+declared on an application in wave `1` deadlocks the rollout. Placements that
+follow from that rule rather than from ownership are commented as such: the OPA
+bundle accounts (`opa-bundles-writer`, `opa-bundles-reader`) are declared on
+MinIO (wave `-1`), which creates them, rather than on `opa-policy`; and MinIO
+sits well after the stateful tier it would otherwise belong to because its
+console login needs `keycloak-sso`.
 
 MinIO shows the same rule applying to a **running** dependency rather than a
 Secret, which is why it is a wave later still, at `-1`. It resolves its OIDC
@@ -282,8 +295,9 @@ discovery URL once during startup and, if that fails, serves on without a
 provider — the console falls back to username/password with no SSO button and
 never recovers without a restart. Sharing Keycloak's wave was enough to lose
 that race every time, since MinIO is serving within seconds and Keycloak has a
-database and a realm import ahead of it. Nothing depends on MinIO (MLflow and
-Langfuse each ship their own MinIO subchart), so the later wave costs nothing.
+database and a realm import ahead of it. MLflow and Langfuse each ship their own MinIO subchart; the only consumers of
+this one are OCP and OPA (`opa-policy`, wave `0`), so the later wave costs
+nothing.
 The wave only orders the initial rollout, though; a container that restarts
 later can lose the lookup to any transient, which is why the deploy script ends
 with `ensure_minio_sso` — it asks the console which login strategy it is
@@ -293,9 +307,8 @@ The rule goes one step further for **PreSync hooks**, which Argo CD runs before
 every regular resource in the same Application — sync waves order the sync
 phase, they cannot put a resource ahead of a hook. A secret a hook mounts must
 therefore come from an *earlier application*, never from the one being synced,
-or the hook waits on a Secret that waits on the hook. Only
-`litellm-dbcredentials` is affected (the litellm chart migrates its schema from
-a PreSync Job); it is declared with PostgreSQL. Ingresses have no such
+or the hook waits on a Secret that waits on the hook. (No release has such a
+hook today; LiteLLM's schema migration was the one case.) Ingresses have no such
 constraint —
 they are healthy the moment they are applied — so a protected route rendered
 before oauth2-proxy exists simply answers 503 until wave `2`.
@@ -308,9 +321,8 @@ KV mount `mini-platform/`. Each release's
 `vaultSecrets`; the `app-resources` template renders a `VaultStaticSecret` per
 name that VSO syncs into a like-named Kubernetes Secret. The two must agree: a
 secret a workload needs must be **both** written by the bootstrap script **and**
-listed in some release's resources file. `litellm-langfuse` is consumed by
-Langfuse's headless init and LiteLLM for the starter project. Holmes is isolated
-in a second project: `holmes-langfuse-project` is mounted only by the
+listed in some release's resources file. Langfuse's headless init creates only
+the org and its owner account; each consumer has a project of its own. Holmes: `holmes-langfuse-project` is mounted only by the
 `minikube/gitops/langfuse-project` provisioning job, while Holmes itself mounts
 the derived exporter header from `holmes-langfuse`. Open WebUI follows the same
 split. kagent's `kagent-langfuse-project` has no runtime mirror, because kagent

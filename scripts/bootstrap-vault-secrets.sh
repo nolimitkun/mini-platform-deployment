@@ -63,7 +63,7 @@ kv_field() {
 
 # Same idea as kv_put's skip: in SEED_MISSING_ONLY mode a credential that other
 # secrets mirror has to keep the value already in Vault, not a fresh random one.
-# Without this, seeding a newly added mirror (e.g. kagent-litellm) onto a
+# Without this, seeding a newly added mirror (e.g. kagent-agentgateway) onto a
 # cluster whose source secret is untouched would hand the new consumer a
 # credential the owning service never accepted.
 reuse_or_generate() {
@@ -75,14 +75,7 @@ reuse_or_generate() {
 }
 
 POSTGRES_ADMIN_PASSWORD="${POSTGRES_ADMIN_PASSWORD:-$(rand_b64)}"
-LITELLM_DB_PASSWORD="${LITELLM_DB_PASSWORD:-$(rand_hex)}"
 REDIS_PASSWORD="${REDIS_PASSWORD:-$(rand_b64)}"
-LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-$(reuse_or_generate mini-platform/litellm-master-key PROXY_MASTER_KEY)}"
-LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-sk-$(rand_hex)}"
-LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-$(reuse_or_generate mini-platform/litellm-langfuse LANGFUSE_PUBLIC_KEY)}"
-LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-lf_pk_$(rand_hex)}"
-LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-$(reuse_or_generate mini-platform/litellm-langfuse LANGFUSE_SECRET_KEY)}"
-LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-lf_sk_$(rand_hex)}"
 HOLMES_LANGFUSE_PUBLIC_KEY="${HOLMES_LANGFUSE_PUBLIC_KEY:-$(reuse_or_generate mini-platform/holmes-langfuse-project LANGFUSE_PUBLIC_KEY)}"
 HOLMES_LANGFUSE_PUBLIC_KEY="${HOLMES_LANGFUSE_PUBLIC_KEY:-lf_pk_$(rand_hex)}"
 HOLMES_LANGFUSE_SECRET_KEY="${HOLMES_LANGFUSE_SECRET_KEY:-$(reuse_or_generate mini-platform/holmes-langfuse-project LANGFUSE_SECRET_KEY)}"
@@ -99,19 +92,14 @@ SUPERSET_DB_PASSWORD="${SUPERSET_DB_PASSWORD:-$(rand_hex)}"
 SUPERSET_REDIS_PASSWORD="${SUPERSET_REDIS_PASSWORD:-$(rand_hex)}"
 SUPERSET_ADMIN_PASSWORD="${SUPERSET_ADMIN_PASSWORD:-$(rand_b64)}"
 
+# The shared PostgreSQL and Redis. No consumer has its own role or database on
+# them today (LiteLLM had, until agentgateway replaced it); `password` is the
+# chart's optional application-user slot, unused.
 kv_put mini-platform/postgresql-credentials \
   postgres-password="$POSTGRES_ADMIN_PASSWORD" \
-  password="$LITELLM_DB_PASSWORD" \
+  password="$(rand_hex)" \
   metrics-password="$(rand_b64)"
-kv_put mini-platform/litellm-dbcredentials \
-  username=litellm \
-  password="$LITELLM_DB_PASSWORD"
 kv_put mini-platform/redis-credentials redis-password="$REDIS_PASSWORD"
-kv_put mini-platform/litellm-redis \
-  REDIS_HOST=redis-master.mini-platform.svc.cluster.local \
-  REDIS_PORT=6379 \
-  REDIS_PASSWORD="$REDIS_PASSWORD"
-kv_put mini-platform/litellm-master-key PROXY_MASTER_KEY="$LITELLM_MASTER_KEY"
 
 # Hugging Face token for pulling the vLLM model weights and tokenizer. Require it
 # only when this secret is actually written (fresh install or rotation), not on a
@@ -131,11 +119,6 @@ kv_put mini-platform/langfuse-clickhouse password="$(rand_hex)"
 kv_put mini-platform/langfuse-s3 \
   root-user=langfuse \
   root-password="$(rand_b64)"
-kv_put mini-platform/litellm-langfuse \
-  LANGFUSE_PUBLIC_KEY="$LANGFUSE_PUBLIC_KEY" \
-  LANGFUSE_SECRET_KEY="$LANGFUSE_SECRET_KEY" \
-  LANGFUSE_HOST=http://langfuse-web.mini-platform.svc.cluster.local:3000
-
 # Kept separate from the derived exporter header below: only the provisioning
 # job and Langfuse receive these raw project keys; the Holmes pod does not.
 kv_put mini-platform/holmes-langfuse-project \
@@ -146,9 +129,8 @@ kv_put mini-platform/holmes-langfuse-project \
 # exporter expects an already-encoded Basic-auth header, so expose only that
 # derived value to Holmes rather than mounting the Langfuse project keys there.
 LANGFUSE_BASIC_AUTH="$(printf '%s' "${HOLMES_LANGFUSE_PUBLIC_KEY}:${HOLMES_LANGFUSE_SECRET_KEY}" | base64 | tr -d '\n')"
-# This is a derived mirror, so rewrite it even during seed-missing upgrades. A
-# cluster upgrading from the shared LiteLLM project already has this path; the
-# new project keys above must replace that old header without rotating them.
+# This is a derived mirror, so rewrite it even during seed-missing upgrades:
+# it must always match the project keys above without rotating them.
 vault_cli kv put mini-platform/holmes-langfuse \
   OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic ${LANGFUSE_BASIC_AUTH}" \
   OTEL_EXPORTER_OTLP_TRACES_HEADERS="Authorization=Basic ${LANGFUSE_BASIC_AUTH}"
@@ -176,7 +158,7 @@ kv_put mini-platform/kagent-langfuse-project \
 # thing making SSO useful here. Langfuse links an OIDC identity to an existing
 # account by matching email; seeded under any other address, nothing matches, a
 # Keycloak login lands on a brand-new account belonging to no organization, and
-# the seeded org and its LiteLLM project stay invisible to the person who just
+# the seeded org and its projects stay invisible to the person who just
 # logged in. Matching it makes the SSO login *be* the owner account. Keep it in
 # step with the seed user in minikube/values/keycloak-values.yaml.
 #
@@ -301,19 +283,6 @@ kv_put mini-platform/minio-root-credentials \
   rootUser=mini-platform \
   rootPassword="$(rand_b64)"
 
-# DeepSeek is the model behind kagent's agents, reached through LiteLLM so the
-# key stays in one place. Required only when this secret is actually written,
-# matching how HF_TOKEN is handled above.
-if [[ "$SEED_MISSING_ONLY" != true ]] || ! vault_cli kv get mini-platform/litellm-deepseek >/dev/null 2>&1; then
-  : "${DEEPSEEK_API_KEY:?Set DEEPSEEK_API_KEY to a DeepSeek API key for the LiteLLM model kagent uses.}"
-fi
-kv_put mini-platform/litellm-deepseek DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}"
-
-# kagent authenticates to LiteLLM with the master key, the same way Prometheus
-# does for the proxy's /metrics. The key name is OPENAI_API_KEY because kagent
-# reaches the gateway over the OpenAI protocol.
-kv_put mini-platform/kagent-litellm OPENAI_API_KEY="$LITELLM_MASTER_KEY"
-
 # grafana-mcp loads this Secret with envFrom, so the field names are the env
 # vars mcp-grafana reads. Same credentials Grafana enforces, carried over from
 # grafana-admin above.
@@ -321,16 +290,9 @@ kv_put mini-platform/kagent-grafana \
   GRAFANA_USERNAME="$GRAFANA_ADMIN_USER" \
   GRAFANA_PASSWORD="$GRAFANA_ADMIN_PASSWORD"
 
-# HolmesGPT mounts all three of these with envFrom, so the field names are the
-# env vars it reads. The first two are mirrors, for the same reasons the kagent
-# pair above are: the gateway and Grafana each already own their credential.
-#
-# Deliberately not named OPENAI_API_KEY, the way kagent's copy is. Holmes keeps
-# a backward-compatibility path that, on finding OPENAI_API_KEY in its
-# environment, registers a second model against api.openai.com and makes *that*
-# one the default -- which would send every request that omits a model name to
-# OpenAI carrying the gateway's key.
-kv_put mini-platform/holmes-litellm LITELLM_API_KEY="$LITELLM_MASTER_KEY"
+# HolmesGPT mounts these with envFrom, so the field names are the env vars it
+# reads. Its gateway key is mirrored with the agentgateway keys below; this one
+# is a mirror of Grafana's own credential.
 kv_put mini-platform/holmes-grafana \
   GRAFANA_USERNAME="$GRAFANA_ADMIN_USER" \
   GRAFANA_PASSWORD="$GRAFANA_ADMIN_PASSWORD"
@@ -360,6 +322,71 @@ kv_put mini-platform/holmes-argocd ARGOCD_AUTH_TOKEN="$HOLMES_ARGOCD_AUTH_TOKEN"
 kv_put mini-platform/holmes-api \
   HOLMES_API_KEY="$(rand_b64)" \
   HOLMES_APPROVAL_SIGNING_KEY="$(rand_b64)"
+
+
+# agentgateway, the platform's model and tool gateway (docs/agentgateway.md).
+# One API key per client. agentgateway reads agentgateway-api-keys, one entry
+# per client whose JSON value carries the key and the client name the OPA
+# policy keys on (policies/gateway); each client reads its raw key from
+# agentgateway-client-keys. Both are written from the same values, reused on a
+# SEED_MISSING_ONLY pass so a client never holds a key the gateway does not.
+AGW_CLIENTS=(open-webui kagent holmes admin)
+agw_raw=() agw_json=()
+for client in "${AGW_CLIENTS[@]}"; do
+  key="$(reuse_or_generate mini-platform/agentgateway-client-keys "$client")"
+  key="${key:-$(rand_b64)}"
+  agw_raw+=("$client=$key")
+  agw_json+=("$client={\"key\":\"$key\",\"metadata\":{\"client\":\"$client\"}}")
+done
+# Written directly rather than through kv_put: on a SEED_MISSING_ONLY pass both
+# paths already exist, and kv_put would skip them, so a client added to
+# AGW_CLIENTS would get a key that is never stored. The loop above already
+# reuses every existing key, so rewriting both maps adds the new clients and
+# rotates nothing.
+vault_cli kv put mini-platform/agentgateway-client-keys "${agw_raw[@]}"
+vault_cli kv put mini-platform/agentgateway-api-keys "${agw_json[@]}"
+
+# The clients' own copies, under the env names each one reads. Taken from the
+# path just written (not the loop) so a SEED_MISSING_ONLY pass that kept an
+# existing agentgateway-client-keys still hands out the key the gateway knows.
+# kagent: OPENAI_API_KEY, its OpenAI-protocol client's name. Holmes: anything
+# but OPENAI_API_KEY (see holmes-values.yaml).
+kv_put mini-platform/kagent-agentgateway \
+  OPENAI_API_KEY="$(kv_field mini-platform/agentgateway-client-keys kagent)"
+kv_put mini-platform/holmes-agentgateway \
+  AGENTGATEWAY_API_KEY="$(kv_field mini-platform/agentgateway-client-keys holmes)"
+kv_put mini-platform/open-webui-agentgateway \
+  OPENAI_API_KEY="$(kv_field mini-platform/agentgateway-client-keys open-webui)"
+
+# DeepSeek, the hosted model kagent's agents and Holmes use through the
+# gateway, which sends this value as the Authorization header (with Bearer
+# added). Required only when this secret is actually written, matching how
+# HF_TOKEN is handled above.
+if [[ "$SEED_MISSING_ONLY" != true ]] || ! vault_cli kv get mini-platform/agentgateway-deepseek >/dev/null 2>&1; then
+  : "${DEEPSEEK_API_KEY:?Set DEEPSEEK_API_KEY to a DeepSeek API key for the deepseek-v4-pro model on the gateway.}"
+fi
+kv_put mini-platform/agentgateway-deepseek Authorization="${DEEPSEEK_API_KEY:-}"
+
+# agentregistry's PostgreSQL (its own release). The URL repeats the user
+# password, so both are written from one value, reused on a SEED_MISSING_ONLY
+# pass so they can't drift apart.
+AGENTREGISTRY_DB_PASSWORD="$(reuse_or_generate mini-platform/agentregistry-postgresql password)"
+AGENTREGISTRY_DB_PASSWORD="${AGENTREGISTRY_DB_PASSWORD:-$(rand_hex)}"
+kv_put mini-platform/agentregistry-postgresql \
+  postgres-password="$(rand_hex)" \
+  password="$AGENTREGISTRY_DB_PASSWORD"
+kv_put mini-platform/agentregistry-db \
+  AGENT_REGISTRY_DATABASE_URL="postgres://agentregistry:${AGENTREGISTRY_DB_PASSWORD}@agentregistry-postgresql:5432/agentregistry?sslmode=disable"
+
+# MinIO accounts for the OPA policy bundles: OCP writes them, OPA reads them.
+# The access key names the account; the field names are what the AWS SDKs in
+# both read from the environment.
+kv_put mini-platform/opa-bundles-writer \
+  AWS_ACCESS_KEY_ID=ocp \
+  AWS_SECRET_ACCESS_KEY="$(rand_b64)"
+kv_put mini-platform/opa-bundles-reader \
+  AWS_ACCESS_KEY_ID=opa \
+  AWS_SECRET_ACCESS_KEY="$(rand_b64)"
 
 printf '%s\n' \
   "Base Mini Platform secrets, including Langfuse project bootstrap keys, have been written to Vault."

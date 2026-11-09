@@ -43,7 +43,7 @@ servingEngineSpec:
         # win for the Open WebUI chat workload (was 0% hit rate when disabled).
         enablePrefixCaching: true
         extraArgs:
-          # Stable served name for LiteLLM / router to target.
+          # Stable served name for the gateway / router to target.
           - "--served-model-name"
           - "qwen3.6-27b"
           # FP8 KV cache halves bytes/token, roughly doubling concurrent capacity
