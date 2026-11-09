@@ -7,7 +7,7 @@ import data.gateway.authz
 req(client, path, body) := {
 	"attributes": {
 		"request": {"http": {"path": path, "method": "POST"}},
-		"metadata_context": {"filter_metadata": {"agentgateway": {"client": client}}},
+		"metadataContext": {"filterMetadata": {"agentgateway": {"client": client}}},
 	},
 	"parsed_body": body,
 }
@@ -61,6 +61,7 @@ test_other_paths_denied if {
 test_reason if {
 	authz.reason == "model deepseek-v4-pro is not allowed for internal data" with input as chat("open-webui", "deepseek-v4-pro")
 	authz.reason == "unknown client" with input as chat("stranger", "x")
+	authz.reason == "unknown client" with input as {"attributes": {"request": {"http": {"path": "/v1/models"}}}}
 }
 
 test_decision_shape if {

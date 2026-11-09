@@ -21,8 +21,12 @@ kind: HTTPRoute
 metadata:
   name: google-{{ $name }}
 spec:
+  # group, kind and weight spelled out: the API server defaults them, and Argo
+  # CD would otherwise report every route as OutOfSync.
   parentRefs:
-    - name: {{ $v.gatewayName }}
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $v.gatewayName }}
       sectionName: http
   rules:
     - matches:
@@ -40,4 +44,5 @@ spec:
         - group: agentgateway.dev
           kind: AgentgatewayBackend
           name: google-{{ $name }}
+          weight: 1
 {{- end }}

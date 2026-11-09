@@ -38,8 +38,11 @@ spec:
       forwardBody:
         maxSize: {{ $v.extAuth.maxBodyBytes }}
       grpc:
+        # Each entry becomes one metadata_context.filter_metadata struct, so
+        # the value has to be a CEL map, not a bare string.
         requestMetadata:
-          client: apiKey.client
+          agentgateway: '{"client": apiKey.client}'
+
 {{- end }}
 ---
 apiVersion: agentgateway.dev/v1alpha1

@@ -13,7 +13,8 @@ default allow := false
 
 # The client name agentgateway attaches after checking the API key
 # (agentgateway-config policies.yaml, requestMetadata.client).
-client := input.attributes.metadata_context.filter_metadata[_].client
+# OPA-Envoy hands the protobuf over as protojson, hence the camelCase.
+client := input.attributes.metadataContext.filterMetadata.agentgateway.client
 
 # Without the query string, so "/v1/models?x" is still "/v1/models".
 path := split(input.attributes.request.http.path, "?")[0]
@@ -48,9 +49,11 @@ allowed_model(c, m) if m in object.get(data.gateway.exceptions, c, {}).models
 
 placements(c) := data.gateway.classes[data.gateway.clients[c]]
 
+known_client if data.gateway.clients[client]
+
 # Why a request was refused, for the decision log and the 403 body.
 reason := "unknown client" if {
-	not data.gateway.clients[client]
+	not known_client
 } else := sprintf("model %v is not allowed for %v data", [input.parsed_body.model, data.gateway.clients[client]]) if {
 	model_path
 } else := "denied"
