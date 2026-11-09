@@ -25,13 +25,13 @@ resources:
     memory: 3Gi
 
 # ==============================================================================
-# MODEL — DeepSeek, reached through the platform's LiteLLM gateway
+# MODEL — DeepSeek, reached through the platform's model gateway (agentgateway)
 # ==============================================================================
-# Same arrangement as kagent: Holmes speaks the OpenAI protocol to LiteLLM
+# Same arrangement as kagent: Holmes speaks the OpenAI protocol to agentgateway
 # rather than to api.deepseek.com, so the DeepSeek key stays in one place
-# (litellm-values.yaml, from Vault). Holmes exports the complete investigation
-# trace directly to Langfuse below; the gateway is only the model endpoint for
-# this client.
+# (agentgateway-deepseek, from Vault) and OPA decides which models Holmes may
+# use. Holmes exports the complete investigation trace directly to Langfuse
+# below; the gateway is only the model endpoint for this client.
 #
 # The chart rewrites `envRef:NAME` into the runtime `{{ env.NAME }}` templating
 # the model list file uses, so the key itself never appears here — it arrives as
@@ -39,29 +39,28 @@ resources:
 modelList:
   # The key is the name a caller passes as `model` in the HTTP API. It is also
   # the only entry, which makes it the default when a request omits `model`.
-  # Must match a model_name in litellm-values.yaml's model_list.
+  # Must match an AgentgatewayModel (agentgateway-config values.yaml, models).
   deepseek-v4-pro:
     model: openai/deepseek-v4-pro
-    api_base: http://litellm.mini-platform.svc.cluster.local:4000/v1
-    # LITELLM_API_KEY, not OPENAI_API_KEY. Holmes carries a compatibility path
-    # that registers an extra model against api.openai.com whenever it finds
-    # OPENAI_API_KEY in the environment, and that model wins the default —
-    # every request omitting `model` would go to OpenAI with the gateway's key
-    # and 401. Naming the key anything else keeps this the only model loaded.
-    api_key: envRef:LITELLM_API_KEY
-    # Keep LiteLLM logging enabled. Each model iteration is recorded in the
-    # LiteLLM Langfuse project and inherits Holmes's W3C trace ID.
+    api_base: http://agentgateway-proxy.mini-platform.svc.cluster.local/v1
+    # AGENTGATEWAY_API_KEY, not OPENAI_API_KEY. Holmes carries a compatibility
+    # path that registers an extra model against api.openai.com whenever it
+    # finds OPENAI_API_KEY in the environment, and that model wins the default
+    # — every request omitting `model` would go to OpenAI with the gateway's
+    # key and 401. Naming the key anything else keeps this the only model
+    # loaded.
+    api_key: envRef:AGENTGATEWAY_API_KEY
 
 # Loaded onto the pod with envFrom, so each Secret's keys are consumed verbatim
 # as env vars. All four are Vault-managed; see holmes-resources.yaml.
-#   holmes-litellm  LITELLM_API_KEY               — the model list entry above
+#   holmes-agentgateway AGENTGATEWAY_API_KEY      — the model list entry above
 #   holmes-grafana  GRAFANA_USERNAME/PASSWORD     — the Loki and Tempo toolsets
 #   holmes-api      HOLMES_API_KEY,
 #                   HOLMES_APPROVAL_SIGNING_KEY   — the server's own auth
 #   holmes-argocd   ARGOCD_AUTH_TOKEN             — read-only GitOps access
 #   holmes-langfuse OTEL_EXPORTER_OTLP_TRACES_HEADERS — direct trace auth
 extraEnvVarsSecrets:
-  - holmes-litellm
+  - holmes-agentgateway
   - holmes-grafana
   - holmes-api
   - holmes-argocd

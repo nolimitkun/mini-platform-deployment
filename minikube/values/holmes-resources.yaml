@@ -1,11 +1,10 @@
 vaultSecrets:
-  # HolmesGPT's envFrom mounts and GitHub MCP credential: its LiteLLM key,
-  # Grafana basic-auth pair for the Loki and Tempo toolsets, the API key its
-  # own HTTP server authenticates callers with, and its direct Langfuse OTLP
-  # authentication header. See
-  # minikube/values/holmes-values.yaml for why the LiteLLM key is deliberately
-  # not called OPENAI_API_KEY.
-  - holmes-litellm
+  # HolmesGPT's envFrom mounts and GitHub MCP credential: its model-gateway
+  # API key, Grafana basic-auth pair for the Loki and Tempo toolsets, the API
+  # key its own HTTP server authenticates callers with, and its direct Langfuse
+  # OTLP authentication header. See minikube/values/holmes-values.yaml for why
+  # the gateway key is deliberately not called OPENAI_API_KEY.
+  - holmes-agentgateway
   - holmes-grafana
   - holmes-api
   - holmes-argocd

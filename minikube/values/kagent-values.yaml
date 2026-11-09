@@ -6,13 +6,13 @@
 # which the chart derives from the release name.
 
 # ==============================================================================
-# MODEL — DeepSeek, reached through the platform's LiteLLM gateway
+# MODEL — DeepSeek, reached through the platform's model gateway (agentgateway)
 # ==============================================================================
-# kagent talks OpenAI-protocol to LiteLLM rather than to api.deepseek.com
-# directly. Going through the gateway means the DeepSeek key lives in exactly
-# one place (litellm-values.yaml, from Vault), and every agent turn shows up in
-# Langfuse and in LiteLLM's Prometheus metrics alongside the rest of the
-# platform's LLM traffic.
+# kagent talks OpenAI-protocol to agentgateway rather than to api.deepseek.com
+# directly. Going through the gateway keeps the DeepSeek key in one place
+# (agentgateway-deepseek, from Vault), puts every agent turn in the gateway's
+# metrics and traces, and lets OPA decide which models kagent may use
+# (policies/gateway: kagent is `internal`, with a named exception for DeepSeek).
 #
 # To bypass the gateway instead, set baseUrl to https://api.deepseek.com/v1 and
 # point apiKeySecretRef at a secret holding the raw DeepSeek key.
@@ -20,15 +20,15 @@ providers:
   default: openAI
   openAI:
     provider: OpenAI
-    # Must match a model_name in litellm-values.yaml's model_list.
+    # Must match an AgentgatewayModel (agentgateway-config values.yaml, models).
     model: deepseek-v4-pro
-    # Vault-managed; carries the LiteLLM master key under an OPENAI_API_KEY key
-    # because that is the env name the OpenAI-protocol client expects.
-    apiKeySecretRef: kagent-litellm
+    # Vault-managed: kagent's own gateway API key, under OPENAI_API_KEY because
+    # that is the env name the OpenAI-protocol client expects.
+    apiKeySecretRef: kagent-agentgateway
     apiKeySecretKey: OPENAI_API_KEY
     # Rendered into the ModelConfig's `openAI` block by the chart.
     config:
-      baseUrl: http://litellm.mini-platform.svc.cluster.local:4000/v1
+      baseUrl: http://agentgateway-proxy.mini-platform.svc.cluster.local/v1
 
 # ==============================================================================
 # DATABASE

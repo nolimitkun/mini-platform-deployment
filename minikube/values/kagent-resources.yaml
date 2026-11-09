@@ -1,9 +1,9 @@
 vaultSecrets:
-  # kagent's credential for calling LiteLLM, and its Grafana basic-auth pair for
+  # kagent's API key for the model gateway, and its Grafana basic-auth pair for
   # the Grafana MCP server. Both are mirrors — the gateway and Grafana each
   # already own the underlying credential — written under the key names each
   # consumer expects.
-  - kagent-litellm
+  - kagent-agentgateway
   - kagent-grafana
 
 routes:

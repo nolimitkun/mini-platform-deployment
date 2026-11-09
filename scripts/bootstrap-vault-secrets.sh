@@ -379,6 +379,16 @@ done
 kv_put mini-platform/agentgateway-client-keys "${agw_raw[@]}"
 kv_put mini-platform/agentgateway-api-keys "${agw_json[@]}"
 
+# The clients' own copies, under the env names each one reads. Taken from the
+# path just written (not the loop) so a SEED_MISSING_ONLY pass that kept an
+# existing agentgateway-client-keys still hands out the key the gateway knows.
+# kagent: OPENAI_API_KEY, its OpenAI-protocol client's name. Holmes: anything
+# but OPENAI_API_KEY (see holmes-values.yaml).
+kv_put mini-platform/kagent-agentgateway \
+  OPENAI_API_KEY="$(kv_field mini-platform/agentgateway-client-keys kagent)"
+kv_put mini-platform/holmes-agentgateway \
+  AGENTGATEWAY_API_KEY="$(kv_field mini-platform/agentgateway-client-keys holmes)"
+
 # agentgateway's DeepSeek model sends this value as the Authorization header
 # (with Bearer added). Carried over from the LiteLLM secret, which owns the key.
 kv_put mini-platform/agentgateway-deepseek \
