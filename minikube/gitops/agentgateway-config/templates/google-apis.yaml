@@ -12,6 +12,9 @@ spec:
   policies:
     tls:
       sni: {{ $host }}
+      {{- if has $name $v.http1Only }}
+      alpnProtocols: ["http/1.1"]
+      {{- end }}
     auth:
       gcp:
         type: AccessToken

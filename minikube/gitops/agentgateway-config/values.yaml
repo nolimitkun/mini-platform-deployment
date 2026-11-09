@@ -48,6 +48,12 @@ googleApis:
   # Vertex AI in europe-west1: the Gemini Live websocket.
   vertex-europe-west1: europe-west1-aiplatform.googleapis.com
 
+# Google API routes that must reach Google over HTTP/1.1: a websocket upgrade
+# can't travel over the HTTP/2 connection the gateway otherwise negotiates,
+# and Google answers the bare GET with a 404.
+http1Only:
+  - vertex-europe-west1
+
 # Client API keys, one per client, from Vault (scripts/bootstrap-vault-secrets.sh).
 apiKeysSecret: agentgateway-api-keys
 
