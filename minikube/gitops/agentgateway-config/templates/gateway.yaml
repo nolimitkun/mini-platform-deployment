@@ -1,0 +1,75 @@
+{{- $v := .Values }}
+# ADC external_account config for the proxy: exchange the projected token below
+# for a Google token that impersonates the GCP service account.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $v.gatewayName }}-gcp-wif
+data:
+  credentials.json: |
+    {{- dict
+      "type" "external_account"
+      "audience" $v.gcp.audience
+      "subject_token_type" "urn:ietf:params:oauth:token-type:jwt"
+      "token_url" "https://sts.googleapis.com/v1/token"
+      "service_account_impersonation_url" (printf "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateAccessToken" $v.gcp.serviceAccount)
+      "credential_source" (dict "file" "/var/run/secrets/gcp-wif/token")
+      | toJson | nindent 4 }}
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata:
+  name: {{ $v.gatewayName }}
+spec:
+  env:
+    - name: GOOGLE_APPLICATION_CREDENTIALS
+      value: /etc/gcp-wif/credentials.json
+  deployment:
+    spec:
+      template:
+        spec:
+          volumes:
+            - name: gcp-wif-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      audience: {{ $v.gcp.audience }}
+                      expirationSeconds: 3600
+            - name: gcp-wif-config
+              configMap:
+                name: {{ $v.gatewayName }}-gcp-wif
+          containers:
+            - name: agentgateway
+              volumeMounts:
+                - name: gcp-wif-token
+                  mountPath: /var/run/secrets/gcp-wif
+                  readOnly: true
+                - name: gcp-wif-config
+                  mountPath: /etc/gcp-wif
+                  readOnly: true
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ $v.gatewayName }}
+spec:
+  gatewayClassName: agentgateway
+  infrastructure:
+    parametersRef:
+      group: agentgateway.dev
+      kind: AgentgatewayParameters
+      name: {{ $v.gatewayName }}
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
+        # Without AgentgatewayModel here the listener serves no model paths.
+        kinds:
+          - group: agentgateway.dev
+            kind: AgentgatewayModel
+          - group: gateway.networking.k8s.io
+            kind: HTTPRoute

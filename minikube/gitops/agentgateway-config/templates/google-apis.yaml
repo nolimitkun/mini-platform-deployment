@@ -1,0 +1,43 @@
+{{- $v := .Values }}
+{{- range $name, $host := $v.googleApis }}
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: google-{{ $name }}
+spec:
+  static:
+    host: {{ $host }}
+    port: 443
+  policies:
+    tls:
+      sni: {{ $host }}
+    auth:
+      gcp:
+        type: AccessToken
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: google-{{ $name }}
+spec:
+  parentRefs:
+    - name: {{ $v.gatewayName }}
+      sectionName: http
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /google/{{ $name }}/
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            hostname: {{ $host }}
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: google-{{ $name }}
+{{- end }}

@@ -1,0 +1,31 @@
+# OPA Control Plane: builds the Rego in policies/<bundle> of this repo into a
+# bundle and uploads it to MinIO whenever the branch moves (it polls Git about
+# every 30-60 s). Policy changes therefore go live on merge, without an Argo CD
+# sync. Its state is rebuilt from this config on every start, so its SQLite
+# database lives on an emptyDir.
+ocp:
+  image: openpolicyagent/opa-control-plane:v0.10.0
+  # Public repo, no credentials. A branch name here, not a commit, so OCP
+  # follows it.
+  repo: https://github.com/nolimitkun/mini-platform-deployment.git
+  reference: refs/heads/claude/agentgateway  # TEMP for testing; main before merge
+  bundles:
+    # bundle name -> directory under policies/
+    gateway: policies/gateway
+
+minio:
+  url: http://minio.mini-platform.svc.cluster.local:9000
+  bucket: opa-bundles
+  # MinIO ignores the region, but the AWS signers need one.
+  region: us-east-1
+  writerSecret: opa-bundles-writer
+  readerSecret: opa-bundles-reader
+
+# OPA with the Envoy ext_authz gRPC plugin: agentgateway's extAuth backend.
+opa:
+  image: openpolicyagent/opa:1.22.2-envoy-static
+  replicas: 1
+  grpcPort: 9191
+  # The rule agentgateway's verdict comes from (policies/gateway/authz.rego).
+  decision: gateway/authz/decision
+  bundle: gateway

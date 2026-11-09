@@ -43,6 +43,13 @@ applications:
     valuesFile: minikube/values/kagent-crds-values.yaml
     releaseName: kagent-crds
     wave: "-4"
+  # agentgateway's CRDs, ahead of the controller and of the Gateway, models
+  # and policies that instantiate them (agentgateway-config).
+  agentgateway-crds:
+    chartPath: charts/agentgateway-crds
+    valuesFile: minikube/values/agentgateway-crds-values.yaml
+    releaseName: agentgateway-crds
+    wave: "-4"
   postgresql:
     chartPath: charts/postgresql
     valuesFile: minikube/values/postgresql-values.yaml
@@ -221,6 +228,27 @@ applications:
         jsonPointers:
           - /spec/persistentVolumeClaimRetentionPolicy
           - /spec/volumeClaimTemplates
+  # The model gateway that replaces LiteLLM: the controller here, the proxy
+  # and its configuration below. Runs beside LiteLLM while clients move over.
+  agentgateway:
+    chartPath: charts/agentgateway
+    valuesFile: minikube/values/agentgateway-values.yaml
+    releaseName: agentgateway
+    wave: "0"
+  # OCP builds the Rego in policies/ into bundles in MinIO (wave -2, which
+  # also creates the bucket and both accounts); OPA serves them to the
+  # gateway. Before the gateway config, which fails closed without OPA.
+  opa-policy:
+    chartPath: minikube/gitops/opa-policy
+    valuesFile: minikube/gitops/opa-policy/values.yaml
+    releaseName: opa-policy
+    wave: "0"
+  agentgateway-config:
+    chartPath: minikube/gitops/agentgateway-config
+    valuesFile: minikube/gitops/agentgateway-config/values.yaml
+    resourcesFile: minikube/values/agentgateway-resources.yaml
+    releaseName: agentgateway-config
+    wave: "1"
   litellm:
     chartPath: charts/litellm-helm
     valuesFile: minikube/values/litellm-values.yaml

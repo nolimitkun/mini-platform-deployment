@@ -1,0 +1,42 @@
+{
+  "gateway": {
+    "classes": {
+      "restricted": ["onprem"],
+      "confidential": ["onprem"],
+      "internal": ["onprem", "gcp"],
+      "public": ["onprem", "gcp", "external"]
+    },
+    "models": {
+      "qwen3.6-27b": "onprem",
+      "gemini-4-argon": "gcp",
+      "gemini-3.8-flash": "gcp",
+      "gemini-3.5-flash": "gcp",
+      "gemini-3.5-flash-lite": "gcp",
+      "deepseek-v4-pro": "external"
+    },
+    "google_apis": {
+      "speech": "gcp",
+      "tts": "gcp",
+      "vertex-eu": "gcp",
+      "vertex-europe-west1": "gcp"
+    },
+    "clients": {
+      "open-webui": "internal",
+      "kagent": "internal",
+      "holmes": "internal",
+      "admin": "public"
+    },
+    "exceptions": {
+      "kagent": {
+        "owner": "platform team",
+        "why": "multi-step tool calling the single-GPU local model can't carry; cluster state and telemetry only",
+        "models": ["deepseek-v4-pro"]
+      },
+      "holmes": {
+        "owner": "platform team",
+        "why": "same as kagent: root-cause analysis over cluster state and telemetry",
+        "models": ["deepseek-v4-pro"]
+      }
+    }
+  }
+}

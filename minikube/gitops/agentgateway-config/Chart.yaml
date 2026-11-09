@@ -1,0 +1,5 @@
+apiVersion: v2
+name: agentgateway-config
+description: Mini Platform's agentgateway proxy - its Gateway, models, Google API routes and policies.
+type: application
+version: 0.1.0

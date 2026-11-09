@@ -1,0 +1,14 @@
+# The agentgateway controller only. It creates the GatewayClass `agentgateway`
+# and, for each Gateway of that class, a proxy Deployment/Service/
+# ServiceAccount named after the Gateway — here agentgateway-proxy, from the
+# agentgateway-config chart. It replaces LiteLLM as the platform's model
+# gateway; see docs/agentgateway.md.
+
+controller:
+  image:
+    # Pinned by the chart's appVersion; don't re-pull on every restart.
+    pullPolicy: IfNotPresent
+
+# No Istio on this cluster: don't ask for RBAC on its CRDs.
+istio:
+  enabled: false

@@ -57,3 +57,35 @@ metrics:
   serviceMonitor:
     enabled: false
 
+
+# OPA policy bundles (opa-policy chart): OCP publishes them here and the OPA
+# beside agentgateway downloads them. One write account and one read account,
+# each scoped to the bucket; their secret keys come from Vault
+# (minio-resources.yaml). Setting `users` also drops the chart's default
+# console/console123 account from what the post-install job creates.
+buckets:
+  - name: opa-bundles
+    policy: none
+    purge: false
+policies:
+  - name: opa-bundles-write
+    statements:
+      - resources: ["arn:aws:s3:::opa-bundles/*"]
+        actions: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
+      - resources: ["arn:aws:s3:::opa-bundles"]
+        actions: ["s3:GetBucketLocation", "s3:ListBucket", "s3:ListBucketMultipartUploads"]
+  - name: opa-bundles-read
+    statements:
+      - resources: ["arn:aws:s3:::opa-bundles/*"]
+        actions: ["s3:GetObject"]
+      - resources: ["arn:aws:s3:::opa-bundles"]
+        actions: ["s3:GetBucketLocation", "s3:ListBucket"]
+users:
+  - accessKey: ocp
+    existingSecret: opa-bundles-writer
+    existingSecretKey: AWS_SECRET_ACCESS_KEY
+    policy: opa-bundles-write
+  - accessKey: opa
+    existingSecret: opa-bundles-reader
+    existingSecretKey: AWS_SECRET_ACCESS_KEY
+    policy: opa-bundles-read

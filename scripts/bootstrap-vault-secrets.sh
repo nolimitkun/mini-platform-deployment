@@ -361,5 +361,38 @@ kv_put mini-platform/holmes-api \
   HOLMES_API_KEY="$(rand_b64)" \
   HOLMES_APPROVAL_SIGNING_KEY="$(rand_b64)"
 
+
+# agentgateway, the model gateway replacing LiteLLM (docs/agentgateway.md).
+# One API key per client. agentgateway reads agentgateway-api-keys, one entry
+# per client whose JSON value carries the key and the client name the OPA
+# policy keys on (policies/gateway); each client reads its raw key from
+# agentgateway-client-keys. Both are written from the same values, reused on a
+# SEED_MISSING_ONLY pass so a client never holds a key the gateway does not.
+AGW_CLIENTS=(open-webui kagent holmes admin)
+agw_raw=() agw_json=()
+for client in "${AGW_CLIENTS[@]}"; do
+  key="$(reuse_or_generate mini-platform/agentgateway-client-keys "$client")"
+  key="${key:-$(rand_b64)}"
+  agw_raw+=("$client=$key")
+  agw_json+=("$client={\"key\":\"$key\",\"metadata\":{\"client\":\"$client\"}}")
+done
+kv_put mini-platform/agentgateway-client-keys "${agw_raw[@]}"
+kv_put mini-platform/agentgateway-api-keys "${agw_json[@]}"
+
+# agentgateway's DeepSeek model sends this value as the Authorization header
+# (with Bearer added). Carried over from the LiteLLM secret, which owns the key.
+kv_put mini-platform/agentgateway-deepseek \
+  Authorization="${DEEPSEEK_API_KEY:-$(kv_field mini-platform/litellm-deepseek DEEPSEEK_API_KEY)}"
+
+# MinIO accounts for the OPA policy bundles: OCP writes them, OPA reads them.
+# The access key names the account; the field names are what the AWS SDKs in
+# both read from the environment.
+kv_put mini-platform/opa-bundles-writer \
+  AWS_ACCESS_KEY_ID=ocp \
+  AWS_SECRET_ACCESS_KEY="$(rand_b64)"
+kv_put mini-platform/opa-bundles-reader \
+  AWS_ACCESS_KEY_ID=opa \
+  AWS_SECRET_ACCESS_KEY="$(rand_b64)"
+
 printf '%s\n' \
   "Base Mini Platform secrets, including Langfuse project bootstrap keys, have been written to Vault."
