@@ -338,8 +338,13 @@ for client in "${AGW_CLIENTS[@]}"; do
   agw_raw+=("$client=$key")
   agw_json+=("$client={\"key\":\"$key\",\"metadata\":{\"client\":\"$client\"}}")
 done
-kv_put mini-platform/agentgateway-client-keys "${agw_raw[@]}"
-kv_put mini-platform/agentgateway-api-keys "${agw_json[@]}"
+# Written directly rather than through kv_put: on a SEED_MISSING_ONLY pass both
+# paths already exist, and kv_put would skip them, so a client added to
+# AGW_CLIENTS would get a key that is never stored. The loop above already
+# reuses every existing key, so rewriting both maps adds the new clients and
+# rotates nothing.
+vault_cli kv put mini-platform/agentgateway-client-keys "${agw_raw[@]}"
+vault_cli kv put mini-platform/agentgateway-api-keys "${agw_json[@]}"
 
 # The clients' own copies, under the env names each one reads. Taken from the
 # path just written (not the loop) so a SEED_MISSING_ONLY pass that kept an
