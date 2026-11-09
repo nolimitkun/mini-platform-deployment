@@ -149,10 +149,12 @@ grafana-mcp:
   # Upstream kagent 0.9.12 ships no value for this, so it is broken out of the
   # box on any cluster; the allowlist below is the Service DNS the controller
   # actually dials. Kept explicit rather than "*", which upstream documents as
-  # safe only behind a Host-rewriting reverse proxy.
+  # safe only behind a Host-rewriting reverse proxy. The last entry, without a
+  # port, is how agentgateway names it when it fronts this server at /mcp
+  # (agentgateway-config values.yaml, mcp.targets).
   args:
     - --allowed-hosts
-    - kagent-grafana-mcp.mini-platform:8000,kagent-grafana-mcp.mini-platform.svc.cluster.local:8000,kagent-grafana-mcp:8000
+    - kagent-grafana-mcp.mini-platform:8000,kagent-grafana-mcp.mini-platform.svc.cluster.local:8000,kagent-grafana-mcp:8000,kagent-grafana-mcp.mini-platform.svc.cluster.local
   grafana:
     # Base URL only. mcp-grafana builds "/api/..." itself, so a trailing /api
     # here produces /api/api/datasources and every Grafana call 404s. The
