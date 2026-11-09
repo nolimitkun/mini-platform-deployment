@@ -1,10 +1,21 @@
 {
   "gateway": {
     "classes": {
-      "restricted": ["onprem"],
-      "confidential": ["onprem"],
-      "internal": ["onprem", "gcp"],
-      "public": ["onprem", "gcp", "external"]
+      "restricted": [
+        "onprem"
+      ],
+      "confidential": [
+        "onprem"
+      ],
+      "internal": [
+        "onprem",
+        "gcp"
+      ],
+      "public": [
+        "onprem",
+        "gcp",
+        "external"
+      ]
     },
     "models": {
       "qwen3.6-27b": "onprem",
@@ -30,13 +41,29 @@
       "kagent": {
         "owner": "platform team",
         "why": "multi-step tool calling the single-GPU local model can't carry; cluster state and telemetry only",
-        "models": ["deepseek-v4-pro"]
+        "models": [
+          "deepseek-v4-pro"
+        ]
       },
       "holmes": {
         "owner": "platform team",
         "why": "same as kagent: root-cause analysis over cluster state and telemetry",
-        "models": ["deepseek-v4-pro"]
+        "models": [
+          "deepseek-v4-pro"
+        ]
       }
+    },
+    "mcp_tools": {
+      "kagent": [
+        "grafana_*",
+        "kagent-tools_*"
+      ],
+      "holmes": [
+        "grafana_*"
+      ],
+      "admin": [
+        "*"
+      ]
     }
   }
 }

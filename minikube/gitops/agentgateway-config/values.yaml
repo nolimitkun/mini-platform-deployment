@@ -65,3 +65,15 @@ tracing:
   service: alloy
   port: 4317
   sampling: "1.0"
+
+# MCP servers behind the gateway, merged into one MCP endpoint at /mcp: a
+# client sees every target's tools, each prefixed with the target's name
+# (grafana_..., kagent-tools_...), and OPA decides per client which tools it may
+# call (policies/gateway). Holmes' GitHub MCP server is not here: it reads its
+# GitHub token from the Authorization header, the same header the gateway's
+# API key uses.
+mcp:
+  path: /mcp
+  targets:
+    grafana: {service: kagent-grafana-mcp, port: 8000}
+    kagent-tools: {service: kagent-tools, port: 8084}

@@ -70,3 +70,22 @@ test_decision_shape if {
 	d.allowed == false
 	d.http_status == 403
 }
+
+mcp(client, body) := req(client, "/mcp", body)
+
+test_mcp_session_and_listing if {
+	authz.allow with input as mcp("kagent", {"method": "initialize"})
+	authz.allow with input as mcp("kagent", {"method": "tools/list"})
+	authz.allow with input as req("kagent", "/mcp", null)
+}
+
+test_mcp_tool_calls_by_pattern if {
+	authz.allow with input as mcp("kagent", {"method": "tools/call", "params": {"name": "grafana_query_prometheus"}})
+	authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "grafana_query_loki_logs"}})
+	not authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "kagent-tools_k8s_delete_resource"}})
+	authz.reason == "tool kagent-tools_k8s_delete_resource is not allowed for holmes" with input as mcp("holmes", {"method": "tools/call", "params": {"name": "kagent-tools_k8s_delete_resource"}})
+}
+
+test_mcp_needs_an_entry if {
+	not authz.allow with input as mcp("open-webui", {"method": "initialize"})
+}

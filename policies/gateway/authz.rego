@@ -40,6 +40,32 @@ allow if {
 	"gcp" in placements(client)
 }
 
+# MCP (the merged endpoint at /mcp). A client with an mcp_tools entry may open
+# sessions, list tools and so on; each tools/call must name a tool matching one
+# of its patterns. Tool names carry the target as a prefix, e.g.
+# grafana_query_prometheus.
+allow if {
+	mcp_path
+	data.gateway.mcp_tools[client]
+	not tool_call
+}
+
+allow if {
+	tool_call
+	some pattern in data.gateway.mcp_tools[client]
+	glob.match(pattern, [], input.parsed_body.params.name)
+}
+
+mcp_path if {
+	parts := split(path, "/")
+	parts[1] == "mcp"
+}
+
+tool_call if {
+	mcp_path
+	input.parsed_body.method == "tools/call"
+}
+
 model_path if path in {"/v1/chat/completions", "/v1/completions", "/v1/responses", "/v1/messages", "/v1/embeddings"}
 
 allowed_model(c, m) if data.gateway.models[m] in placements(c)
@@ -56,6 +82,8 @@ reason := "unknown client" if {
 	not known_client
 } else := sprintf("model %v is not allowed for %v data", [input.parsed_body.model, data.gateway.clients[client]]) if {
 	model_path
+} else := sprintf("tool %v is not allowed for %v", [input.parsed_body.params.name, client]) if {
+	tool_call
 } else := "denied"
 
 # What OPA-Envoy returns to agentgateway: allow, or a 403 with the reason.

@@ -1,0 +1,22 @@
+# agentregistry's catalog for this platform, applied to the registry's
+# /v0/apply API on every sync (minikube/gitops/agentregistry-catalog). The
+# registry is the place to discover what exists; agentgateway is the way to
+# call it. Every entry here points at the gateway, so OPA's policy applies to
+# anything found through the registry.
+#
+# Models are not listed: the open-source registry (v0.4.0) accepts only Bedrock
+# models. The gateway's GET /v1/models is the model catalog instead.
+apiVersion: ar.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: platform-tools
+spec:
+  title: Platform tools
+  description: >-
+    Grafana MCP (Prometheus, Loki, Tempo, dashboards) and kagent's Kubernetes
+    and Helm tools, merged by agentgateway. Tool names are prefixed grafana_
+    and kagent-tools_. Needs a gateway API key; OPA limits each client to its
+    allowed tools.
+  remote:
+    type: streamable-http
+    url: http://agentgateway-proxy.mini-platform.svc.cluster.local/mcp

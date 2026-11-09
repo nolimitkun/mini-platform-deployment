@@ -257,6 +257,13 @@ applications:
     resourcesFile: minikube/values/agentregistry-resources.yaml
     releaseName: agentregistry
     wave: "1"
+  # The registry's catalog, in Git (agentregistry-catalog/files/catalog.yaml),
+  # applied to its API by a PostSync Job once the registry is up.
+  agentregistry-catalog:
+    chartPath: minikube/gitops/agentregistry-catalog
+    valuesFile: minikube/gitops/agentregistry-catalog/values.yaml
+    releaseName: agentregistry-catalog
+    wave: "2"
   agentgateway-config:
     chartPath: minikube/gitops/agentgateway-config
     valuesFile: minikube/gitops/agentgateway-config/values.yaml
