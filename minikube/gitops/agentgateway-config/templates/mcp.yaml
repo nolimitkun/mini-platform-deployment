@@ -12,9 +12,12 @@ spec:
     targets:
       {{- range $name, $t := .targets }}
       - name: {{ $name }}
+        # By host name rather than backendRef: agentgateway then sets Host to
+        # the target (it passes the client's Host through to Service
+        # backends), and mcp-grafana refuses any Host not on its
+        # --allowed-hosts list.
         static:
-          backendRef:
-            name: {{ $t.service }}
+          host: {{ $t.service }}.{{ $.Release.Namespace }}.svc.cluster.local
           port: {{ $t.port }}
           protocol: StreamableHTTP
       {{- end }}
