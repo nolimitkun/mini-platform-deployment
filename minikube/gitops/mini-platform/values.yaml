@@ -243,6 +243,20 @@ applications:
     valuesFile: minikube/gitops/opa-policy/values.yaml
     releaseName: opa-policy
     wave: "0"
+  # agentregistry and its own database. After kagent's CRDs (wave -4), which
+  # it writes Agent and MCPServer resources of.
+  agentregistry-postgresql:
+    chartPath: charts/postgresql
+    valuesFile: minikube/values/agentregistry-postgresql-values.yaml
+    resourcesFile: minikube/values/agentregistry-postgresql-resources.yaml
+    releaseName: agentregistry-postgresql
+    wave: "0"
+  agentregistry:
+    chartPath: charts/agentregistry
+    valuesFile: minikube/values/agentregistry-values.yaml
+    resourcesFile: minikube/values/agentregistry-resources.yaml
+    releaseName: agentregistry
+    wave: "1"
   agentgateway-config:
     chartPath: minikube/gitops/agentgateway-config
     valuesFile: minikube/gitops/agentgateway-config/values.yaml

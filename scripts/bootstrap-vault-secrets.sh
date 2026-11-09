@@ -384,6 +384,17 @@ kv_put mini-platform/agentgateway-api-keys "${agw_json[@]}"
 kv_put mini-platform/agentgateway-deepseek \
   Authorization="${DEEPSEEK_API_KEY:-$(kv_field mini-platform/litellm-deepseek DEEPSEEK_API_KEY)}"
 
+# agentregistry's PostgreSQL (its own release). The URL repeats the user
+# password, so both are written from one value, reused on a SEED_MISSING_ONLY
+# pass so they can't drift apart.
+AGENTREGISTRY_DB_PASSWORD="$(reuse_or_generate mini-platform/agentregistry-postgresql password)"
+AGENTREGISTRY_DB_PASSWORD="${AGENTREGISTRY_DB_PASSWORD:-$(rand_hex)}"
+kv_put mini-platform/agentregistry-postgresql \
+  postgres-password="$(rand_hex)" \
+  password="$AGENTREGISTRY_DB_PASSWORD"
+kv_put mini-platform/agentregistry-db \
+  AGENT_REGISTRY_DATABASE_URL="postgres://agentregistry:${AGENTREGISTRY_DB_PASSWORD}@agentregistry-postgresql:5432/agentregistry?sslmode=disable"
+
 # MinIO accounts for the OPA policy bundles: OCP writes them, OPA reads them.
 # The access key names the account; the field names are what the AWS SDKs in
 # both read from the environment.

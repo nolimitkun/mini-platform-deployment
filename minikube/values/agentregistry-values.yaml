@@ -1,0 +1,26 @@
+# agentregistry: the catalog of agents, MCP servers, skills and models, and the
+# way they get deployed. It deploys through the existing kagent (its built-in
+# kubernetes-default runtime), which turns them into kagent Agent and kmcp
+# MCPServer resources in this namespace. See docs/agentgateway.md.
+
+database:
+  postgres:
+    type: external
+    external:
+      secretRef:
+        name: agentregistry-db
+        key: AGENT_REGISTRY_DATABASE_URL
+
+# Only this namespace, where kagent and its MCP servers run: a Role here
+# instead of a cluster-wide ClusterRole.
+rbac:
+  enabled: true
+  watchedNamespaces:
+    - mini-platform
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 1Gi

@@ -12,6 +12,11 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: opa}
       annotations:
+        # Decision latency, bundle loads, gRPC errors: picked up by
+        # Prometheus's annotation-driven pod discovery.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8181"
+        prometheus.io/path: /metrics
         checksum/config: {{ include (print $.Template.BasePath "/opa-config.yaml") . | sha256sum | trunc 16 }}
     spec:
       automountServiceAccountToken: false

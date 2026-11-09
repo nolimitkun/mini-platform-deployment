@@ -1,0 +1,9 @@
+routes:
+  # The UI and API. The open-source registry has no login of its own, so the
+  # whole host sits behind the platform's Keycloak login (oauth2-proxy).
+  - name: agentregistry
+    host: agentregistry.test
+    service: agentregistry
+    port: 12121
+    protectedPaths:
+      - /

@@ -1,0 +1,25 @@
+# agentregistry's database, its own release of the vendored PostgreSQL chart
+# rather than the chart's bundled one: that one is a dev-only StatefulSet with
+# the password hard-coded to "agentregistry". Credentials come from Vault
+# (agentregistry-postgresql-resources.yaml).
+fullnameOverride: agentregistry-postgresql
+
+auth:
+  username: agentregistry
+  database: agentregistry
+  existingSecret: agentregistry-postgresql
+  secretKeys:
+    adminPasswordKey: postgres-password
+    userPasswordKey: password
+
+architecture: standalone
+
+primary:
+  persistence:
+    size: 2Gi
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 512Mi}
+
+volumePermissions:
+  enabled: true
