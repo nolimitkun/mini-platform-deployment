@@ -227,4 +227,4 @@ serverFiles:
       - /etc/config/alerting_rules.yml
       - /etc/config/rules
       - /etc/config/alerts
-      - /etc/alerts.d/*/*.yml
+      - /etc/alerts.d/agentgateway-projects/*.yml
