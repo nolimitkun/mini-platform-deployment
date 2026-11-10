@@ -28,3 +28,6 @@ dashboards:
   # files/agentgateway-dashboard.json, 1.7.0), copied verbatim; Prometheus finds
   # the proxy through its prometheus.io annotations.
   - agentgateway
+  # Per-project usage and cost: the gateway labels its metrics with the API
+  # key's project (agentgateway-config policies.yaml).
+  - agentgateway-projects

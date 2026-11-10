@@ -62,3 +62,23 @@ spec:
         port: {{ $v.tracing.port }}
       protocol: GRPC
       randomSampling: {{ $v.tracing.sampling | quote }}
+---
+# A project label on every gateway metric (requests, tokens, cost, latency),
+# from the API key's metadata, for per-project usage and cost
+# (dashboard "Agentgateway projects"). Requests without a valid key get
+# "unknown". Low cardinality by design: projects, not keys or users.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: {{ $v.gatewayName }}-metrics
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $v.gatewayName }}
+  frontend:
+    metrics:
+      attributes:
+        add:
+          - name: project
+            expression: apiKey.project
