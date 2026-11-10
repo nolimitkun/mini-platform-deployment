@@ -439,5 +439,6 @@ curl -s http://agentgateway.test/v1/chat/completions -H "Authorization: Bearer $
 
 [multi-project-policy.md](multi-project-policy.md) describes how this grows to
 hundreds of projects with several keys each. It covers per-project placement,
-model and routing rules, and OPA choosing the model for `model: "auto"`. That
-last part was checked in a spike on agentgateway 1.7.
+model and routing rules, and `model: "auto"`. For `auto`, vLLM Semantic Router
+classifies the prompt and OPA picks the best model the project is allowed. Both
+were checked in spikes on agentgateway 1.7.
