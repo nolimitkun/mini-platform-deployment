@@ -25,7 +25,11 @@ spec:
       conditional:
         - condition: 'request.path == "/v1/chat/completions" && json(request.body).model == "auto"'
           policy:
+            # group and kind spelled out: the API server defaults them, and
+            # Argo CD would otherwise report the policy as OutOfSync.
             backendRef:
+              group: ""
+              kind: Service
               name: {{ $v.semanticRouter.service }}
               port: {{ $v.semanticRouter.port }}
             failureMode: FailOpen
