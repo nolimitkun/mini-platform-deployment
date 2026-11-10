@@ -63,12 +63,27 @@ Outside the cluster, the same endpoints are at `http://agentgateway.test`.
 
 The names are the ones LiteLLM used, so no client had to rename a model.
 
-To add a model:
+Every model and Google API is declared once, in the model catalog
+[`catalog/models.yaml`](../catalog/models.yaml), with its placement and provider
+settings. `scripts/gen-catalog.py` validates the catalog and generates two files
+from it:
 
-1. Add an entry to `models` in `minikube/gitops/agentgateway-config/values.yaml`.
-2. Give it a placement in `policies/gateway/data.json`.
+- `minikube/gitops/agentgateway-config/files/catalog.json`, which the gateway
+  chart turns into `AgentgatewayModel` objects and Google API routes.
+- `policies/gateway/catalog/data.json`, which OPA reads as `data.catalog` for
+  placements.
 
-Without the second step, OPA denies every request for the model.
+A model therefore can't be routed without a placement, or allowed without a
+route.
+
+To add a model or a Google API:
+
+1. Add it to `catalog/models.yaml`.
+2. Run `python3 scripts/gen-catalog.py` and commit the generated files with it.
+   CI (`validate-gitops.sh`) fails if they are out of date.
+
+The policy change goes live when OCP rebuilds the bundle from `main`. The
+gateway change goes live on the next Argo CD sync.
 
 ### Google login without a key
 
@@ -120,7 +135,8 @@ To add a client:
 ## Policy
 
 `policies/gateway/authz.rego` decides each request. Its data is in
-`policies/gateway/data.json`.
+`policies/gateway/data.json` (classes, clients, exceptions, MCP tools) and in
+`policies/gateway/catalog/data.json` (placements, generated from the catalog).
 
 - **Data classes.** Each client has one, as in mini-cloud's
   `docs/gcp/ai-inference.md`:

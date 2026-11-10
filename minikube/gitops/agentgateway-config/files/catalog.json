@@ -1,0 +1,52 @@
+{
+  "models": [
+    {
+      "name": "qwen3.6-27b",
+      "provider": "OpenAI",
+      "baseURL": "http://vllm-router-service.mini-platform.svc.cluster.local/v1"
+    },
+    {
+      "name": "deepseek-v4-pro",
+      "provider": "Deepseek",
+      "secretRef": "agentgateway-deepseek"
+    },
+    {
+      "name": "gemini-4-argon",
+      "provider": "VertexAI",
+      "region": "eu"
+    },
+    {
+      "name": "gemini-3.8-flash",
+      "provider": "VertexAI",
+      "region": "eu"
+    },
+    {
+      "name": "gemini-3.5-flash",
+      "provider": "VertexAI",
+      "region": "eu"
+    },
+    {
+      "name": "gemini-3.5-flash-lite",
+      "provider": "VertexAI",
+      "region": "eu"
+    }
+  ],
+  "googleApis": {
+    "speech": {
+      "host": "eu-speech.googleapis.com",
+      "http1Only": false
+    },
+    "tts": {
+      "host": "eu-texttospeech.googleapis.com",
+      "http1Only": false
+    },
+    "vertex-eu": {
+      "host": "aiplatform.eu.rep.googleapis.com",
+      "http1Only": false
+    },
+    "vertex-europe-west1": {
+      "host": "europe-west1-aiplatform.googleapis.com",
+      "http1Only": true
+    }
+  }
+}

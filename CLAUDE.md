@@ -96,7 +96,10 @@ endpoint over the cluster's MCP servers. Every request carries a per-client API 
 and is decided by **OPA** (ext_authz, FailClosed) from the Rego in `policies/gateway`,
 which the **OPA Control Plane (OCP)** builds from this repo's `main` on GitHub into a
 bundle in MinIO — so a policy change goes live on merge, without an Argo CD sync, and
-must pass `opa test` (run by `validate-gitops.sh`). **agentregistry** is the catalog of
+must pass `opa test` (run by `validate-gitops.sh`). Models and Google APIs are declared
+once in `catalog/models.yaml`; `scripts/gen-catalog.py` generates the gateway chart's
+`files/catalog.json` and the policy's `catalog/data.json` from it (CI checks they are
+current). **agentregistry** is the catalog of
 MCP servers and agents; its entries live in `minikube/gitops/agentregistry-catalog`.
 
 An alternative **llm-d serving path** exists behind `enabled: false` app-of-apps

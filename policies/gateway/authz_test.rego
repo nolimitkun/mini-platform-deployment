@@ -89,3 +89,23 @@ test_mcp_tool_calls_by_pattern if {
 test_mcp_needs_an_entry if {
 	not authz.allow with input as mcp("open-webui", {"method": "initialize"})
 }
+
+# Every model and Google API in the catalog has a placement some class allows,
+# so nothing is routable but unusable by every client.
+test_catalog_entries_usable_by_some_class if {
+	every m in data.catalog.models {
+		some placements in data.gateway.classes
+		m.placement in placements
+	}
+	every a in data.catalog.google_apis {
+		some placements in data.gateway.classes
+		a.placement in placements
+	}
+}
+
+test_placement_read_from_catalog if {
+	not authz.allow with input as chat("open-webui", "qwen3.6-27b")
+		with data.catalog.models["qwen3.6-27b"].placement as "external"
+	authz.allow with input as chat("open-webui", "new-model")
+		with data.catalog.models["new-model"] as {"placement": "onprem", "provider": "OpenAI"}
+}

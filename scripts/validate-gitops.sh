@@ -10,14 +10,15 @@
 #     chart lints and renders against each per-application resources file
 #   - rendered manifests pass kubeconform (CRDs are allowed to be unknown)
 #   - shellcheck on scripts/
+#   - catalog/models.yaml is valid and the files generated from it are current
 #   - opa check, fmt and test on every policy bundle under policies/
 #
 # The vendored charts live in a separate repository. Point CHARTS_DIR at a local
 # checkout of it (default: ../mini-platform) to verify charts/* paths resolve;
 # when absent those checks are skipped, not failed.
 #
-# Tools used if present: helm (required), kubeconform (optional), shellcheck
-# (optional), opa (optional). Missing optional tools are reported and skipped, not failed.
+# Tools used if present: helm (required), python3 with PyYAML (required),
+# kubeconform (optional), shellcheck (optional), opa (optional). Missing optional tools are reported and skipped, not failed.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,6 +33,7 @@ bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$*"; FAIL=1; }
 skip() { printf '  \033[33mskip\033[0m %s\n' "$*"; }
 
 have helm || { echo "ERROR: helm is required." >&2; exit 1; }
+python3 -c 'import yaml' 2>/dev/null || { echo "ERROR: python3 with PyYAML is required." >&2; exit 1; }
 
 APP_OF_APPS=minikube/gitops/mini-platform
 # The app-of-apps chart requires all four source parameters to render.
@@ -138,6 +140,13 @@ if have shellcheck; then
   if shellcheck scripts/*.sh; then ok "scripts/*.sh"; else bad "scripts/*.sh"; fi
 else
   skip "shellcheck not installed"
+fi
+
+echo "==> model catalog (catalog/models.yaml)"
+if python3 scripts/gen-catalog.py --check; then
+  ok "catalog valid, generated files current"
+else
+  bad "catalog (run: python3 scripts/gen-catalog.py)"
 fi
 
 echo "==> opa (policies/)"

@@ -1,5 +1,9 @@
 {{- $v := .Values }}
-{{- range $name, $host := $v.googleApis }}
+{{- /* Google APIs come from the repo's catalog/models.yaml, through
+     files/catalog.json (scripts/gen-catalog.py). */}}
+{{- $catalog := .Files.Get "files/catalog.json" | fromJson }}
+{{- range $name, $api := $catalog.googleApis }}
+{{- $host := $api.host }}
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
@@ -12,7 +16,7 @@ spec:
   policies:
     tls:
       sni: {{ $host }}
-      {{- if has $name $v.http1Only }}
+      {{- if $api.http1Only }}
       alpnProtocols: ["http/1.1"]
       {{- end }}
     auth:
