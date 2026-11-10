@@ -87,6 +87,17 @@ model_path if path in {"/v1/chat/completions", "/v1/completions", "/v1/responses
 
 allowed_model(m) if m in lib.allowed(project_id)
 
+# The gateway's virtual models (agentgateway-config templates/auto.yaml). The
+# gateway asks select.rego which model they stand for after this check, and
+# it only ever names one of lib.allowed(project), so allowing the name is
+# enough when the project has any model at all.
+virtual_models := {"auto"} | {sprintf("auto-%s", [t]) | some t, _ in data.catalog.tasks}
+
+allowed_model(m) if {
+	m in virtual_models
+	count(lib.allowed(project_id)) > 0
+}
+
 # Why a request was refused, for the decision log and the 403 body.
 reason := "unknown project" if {
 	not project

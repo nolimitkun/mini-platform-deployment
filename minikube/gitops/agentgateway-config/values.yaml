@@ -17,6 +17,19 @@ gcp:
 # catalog, catalog/models.yaml, which scripts/gen-catalog.py renders into this
 # chart's files/catalog.json and into the gateway policy's data.
 
+# Model "auto" and "auto-<task>" (templates/auto.yaml): virtual models that ask
+# OPA's REST API which model the caller's project gets (policies/gateway/select.rego).
+auto:
+  enabled: true
+  opaService: opa
+  opaPort: 8181
+  # Per-project cache of OPA's answer, e.g. 1m. Off by default: a cache hit
+  # skips OPA, so after a policy change removes the cached model the gateway
+  # would keep routing to it until the entry expires, and ext_authz only ever
+  # sees "auto", not the model behind it. Uncached, the callout adds about a
+  # millisecond.
+  cacheTTL: ""
+
 # Client API keys, one per client, from Vault (scripts/bootstrap-vault-secrets.sh).
 apiKeysSecret: agentgateway-api-keys
 

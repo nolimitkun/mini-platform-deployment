@@ -7,7 +7,8 @@
 Outputs:
   minikube/gitops/agentgateway-config/files/catalog.json
       what the gateway chart needs: one entry per model with its provider
-      settings, and the Google API routes.
+      settings, the Google API routes, and the task class names (one "auto-<task>"
+      virtual model each).
   policies/gateway/catalog/data.json
       what the gateway policy needs, as data.catalog: each model's placement,
       provider and price, each Google API's placement, and the task classes.
@@ -56,6 +57,8 @@ def validate(catalog):
         where = f"models.{name}"
         if not NAME_RE.match(name):
             errors.append(f"{where}: name must be lowercase letters, digits, '.' and '-'")
+        if name == "auto" or name.startswith("auto-"):
+            errors.append(f"{where}: auto and auto-* are the gateway's virtual models")
         obj = name.replace(".", "-")
         if obj in seen_objects:
             errors.append(f"{where}: object name {obj} clashes with {seen_objects[obj]}")
@@ -93,6 +96,8 @@ def validate(catalog):
         for m in prefs:
             if m not in models:
                 errors.append(f"{where}: {m!r} is not a catalog model")
+        if f"auto-{task}" in models:
+            errors.append(f"{where}: its virtual model auto-{task} clashes with a catalog model")
 
     for name, api in (catalog.get("googleApis") or {}).items():
         where = f"googleApis.{name}"
@@ -124,6 +129,7 @@ def render(catalog):
             name: {"host": a["host"], "http1Only": a.get("http1Only", False)}
             for name, a in apis.items()
         },
+        "tasks": sorted(catalog.get("tasks") or {}),
     }
     policy = {
         "models": {

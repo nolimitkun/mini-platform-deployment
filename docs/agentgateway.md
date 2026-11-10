@@ -229,8 +229,41 @@ Catalog prices are the rates agentgateway v1.7.0's built-in price table bills
 in USD per million tokens, checked against its cost metrics. On-prem Qwen has
 no per-token charge, so `cheapest` picks it whenever a project may use it.
 
-Nothing calls this yet. The `auto` virtual models that ask it come in the next
-step.
+Clients reach it through the gateway's virtual models
+(`agentgateway-config` `templates/auto.yaml`):
+
+| `model` | Asks OPA with |
+|---------|---------------|
+| `auto` | the caller's project |
+| `auto-code`, `auto-reasoning`, `auto-general` (one per catalog task) | the project and that task class |
+
+Each one is an `AgentgatewayModel` whose `callout` posts to `opa:8181` on every
+request and routes the request to the model OPA names. A cache
+(`auto.cacheTTL`) is off on purpose. A cache hit skips OPA, and the gateway's
+ext_authz only ever sees `auto`. So after a policy change revokes the cached
+model, the gateway would keep serving it until the entry expired. Uncached, the
+callout adds about a millisecond.
+
+If OPA has no answer for the project, the request fails with 503
+`virtual_model_callout_failed`. There is no fallback model on purpose: a
+fallback would also serve projects OPA doesn't know.
+
+Authorization allows the `auto` names for any project with at least one allowed
+model. The gateway's ext_authz check runs before the virtual model is resolved,
+so it sees `auto`, not the model behind it. The selected model is always one of
+the project's allowed models (`select_test.rego` checks this for every project
+and routing). Token and cost metrics carry the concrete model in
+`gen_ai_request_model`.
+
+```bash
+curl -s http://agentgateway.test/v1/chat/completions -H "Authorization: Bearer $KEY" \
+  -H 'content-type: application/json' \
+  -d '{"model":"auto","messages":[{"role":"user","content":"hi"}]}' | jq -r .model
+```
+
+The `auto-<task>` models are for the vLLM Semantic Router, which will rewrite
+`auto` to a task class (not deployed yet). Called directly, they only use the
+task class for projects whose routing is `semantic`.
 
 ### Changing a policy
 
