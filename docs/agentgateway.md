@@ -214,6 +214,19 @@ The rules:
   {"error":{"message":"model deepseek-v4-pro is not allowed for project open-webui (internal data)","type":"policy_denied"}}
   ```
 
+### The model list
+
+`GET /v1/models` shows each project only the models it may call, plus `auto`
+and `auto-<task>` when it has any. Open WebUI's model picker is that list.
+
+agentgateway answers `/v1/models` itself, with every public model and its
+metadata. For that path OPA's decision adds a request header,
+`x-allowed-models`, naming the project's models (`listed_models` in
+`authz.rego`), and the `agentgateway-proxy-models-list` policy keeps only
+those entries. If the header is missing, the list goes out whole. The list is
+cosmetic: authorization still decides every call, so a client that sends its
+own header changes only what it sees.
+
 ### Rate limits and budgets
 
 A project's `limits` and `budget` are enforced by the `rate-limit` app
@@ -430,13 +443,12 @@ curl -s http://agentgateway.test/v1/chat/completions -H "Authorization: Bearer $
 |-------|----------|
 | No key | 401 |
 | Open WebUI key, `deepseek-v4-pro` | 403, `not allowed for internal data` |
+| Open WebUI key, `/v1/models` | No `deepseek-v4-pro`; kagent's key lists it |
 | Holmes key, `tools/call` of `kagent-tools_*` | 403, `tool ... is not allowed for holmes` |
 | `curl opa:8181/v1/data/system/bundles` | Manifest with the latest `main` commit |
 
 ## Limits
 
-- **Model list not filtered.** `/v1/models` lists every model to every client.
-  OPA only refuses the call.
 - **No MCP auth to the targets.** The targets trust the network.
   NetworkPolicy, on a CNI that enforces it, should allow only the proxy to reach
   them.

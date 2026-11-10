@@ -171,3 +171,49 @@ test_virtual_models_allowed_with_any_model if {
 	not authz.allow with input as chat("vault-app", "auto")
 		with data.projects["vault-app"] as object.union(vault_app, {"models_allow": ["gemini-*"]})
 }
+
+# /v1/models: the decision names exactly what the project may call, so the
+# gateway's listing matches authorization.
+listed(project) := split(d.headers["x-allowed-models"], ",") if {
+	d := authz.decision with input as req(project, "/v1/models", {})
+}
+
+test_models_listing_names_allowed_models if {
+	l := listed("open-webui")
+	"qwen3.6-27b" in l
+	"gemini-4-argon" in l
+	"auto" in l
+	"auto-code" in l
+	not "deepseek-v4-pro" in l
+
+	# kagent's exception is listed.
+	"deepseek-v4-pro" in listed("kagent")
+
+	# The query string doesn't matter.
+	d := authz.decision with input as req("open-webui", "/v1/models?limit=5", {})
+	d.headers["x-allowed-models"] == concat(",", listed("open-webui"))
+}
+
+test_models_listing_matches_authorization if {
+	every project_id, _ in data.projects {
+		every m in listed(project_id) {
+			authz.allow with input as chat(project_id, m)
+		}
+	}
+}
+
+test_models_listing_empty_without_models if {
+	d := authz.decision with input as req("vault-app", "/v1/models", {})
+		with data.projects["vault-app"] as object.union(vault_app, {"models_allow": ["gemini-*"]})
+	d.headers["x-allowed-models"] == ""
+}
+
+test_only_models_listing_gets_the_header if {
+	authz.decision == {"allowed": true} with input as chat("open-webui", "qwen3.6-27b")
+
+	# A revoked key is refused, without a model list.
+	d := authz.decision with input as req("open-webui", "/v1/models", {})
+		with data.projects["open-webui"].keys as []
+	d.allowed == false
+	not d.headers["x-allowed-models"]
+}
