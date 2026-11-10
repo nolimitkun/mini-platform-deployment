@@ -236,8 +236,14 @@ the rate-limit service's "month": a fixed 30-day period counted from the Unix
 epoch, not a calendar month.
 
 A project without `limits` or `budget` has no entry in the service's config and
-is never limited. Today only `admin` has limits: 60 requests a minute and $25
-per 30 days.
+is never limited. Today every project has both:
+
+| Project | Requests per minute | USD per 30 days |
+|---|---|---|
+| `open-webui` | 120 | 50 |
+| `kagent` | 60 | 30 |
+| `admin` | 60 | 25 |
+| `holmes` | 30 | 20 |
 
 The policy fails open. If the rate-limit service is down, requests go through;
 limits and budgets are cost control, and OPA still decides access.
@@ -331,7 +337,8 @@ the project's model for that class. The steps:
    `auto-general`. `gen-catalog.py --check` fails if a decision names anything
    but the catalog's task classes.
 3. The task class matters only for projects whose routing is `semantic`.
-   Today that is `admin`; the others keep `cheapest` and ignore it.
+   Today that is `admin` and `open-webui`; kagent and Holmes keep `cheapest`
+   and ignore it.
 
 VSR never chooses the concrete model. It has no per-project allowlist, so it
 can't tell that an on-prem-only project must not go to Gemini; OPA can.

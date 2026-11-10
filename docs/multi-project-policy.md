@@ -301,10 +301,9 @@ build.** Bundle roots follow the layout: a top-level `data.json` makes the roots
 
 ## Open
 
-- **Limits for the other projects.** Only `admin` has limits (60/min, $25 per 30
-  days). Open WebUI, kagent and Holmes are unlimited.
-- **Routing for the other projects.** They are on `cheapest`. `semantic` or
-  `fastest` sends their `auto` traffic to paid models.
+- **Routing for kagent and Holmes.** They are on `cheapest`. `semantic` or
+  `fastest` sends their `auto` traffic to paid models, now capped by their
+  budgets. Every project has limits and a budget (`docs/agentgateway.md`).
 - **Vertex quota.** Gemini 4 Argon and 3.8 Flash return 429
   `RESOURCE_EXHAUSTED` under light load, which needs a quota check for
   `mini-cloud-499820` in `eu`.

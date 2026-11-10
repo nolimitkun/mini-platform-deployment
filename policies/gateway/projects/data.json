@@ -25,12 +25,16 @@
     "routing": "semantic"
   },
   "holmes": {
-    "budget": {},
+    "budget": {
+      "usd_per_30_days": 20
+    },
     "data_class": "internal",
     "keys": [
       "holmes"
     ],
-    "limits": {},
+    "limits": {
+      "requests_per_minute": 30
+    },
     "mcp_tools": [
       "grafana_*"
     ],
@@ -45,12 +49,16 @@
     "routing": "cheapest"
   },
   "kagent": {
-    "budget": {},
+    "budget": {
+      "usd_per_30_days": 30
+    },
     "data_class": "internal",
     "keys": [
       "kagent"
     ],
-    "limits": {},
+    "limits": {
+      "requests_per_minute": 60
+    },
     "mcp_tools": [
       "grafana_*",
       "kagent-tools_*"
@@ -66,12 +74,16 @@
     "routing": "cheapest"
   },
   "open-webui": {
-    "budget": {},
+    "budget": {
+      "usd_per_30_days": 50
+    },
     "data_class": "internal",
     "keys": [
       "open-webui"
     ],
-    "limits": {},
+    "limits": {
+      "requests_per_minute": 120
+    },
     "mcp_tools": [],
     "models_allow": [
       "*"
@@ -81,6 +93,6 @@
       "onprem",
       "gcp"
     ],
-    "routing": "cheapest"
+    "routing": "semantic"
   }
 }

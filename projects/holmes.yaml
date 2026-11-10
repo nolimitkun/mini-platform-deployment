@@ -5,3 +5,9 @@ description: HolmesGPT root-cause analysis. Its DeepSeek exception is in _except
 data_class: internal
 keys: [holmes]
 mcp_tools: ["grafana_*"]
+# One investigation is a few dozen calls; this leaves room for two at once
+# and stops a runaway one.
+limits:
+  requests_per_minute: 30
+budget:
+  usd_per_30_days: 20
