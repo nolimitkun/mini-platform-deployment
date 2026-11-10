@@ -1,89 +1,69 @@
 # Design: per-project model policy at scale
 
-Status: **design, with two spikes** (2026-11-10). Nothing in this doc is deployed
-yet. Today's gateway ([agentgateway.md](agentgateway.md)) has four clients, one
-key each, and a data class per client.
+Status: **built and deployed** (2026-11-10, PRs #24–#33 and mini-platform#24).
+This is the design record: what was decided, what changed while building it,
+and the spike evidence behind each choice. To operate it (adding a project,
+rotating a key, changing a limit), use [agentgateway.md](agentgateway.md).
 
-This doc covers the next step: about **200 projects, each with several API
-keys**. Each project gets its own model policy:
+The target is about **200 projects, each with several API keys**. Each project
+gets its own model policy:
 
 - on-prem only, cloud only, or both
-- a single model
-- "give me the cheapest" or "give me the fastest"
-- token budgets and MCP tools
+- a narrowed model list or a single model
+- routing for `model: "auto"`: cheapest, fastest, by prompt type, or fixed
+- request, token and spend limits, and MCP tools
 
 ## The rule: keys say who, data says what
 
-A key identifies a project and nothing more. Every rule is data about the
-project, read by one generic Rego policy. Nobody writes Rego for a project, and
-adding a project or a model is a data change.
+A key identifies a project and nothing more: its metadata is
+`{"project": ..., "key_id": ...}`. Every rule is data about the project, read by
+one generic Rego policy. Nobody writes Rego for a project, and adding a project
+or a model is a data change.
 
 ```mermaid
 flowchart LR
   subgraph git[Git: this repo]
-    proj[projects/*.yaml<br/>one per project, CODEOWNERS]
-    cat[models catalog<br/>one list for gateway + OPA]
-    lib[policies/gateway<br/>generic Rego, platform-owned]
+    proj[projects/*.yaml<br/>one per project]
+    cat[catalog/models.yaml<br/>models, prices, task classes]
+    lib[policies/gateway<br/>generic Rego]
   end
-  rank[ranking job<br/>Prometheus TTFT, prices] -->|JSON in MinIO| ocp
-  proj --> ocp[OCP]
-  cat --> ocp
+  proj -->|gen-projects.py| ocp[OCP]
+  cat -->|gen-catalog.py| ocp
   lib --> ocp
-  ocp -->|bundle| minio[(MinIO)] --> opa[OPA, 2+ replicas]
-  vault[(Vault: keys<br/>metadata project, key_id)] -->|VSO| agw
+  ocp -->|bundle| minio[(MinIO)] --> opa[OPA]
+  proj -->|gen-projects.py| rlcfg[rate-limit config]
+  cat -->|gen-catalog.py| gwcfg[gateway models]
+  vault[(Vault: keys)] -->|VSO| agw
   client[client, project key] --> agw[agentgateway]
-  agw -->|ext_proc, PreRouting:<br/>auto → auto-code / auto-reasoning / auto-general| vsr[vLLM Semantic Router<br/>classifies the prompt]
-  agw -->|ext_authz: may this project<br/>call this model or tool?| opa
-  agw -->|virtual model auto-task: callout<br/>which allowed model for this project?| opa
-  agw -->|global rate limit<br/>by project| rl[rate-limit service + Redis]
-  agw --> models[concrete models<br/>vLLM, Vertex, DeepSeek]
+  agw -->|ext_proc, auto only| vsr[vLLM Semantic Router]
+  agw -->|ext_authz| opa
+  agw -->|callout for auto models| opa
+  agw -->|global rate limit| rl[rate-limit service<br/>Redis]
+  rlcfg --> rl
+  opa -.->|http.send, fastest only| prom[(Prometheus)]
+  agw --> models[vLLM, Vertex, DeepSeek]
 ```
 
-## Parts
+## What was built
 
-| Part | Holds | Lives in | Owner |
-|------|-------|----------|-------|
-| **Project files** | One file per project: owner, data class, placement, models, routing, budget, MCP tools | `projects/<id>.yaml` in this repo. Each team owns its file through CODEOWNERS. Git is enough for 200 projects; a self-service portal, if one comes later, writes to Git instead of replacing it | The project's team |
-| **Exceptions** | Anything beyond what the project's data class allows, each with an owner and a reason | `projects/_exceptions.yaml` | Platform team |
-| **Model catalog** | One entry per model: placement, provider, price per million input and output tokens, capabilities, visibility | One file that generates both the `models` values of `agentgateway-config` and the `models` data for OPA. Today these are two lists that can drift | Platform team |
-| **API keys** | Several keys per project, so a key can be rotated with no gap. Metadata is `{"project": ..., "key_id": ...}` only. Policy never goes in the key | Vault, mirrored by VSO into the gateway's key Secret. About 1,000 keys at roughly 150 bytes each is far below the 1 MiB Secret limit. `secretSelector` can also split them across Secrets | Bootstrap script now, a key service later |
-| **Generic policy** | `authz`: may the project use this model, Google API or tool? `select`: which model `auto` means | `policies/gateway/*.rego` | Platform team |
-| **OPA** | The bundle | At least 2 replicas and a PodDisruptionBudget. The gateway fails closed, so OPA's availability is the gateway's | Platform team |
-| **OCP** | Builds one bundle from the sources | `opa-policy` chart | Platform team |
-| **vLLM Semantic Router (VSR)** | Classifies each `auto` prompt into a task class (code, reasoning, general, ...). It does not choose the concrete model and knows nothing about projects | Chart `oci://ghcr.io/vllm-project/charts/semantic-router` 0.4.0, as the gateway's ext_proc filter. In the spike it used about 3 GiB of memory on CPU, kept 3.6 GB of classifier models on a PVC, and started in 42 s with the models already cached | Platform team |
-| **Ranking job** | Per-model latency (p50 time to first token from `agentgateway_gen_ai_server_time_to_first_token`) and health | A CronJob writes JSON to MinIO. OCP pulls it as an `http` datasource when it builds the bundle | Platform team |
-| **Rate limits and budgets** | Tokens per minute and a monthly spend cap per project | agentgateway's global (remote) rate limiting, with a rate-limit service and Redis, keyed by `project`. This is live state, so it does not go in an OPA bundle | Platform team |
+| Step | What | PR |
+|------|------|----|
+| 1 | **Model catalog** `catalog/models.yaml`: every model and Google API once, with placement, provider settings, price and task classes. `gen-catalog.py` generates the gateway's models and the policy's `data.catalog` | #24 |
+| 2 | **Projects** `projects/<id>.yaml`, checked against `projects/schema.json` and cross-file rules by `gen-projects.py`. Keys carry `{project, key_id}`; a key not listed by its project is refused | #25, #26 |
+| 3 | **Selection** `select.rego`, sharing `lib.allowed` with authorization | #27 |
+| 4 | **`auto` virtual models**: callout to OPA for `auto` and `auto-<task>` | #28 |
+| 5 | **vLLM Semantic Router** rewrites `auto` to a task class | #29, mini-platform#24 |
+| 6 | **`project` metric label** and the "Agentgateway projects" dashboard | #30, #31 |
+| 7 | **Latency rankings** for `fastest`, read from Prometheus | #32 |
+| 8 | **Rate limits and spend caps** in a global rate-limit service | #33 |
 
-### A project file
+## Decisions
 
-```yaml
-project: payments
-owner: team-payments
-data_class: confidential          # caps placement; see "Guardrails"
-placement: [onprem]               # onprem | gcp | external
-models:
-  allow: ["*"]                    # or ["qwen3.6-27b"] for a single model
-routing: semantic                 # semantic (VSR) | cheapest | fastest | fixed:<model>
-budget:
-  tokens_per_minute: 50000
-  usd_per_month: 200
-mcp_tools: ["grafana_*"]
-```
+### Rules are about model attributes, not names
 
-CI checks each file against a JSON Schema. One malformed file must not break
-the bundle for all 200 projects. OPA keeps serving the last good bundle, but CI
-is the place to catch it.
-
-## Policy
-
-### Rules are about model attributes, not model names
-
-"On-prem only" means `catalog[m].placement in project.placement`. It does not
-mean a list of on-prem models. When a new on-prem model joins the catalog,
-every on-prem project can use it without anyone editing 200 files. A project
-that wants a fixed set uses `models.allow`.
-
-The set of models a project may use is:
+"On-prem only" means `catalog[m].placement in project.placement`. A new on-prem
+model therefore needs no change to 200 files. A project's allowed set
+(`lib.rego`) is:
 
 ```
 allowed(p) = { m in catalog
@@ -92,350 +72,244 @@ allowed(p) = { m in catalog
              ∪ exceptions(p)
 ```
 
-### Guardrails
+- **The data class caps placement,** even if the generated data says otherwise.
+- **Exceptions** live in `projects/_exceptions.yaml`, owned by the platform
+  team, not in the project's own file.
+- **Model patterns use `glob.match(pattern, null, m)`.** With `[]` as the
+  delimiters OPA defaults to `.`, and `*` would not match the dot in
+  `qwen3.6-27b`. The `null` matches `fnmatch` in the generator.
 
-- **The data class caps placement.** A `restricted` project that lists `gcp` in
-  `placement` still gets only on-prem models. The class table is the one in
-  mini-cloud's `docs/gcp/ai-inference.md`, already in `policies/gateway/data.json`.
-- **Exceptions live in a file the platform team owns,** not in the project's
-  own file.
-- **Default deny.** An unknown project, model or tool is refused with a 403
-  that gives the reason, as today.
+OCP does not limit which data paths a source may write. It checks Rego package
+overlaps only. That is why teams write YAML that CI validates, never Rego.
 
-OCP does not limit which data paths a source may write. It rejects two sources
-with overlapping Rego packages, but it does not stop one team's file from
-writing another team's data. That is why project files are YAML checked by CI
-against the schema and assembled by CI, never Rego written by the teams.
+### Selection never widens authorization
 
-### Choosing the model: VSR finds the task class, OPA picks the model
+Authorization (`authz.rego`) and selection (`select.rego`) use the same
+`lib.allowed`. A property test checks that the selection is either nothing or
+one of `lib.allowed(project)`. It runs for every project, under four narrowings
+that rule out the overall cheapest or fastest model, every routing rule and every
+task, with Prometheus up or down.
 
-A client that wants the platform to choose sends `"model": "auto"`. Two
-questions need answering, and each component answers one:
+The first version of that test passed even when selection ranked every catalog
+model. The cheapest model, on-prem Qwen, was allowed for every project, so the
+leak never showed. The narrowings were added for that reason. Three deliberate
+leaks now each fail it: an unfiltered fastest ranking, unfiltered task
+preferences, and an unchecked fixed model.
 
-- **What kind of request is this?** That depends on the prompt.
-  **VSR** answers it with a task class.
-- **Which model may this project use for that class?** That depends on the
-  project. **OPA** answers it from the project data.
+### `auto`: VSR names the task, OPA picks the model
 
-VSR has no per-project model allowlist, so it must not pick the concrete model.
-If it did, it could send an on-prem-only project to Gemini. OPA never reads the
-prompt.
+VSR has no per-project allowlist, so it must never pick the concrete model: it
+could send an on-prem-only project to Gemini. Each component answers one
+question:
 
-```mermaid
-sequenceDiagram
-  participant C as client (project key)
-  participant G as agentgateway
-  participant V as VSR (ext_proc)
-  participant O as OPA
-  participant M as model
-  C->>G: model "auto"
-  G->>V: PreRouting ext_proc (only /v1/chat/completions with model auto)
-  V-->>G: body model := "auto-code"
-  G->>O: ext_authz: may this project use auto-code?
-  O-->>G: allow
-  G->>O: callout for virtual model auto-code {project, task: code}
-  O-->>G: {"model": "gemini-3.8-flash"} (best allowed for code)
-  G->>M: request with model gemini-3.8-flash
-```
+1. **VSR, what kind of request is this?** It runs as an ext_proc filter in the
+   gateway's `PreRouting` phase, only for `/v1/chat/completions` with
+   `model: "auto"`. It rewrites `auto` to `auto-code`, `auto-reasoning` or
+   `auto-general`.
+2. **OPA, which model may this project use for it?** Each `auto*` name is an
+   `AgentgatewayModel` virtual model. Its `callout` posts `{project, task}` to
+   `/v1/data/gateway/select/result`, and the gateway routes to the answer.
 
-1. **VSR rewrites `auto` to a task class.** It runs as an ext_proc filter in the
-   gateway's `PreRouting` phase, with a CEL condition so that only
-   `/v1/chat/completions` requests whose `model` is `auto` go to it. Its
-   decisions point at the class names (`auto-code`, `auto-reasoning`,
-   `auto-general`) rather than at real models. The gateway then routes on the
-   rewritten `model`.
-2. **Each class is a virtual model whose callout asks OPA.** The callout sends
-   `{project, task}`. OPA walks the class's preference list, for example `code →
-   [deepseek-v4-pro, gemini-3.8-flash, qwen3.6-27b]`, keeps only the models in
-   `allowed(project)`, and returns the first. If none remains, it returns the
-   project's cheapest allowed model.
-3. **If VSR is down,** the ext_proc filter fails open. The request goes on with
-   `model: "auto"`, a virtual model whose callout sends only the project, so OPA
-   returns the project's default (cheapest allowed). The request still gets an
-   answer.
+Rejected:
+- **VSR's own agentgateway setup,** where VSR picks the model and OPA refuses
+  afterwards. Users would get 403 whenever VSR's favourite isn't allowed.
+- **OPA calling VSR's routing preview API.** VSR binds its management API to
+  `127.0.0.1` unless bearer auth is configured, and the prompt would end up in
+  OPA's input and decision log.
 
-```yaml
-# ext_proc to VSR, in PreRouting so the rewritten model drives routing
-apiVersion: agentgateway.dev/v1alpha1
-kind: AgentgatewayPolicy
-metadata:
-  name: agentgateway-proxy-vsr
-spec:
-  targetRefs: [{group: gateway.networking.k8s.io, kind: Gateway, name: agentgateway-proxy}]
-  traffic:
-    phase: PreRouting
-    extProc:
-      conditional:
-      - condition: 'request.path == "/v1/chat/completions" && json(request.body).model == "auto"'
-        policy:
-          backendRef: {name: semantic-router, port: 50051}
-          failureMode: FailOpen
-          processingOptions:
-            requestHeaderMode: Send
-            requestBodyMode: Buffered
-            responseHeaderMode: Send
-            responseBodyMode: None
-            requestTrailerMode: Skip
-            responseTrailerMode: Skip
----
-# One per task class; the callout tells OPA the class
-apiVersion: agentgateway.dev/v1alpha1
-kind: AgentgatewayModel
-metadata:
-  name: auto-code
-spec:
-  parentRefs: [{group: gateway.networking.k8s.io, kind: Gateway, name: agentgateway-proxy, sectionName: http}]
-  match: {model: auto-code}
-  virtualModel:
-    callout:
-      backendRef: {name: opa, port: 8181}
-      headers: {":path": '"/v1/data/gateway/select"', ":method": '"POST"', content-type: '"application/json"'}
-      body: '{"input": {"project": apiKey.project, "task": "code"}}'
-      transformation: {model: 'callout.body.result.model'}
-      cache: {key: ['apiKey.project'], ttl: 1m}
-```
+Failure behaviour:
+- **VSR down:** the ext_proc filter fails open. The request goes on as `auto`,
+  and the project gets its default.
+- **OPA has no answer:** 503. There is no fallback model, because a fallback
+  would also serve projects OPA doesn't know.
 
-VSR's side of the config: each decision points at a class name instead of a
-real model:
+The gateway's ext_authz check sees `auto`, not the model behind it. That is safe
+only because selection is a subset of authorization.
 
-```yaml
-config:
-  providers:
-    defaults: {model: auto-general}
-    models:
-      - {name: auto-code, provider_model_id: auto-code, backend_refs: [{name: gateway, provider: vllm, endpoint: agentgateway-proxy.mini-platform.svc.cluster.local:80, weight: 1}]}
-      # auto-reasoning, auto-general: the same
-  routing:
-    signals:
-      domains:
-        - {name: computer science, description: "Algorithms, data structures, programming, software engineering"}
-        - {name: math, description: "Mathematics, algebra, calculus, geometry, statistics"}
-        - {name: other, description: "General knowledge and miscellaneous topics"}
-    decisions:
-      - name: code
-        priority: 20
-        rules: {operator: OR, conditions: [{type: domain, name: computer science}]}
-        modelRefs: [{model: auto-code, use_reasoning: false}]
-      # reasoning (math, physics, "step by step"), general (other): the same
-```
+### No selection cache
 
-The `backend_refs` are required by VSR's schema but are not called. The
-gateway, not VSR, sends the request on.
+The first version of the `auto` models cached OPA's answer for a minute per
+project. Codex review on #28 found the hole. A cache hit skips OPA, and
+ext_authz only sees `auto`. After a policy change revoked the cached model, for
+example kagent's DeepSeek exception, the gateway would keep routing to it until
+the entry expired. The cache is now off by default (`auto.cacheTTL: ""`). The
+callout costs about a millisecond.
 
-Other ways that were rejected:
+### Routing rules
 
-- **VSR picks the concrete model, OPA's ext_authz denies what isn't allowed.**
-  This is VSR's documented agentgateway setup. It fails the request with 403
-  whenever VSR's favourite isn't allowed for the project. Selection has to be
-  limited to allowed models; refusing afterwards is not enough.
-- **OPA calls VSR's routing preview API (`/api/v1/routing/preview`) with
-  `http.send`.** VSR binds its management API to `127.0.0.1`, unless
-  `management_api.remote_exposure` is turned on with bearer auth. It would also
-  put the prompt in OPA's input and decision logs.
+| `routing` | Order |
+|-----------|-------|
+| `cheapest` (default) | blended price `(3 × input + output) / 4` |
+| `fastest` | median model request duration, then price |
+| `semantic` | the task class's list in the catalog, then cheapest |
+| `fixed:<model>` | that model, then cheapest |
 
-### Choosing without VSR: `cheapest`, `fastest`, `fixed`
+**Prices** come from agentgateway v1.7.0's built-in price table, the same
+rates behind its cost metrics. Each one was checked against
+`agentgateway_gen_ai_client_cost_usd_total`. For example, Gemini 4 Argon: 136
+input × $2 + 24 output × $10 per million tokens = $0.000512, exactly what the
+metric recorded. DeepSeek is billed at $0.66 / $1.98. On-prem Qwen costs $0.
 
-A project whose `routing` is not `semantic` still sends `auto`, through the same
-virtual-model callout. OPA ignores the task class and picks by the project's
-rule:
+### Rankings at decision time, not in the bundle
 
-```yaml
-apiVersion: agentgateway.dev/v1alpha1
-kind: AgentgatewayModel
-metadata:
-  name: auto
-spec:
-  parentRefs: [{group: gateway.networking.k8s.io, kind: Gateway, name: agentgateway-proxy, sectionName: http}]
-  match: {model: auto}
-  virtualModel:
-    callout:
-      backendRef: {name: opa, port: 8181}
-      headers:
-        ":path": '"/v1/data/gateway/select"'
-        ":method": '"POST"'
-        content-type: '"application/json"'
-      body: '{"input": {"project": apiKey.project}}'
-      transformation:
-        model: 'callout.body.result.model'
-      cache:
-        key: ['apiKey.project']
-        ttl: 1m
-      # No fallback, so a failed callout returns 503. A fallback would also
-      # serve projects OPA doesn't know. If one is added, make it the most
-      # restricted model (on-prem).
-```
+The design proposed an OCP `http` data source that pulls the rankings into the
+policy bundle. The spike (below) showed OCP fails the **whole** bundle build
+while a data source is unreachable. A Prometheus outage would then block every
+policy change, key revocations included.
 
-The selection rule uses the same `allowed(p)` set as authorization, so it can
-only pick a model the project may use:
+A separate rankings bundle doesn't work either. OPA's readiness probe is
+`/health?bundles`, so a missing rankings bundle would leave OPA unready, and the
+fail-closed gateway would refuse everything.
 
-```rego
-# Preference list: the task class's list when VSR supplied one (semantic
-# projects), then the project's own rule. Only allowed models survive.
-candidates := array.concat(
-	object.get(data.task_prefs, object.get(input, "task", ""), []),
-	ranked_by_project_rule, # cheapest | fastest | fixed:<model>
-)
+So `rankings.rego` asks Prometheus through `http.send`, for `fastest` projects
+only:
+- a 300 ms timeout, with errors ignored
+- a 2-minute inter-query cache
+- the signal is median request duration over 6 hours, at least 3 requests,
+  scoped to the production gateway
 
-select := {"model": [m | some m in candidates; m in allowed(project)][0]}
-```
+There is no time-to-first-token metric without streaming traffic. Failed calls
+count too, so a throttled model ranks as slow. If Prometheus is down, `fastest`
+is `cheapest`. Authorization never reads it.
 
-Read `input.task` with `object.get`. When the plain `auto` callout sends no
-`task`, a bare `input.task` is undefined, and Rego then makes all of `select`
-undefined. The callout fails with 503 instead of falling back; the spike hit
-exactly this. Add a unit test for a request with no task.
+### Limits and budgets outside OPA
 
-There is also a choice of which mechanism makes the pick:
+Limits and budgets are counters, not policy, so they live in a global rate-limit
+service (`envoyproxy/ratelimit`, with Redis), not in OPA. `gen-projects.py`
+generates its config from the projects' `limits` and `budget`. The gateway
+sends three descriptors per request:
 
-- **Fastest at this moment.** `failover` virtual models are the better fit.
-  Targets at the same priority are picked by a health and latency score that
-  the gateway itself measures. Use them for a group such as "fast on-prem
-  models". OPA's choice is better for "fastest by policy", based on
-  minutes-old rankings.
-- **Simple per-project rules.** `conditional` virtual models pick by CEL, for
-  example `apiKey.project == "x"`. They need no OPA, but every rule lives in
-  gateway YAML. That doesn't scale to 200 projects.
+| Descriptor | Unit | Counted |
+|------------|------|---------|
+| `requests` | Requests | before the call |
+| `tokens` | Tokens | when the call completes |
+| `budget_micro_usd` | Tokens, cost `int(llm.cost.total * 1e6)` | when the call completes |
 
-### Authorization still runs, on `auto`
+- **When counts happen:** tokens and cost are known only after a call, so the
+  call that crosses a limit finishes and the next one gets 429.
+- **The budget window:** the service's "month" is a fixed 30-day window counted
+  from the Unix epoch, not a calendar month. Hence the field is called
+  `budget.usd_per_30_days`.
+- **The ConfigMap symlink:** the service needs `RUNTIME_IGNOREDOTFILES=true`.
+  Otherwise it reads the ConfigMap's file a second time through `..data` and
+  rejects the "duplicate domain".
+- **Failure:** the policy fails open, because these are cost control and OPA
+  still decides access.
 
-The gateway's ext_authz call runs before the virtual model is resolved, so OPA
-sees `model: "auto"` (spike 1, below). With VSR, it should see the rewritten
-`auto-<task>`, because ext_authz runs in `PostRouting`, after VSR's
-`PreRouting` rewrite. That follows from the documented filter order but wasn't
-tested. `authz.rego` therefore allows `auto` and the `auto-*` classes for any
-project whose `allowed` set is not empty. The concrete model is then whatever
-`select` returned.
+### Reporting
 
-Virtual models must have `visibility: Public` (the CRD rejects anything
-else), so a client can also ask for `auto-code` directly. That gets around
-VSR's classification only. OPA still picks from the project's allowed models.
+- **Metrics:** every gateway metric carries a `project` label from the key's
+  metadata. Requests without a valid key get `unknown`. Key ids stay out of
+  labels, to keep cardinality low; they are in OPA's decision log.
+- **Dashboard:** "Agentgateway projects" shows per project:
+  - requests, refusals, tokens and cost
+  - a cost table by project and model
+  - the model mix, which shows what `auto` picked
+  - latency and MCP calls
 
-Both rules come from the same bundle and the same `allowed` set, so the pair
-holds by construction. A unit test checks it for every project:
-`select(p) in allowed(p)`.
+### One bundle, no OCP stacks
 
-Concrete models that should only be reached through `auto` get
-`visibility: Internal`. A direct request for one returns 404.
-
-## OCP
-
-- **One bundle,** `gateway`, for the gateway's OPA. 200 projects is a few
-  hundred kilobytes of data. Separate bundles only make sense when separate
-  OPA fleets need different policy.
-- **Sources** listed as `requirements` of the bundle:
-  - the Rego, from Git at `policies/gateway`
-  - the project and exception data, generated by CI from `projects/`, from Git
-  - the rankings: an `http` datasource reading MinIO, fetched at build time.
-    `rebuild_interval` on the bundle sets how stale they can get.
-- **Stacks** add mandatory sources, such as org-wide guardrails, to every
-  bundle whose labels match. With one bundle that is the same as a
-  requirement. Stacks start to matter once there is more than one bundle, for
-  example per environment.
+200 projects is a few hundred kilobytes of data, so there is one bundle. OCP
+stacks, which add mandatory sources by label, only matter once separate OPA
+fleets need different policy.
 
 ## How long changes take
 
 | Change | Path | Delay |
 |--------|------|-------|
-| Project or policy change | merge → OCP rebuild (30–60 s) → OPA polls (10–30 s), then up to the 1-minute callout cache for `auto` | about 1–3 min |
-| Revoke a key quickly | add its `key_id` to `data.revoked_keys`, which authz checks | same as above |
-| Remove a key | Vault → VSO refresh → gateway reload | VSO refresh interval |
-| Rankings | CronJob → MinIO → next OCP rebuild | job interval + rebuild interval |
+| Project, catalog or Rego change | merge → OCP rebuild (30–60 s) → OPA poll (10–30 s) | 1–2 min |
+| Revoke a key | drop its id from the project file | the same |
+| Remove a key from Vault | bootstrap → VSO refresh → gateway reload | VSO interval (1 min) |
+| New model routes or `auto` models | merge → Argo CD sync of `agentgateway-config` | sync |
+| Limits and budgets | merge → Argo CD sync of `rate-limit` (pod restart) | sync |
+| Rankings | Prometheus → OPA cache | ≤ 2 min |
 
-## Reporting
+## Rollouts that needed care
 
-- **Metrics.** `frontend.metrics.attributes.add` on the Gateway adds
-  `project` (from `apiKey.project`) as a label on every metric, token usage and
-  cost included. That's enough for chargeback, a dashboard per project and
-  budget alerts. 200 projects × a handful of models is an acceptable number of
-  label combinations. `key_id` must not be a metric label; it goes in logs.
-- **Decision logs.** OPA's decision logs in Loki carry `project`, `key_id`, the
-  requested model and the reason.
+- **Key metadata `{client}` → `{project, key_id}`** (#25, #26). The policy, the
+  gateway config and the keys in Vault update at different times, and the
+  gateway fails closed. Both formats were accepted during the switch: CEL
+  `default(apiKey.project, apiKey.client)` and a policy fallback. That was
+  checked first on a throwaway gateway. The fallback was removed once Vault held
+  only new-style keys, whose values were unchanged (same SHA-256 fingerprints).
+- **Argo CD's root app pins its own source revision** separately from the child
+  apps' `deployRevision`. A new app in the app-of-apps list (VSR, rate-limit)
+  only appears after the root's own `targetRevision` moves.
+- **Defaulted fields cause drift.** The API server fills in `group` and `kind`
+  on `backendRef`s. Templates spell them out, or Argo CD reports the object
+  OutOfSync forever (#31).
 
-## Spike 2: VSR for `auto` (2026-11-10, VSR 0.4.0)
+## Spikes
 
-This spike used the same kind of setup as spike 1. It added VSR from chart 0.4.0
-on CPU, with three decisions: `code`, `reasoning` and `general`. It also had
-five mock models named after the real ones, three projects, and the policies
-above. Everything was deleted afterwards.
+All spikes ran on throwaway gateways in `mini-platform`, named `spike-…` and
+deleted afterwards. One early spike reused real model object names, and
+`kubectl apply` overwrote two production `AgentgatewayModel`s; Argo CD's
+self-heal restored them within seconds. After that, every spike object got the
+`spike-` prefix and was checked for collisions before applying.
 
-| Prompt | Project allows all | Project allows on-prem + GCP | Project allows on-prem only |
-|--------|--------------------|------------------------------|-----------------------------|
-| "Write a Python function that merges two sorted lists" (VSR: `code`) | `deepseek-v4-pro` | `gemini-3.8-flash` | `qwen3.6-27b` |
-| "Prove that the square root of 2 is irrational" (VSR: `reasoning`) | `gemini-4-argon` | `gemini-4-argon` | `qwen3.6-27b` |
-| "What is a good name for a cat?" (VSR: `general`) | `gemini-3.5-flash-lite` | `gemini-3.5-flash-lite` | `qwen3.6-27b` |
-
-| Check | Result |
-|-------|--------|
-| VSR down (ext_proc `FailOpen`) | **200** for every project, from its cheapest allowed model |
-| Client asks for `auto-reasoning` directly | **200**, still limited to the project's allowed models |
-| Added latency | About 40 ms for VSR on CPU. Requests took 45–65 ms through VSR, against 5–10 ms without it, with mock models |
-| Response headers | VSR adds `x-vsr-selected-decision`, `x-vsr-selected-confidence` and others. Strip them, or keep them for debugging |
-| VSR resources | About 3 GiB of memory with mmBERT on CPU, 3.6 GB of classifier models on the PVC, 42 s to start with the models cached. The chart requests 1 CPU and 3 GiB by default and limits memory to 7 GiB |
-
-Not covered by spike 2:
-
-- Streaming responses: the mock models don't stream.
-- ext_authz on the rewritten class.
-- VSR's own features (semantic cache, jailbreak and PII detection) are left
-  off for now. VSR's response cache is per prompt, not per project, so it would
-  need a project-aware key before being turned on.
-
-## Spike 1: OPA callout (2026-11-10, agentgateway v1.7.0, OPA 1.22.2)
-
-The spike ran on the live cluster in a separate Gateway, `spike-gw`, so the
-real gateway was untouched. It had:
-
-- three mock OpenAI models with `visibility: Internal`, each with a placement,
-  a price and a latency
-- the `auto` virtual model above
-- its own OPA serving `select` from a ConfigMap
-- keys for three projects
-
-Everything was deleted afterwards.
+### 1. OPA callout (agentgateway 1.7.0, OPA 1.22.2)
 
 | Check | Result |
 |-------|--------|
-| `auto`, `cheapest`, on-prem + GCP | **200**, the cheapest on-prem model |
-| `auto`, `fastest`, on-prem + GCP | **200**, the GCP model (lowest TTFT) |
-| `auto`, `fastest`, on-prem only | **200**, the faster on-prem model; the GCP model was never considered |
-| Direct request for an `Internal` model | **404** `model_not_found` |
-| No key | **401** |
-| Project OPA doesn't know (no `result`) | **503** `virtual_model_callout_failed` |
-| OPA down, no fallback | **503** `virtual_model_callout_failed` |
-| OPA down, `fallback` set | **200** from the fallback model |
-| What ext_authz sees | `model: "auto"`. ext_authz runs before the callout |
-| `project` label on metrics | Present on `agentgateway_requests_total` and `agentgateway_gen_ai_client_token_usage_*`. `gen_ai_request_model` is the concrete model, not `auto` |
-| Added latency | About 1 ms with the callout result cached, against a mock model |
+| `auto`, cheapest / fastest / on-prem only | 200, the expected model each time |
+| `Internal` concrete model requested directly | 404 |
+| Unknown project, or OPA down without a fallback | 503 `virtual_model_callout_failed` |
+| What ext_authz sees | `auto` (it runs before the callout) |
+| `project` metric label | present on requests and token metrics |
 
-Two findings decide the design:
+### 2. VSR for `auto` (VSR 0.4.0, CPU)
 
-1. **OPA can pick the model** through the gateway's own `callout` virtual model.
-   Neither of the fallbacks the earlier proposal named is needed: there is no
-   header rewrite and no router service.
-2. **Per-project cost and usage come from Prometheus,** not only from logs.
+| Prompt | all placements | on-prem + GCP | on-prem only |
+|--------|----------------|---------------|--------------|
+| code | `deepseek-v4-pro` | `gemini-3.8-flash` | `qwen3.6-27b` |
+| reasoning | `gemini-4-argon` | `gemini-4-argon` | `qwen3.6-27b` |
+| general | `gemini-3.5-flash-lite` | `gemini-3.5-flash-lite` | `qwen3.6-27b` |
 
-## Not covered yet
+With VSR down, every project got its cheapest allowed model. VSR adds about
+40 ms and uses about 3 GiB of memory. It keeps 3.6 GB of classifier models on a
+PVC and starts in 42 s with them cached.
 
-- **Global rate limiting** needs a rate-limit service. Its config and failure
-  mode (open or closed) are a separate piece of work.
-- **Spend cap.** `usd_per_month` needs a budget counter that the rate limiter
-  or OPA can read. The price data is already in the catalog.
-- **`/v1/models`** still lists every public model to every project.
-- **Moving the four current clients** (`open-webui`, `kagent`, `holmes`,
-  `admin`) to project files is mechanical. Each becomes a project with its
-  current class.
+### 3. Rankings through OCP (OCP 0.10, local Docker)
 
-## Plan
+An `http` data source with a `transform_query` built `data.rankings` and rebuilt
+on `rebuild_interval`. **With Prometheus unreachable, the whole bundle failed to
+build.** Bundle roots follow the layout: a top-level `data.json` makes the roots
+`[""]`. This led to the decision-time design above.
 
-1. Model catalog as the single source for both the gateway values and the OPA
-   data.
-2. `projects/` schema, CI check and generator. Move the four current clients
-   to projects.
-3. Rego `allowed`, `select` and `authz` on `allowed`, with tests that include
-   `select(p) in allowed(p)` for every project.
-4. `auto` and `auto-<task>` virtual models. Use `visibility: Internal` where a
-   concrete model should only be reached through them.
-5. VSR (chart 0.4.0, vendored in mini-platform), as a PreRouting ext_proc filter
-   for `auto` only, with task classes and their preference lists in OPA data.
-6. `project` metric label and a Grafana dashboard per project.
-7. Ranking CronJob, and the OCP `http` datasource with `rebuild_interval`.
-8. Global rate limiting and budgets.
+### 4. Rate limits (envoyproxy/ratelimit 5ae0682e, real DeepSeek calls)
+
+| Check | Result |
+|-------|--------|
+| 3 requests/minute | 200 ×3, then 429 |
+| 200 tokens a month (about 90 per call) | 200 ×3, then 429 |
+| cost `llm.cost` | never charged: `llm.cost` is an object; the USD total is `llm.cost.total` |
+| budget of 20 µUSD | first call charged 66 µUSD, then 429 |
+| service down | everything passed (fail-open) |
+| `month` window | started 2026-11-03: a 30-day epoch window |
+
+## Verified on the cluster
+
+- Per-project allow/deny through the real gateway, including OPA's reasons
+  ("model deepseek-v4-pro is not allowed for project open-webui (internal
+  data)") and revocation of an unlisted key id.
+- `auto` with every project, and VSR-driven routing for `admin`:
+  - code → DeepSeek
+  - small talk → Gemini Flash Lite
+  - reasoning → Gemini 4 Argon (Vertex returned 429)
+- Admin's limit: 60 × 200, then 429 with `retry-after`. The budget counter in
+  Redis was charged 5 µUSD for one Flash Lite call.
+
+## Open
+
+- **Limits for the other projects.** Only `admin` has limits (60/min, $25 per 30
+  days). Open WebUI, kagent and Holmes are unlimited.
+- **Routing for the other projects.** They are on `cheapest`. `semantic` or
+  `fastest` sends their `auto` traffic to paid models.
+- **Vertex quota.** Gemini 4 Argon and 3.8 Flash return 429
+  `RESOURCE_EXHAUSTED` under light load, which needs a quota check for
+  `mini-cloud-499820` in `eu`.
+- **`/v1/models`** lists every public model to every project.
+- **Time to first token** needs streaming traffic before `fastest` can use it.
+- **A key service:** keys are created by the bootstrap script. Self-service key
+  issue and rotation for 200 projects needs a small service or portal that
+  writes to Git and Vault.

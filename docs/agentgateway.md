@@ -437,8 +437,8 @@ curl -s http://agentgateway.test/v1/chat/completions -H "Authorization: Bearer $
 
 ## Scaling to many projects
 
-[multi-project-policy.md](multi-project-policy.md) describes how this grows to
-hundreds of projects with several keys each. It covers per-project placement,
-model and routing rules, and `model: "auto"`. For `auto`, vLLM Semantic Router
-classifies the prompt and OPA picks the best model the project is allowed. Both
-were checked in spikes on agentgateway 1.7.
+[multi-project-policy.md](multi-project-policy.md) is the design record for
+hundreds of projects with several keys each: the decisions behind projects, the
+catalog, `auto` selection with the vLLM Semantic Router, rankings, rate limits
+and budgets, what changed while building them, and the spikes behind each
+choice.
