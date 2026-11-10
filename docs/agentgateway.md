@@ -340,6 +340,18 @@ rejected.
   `agentgateway_gen_ai_server_time_to_first_token` and
   `agentgateway_requests_total`. The upstream dashboard is in Grafana as
   **Agentgateway**.
+- **Per project.** Every proxy metric carries a `project` label, taken from
+  the API key's metadata (`policies.yaml`, `frontend.metrics`). Requests
+  without a valid key get `unknown`. Key ids and users are not labels; they
+  are in OPA's decision log. The **Agentgateway projects** dashboard
+  (`app-resources/dashboards/agentgateway-projects.json`) shows, per project:
+  - requests, refusals by policy (403), tokens and cost
+  - a table of cost and tokens by project and model
+  - the model mix, which shows what `auto` picked
+  - model request duration and MCP calls
+
+  Cost uses agentgateway's own price table, the same prices as
+  `catalog/models.yaml`. Self-hosted models count as $0.
 - **Traces.** OTLP goes to Alloy, then to Tempo, under service name
   `agentgateway-proxy`. Langfuse gets the clients' own traces (kagent, Holmes,
   Open WebUI projects), not a per-call gateway project like LiteLLM's.
