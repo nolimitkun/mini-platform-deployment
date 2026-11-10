@@ -44,9 +44,8 @@ spec:
       transformation:
         model: callout.body.result.model
       {{- with $v.auto.cacheTTL }}
-      # The answer depends only on the project (and this model's task), so
-      # it is cached per project. A routing change reaches clients within
-      # this TTL after OPA loads it.
+      # Cached per project: a cache hit skips OPA, so a model the policy has
+      # since revoked is still served until the entry expires (values.yaml).
       cache:
         key:
           - apiKey.project

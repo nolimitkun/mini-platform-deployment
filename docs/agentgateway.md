@@ -237,10 +237,12 @@ Clients reach it through the gateway's virtual models
 | `auto` | the caller's project |
 | `auto-code`, `auto-reasoning`, `auto-general` (one per catalog task) | the project and that task class |
 
-Each one is an `AgentgatewayModel` whose `callout` posts to `opa:8181` and routes
-the request to the model OPA names. The gateway caches the answer per project
-for a minute (`auto.cacheTTL`), so a routing change reaches clients within a
-minute of OPA loading it.
+Each one is an `AgentgatewayModel` whose `callout` posts to `opa:8181` on every
+request and routes the request to the model OPA names. A cache
+(`auto.cacheTTL`) is off on purpose. A cache hit skips OPA, and the gateway's
+ext_authz only ever sees `auto`. So after a policy change revokes the cached
+model, the gateway would keep serving it until the entry expired. Uncached, the
+callout adds about a millisecond.
 
 If OPA has no answer for the project, the request fails with 503
 `virtual_model_callout_failed`. There is no fallback model on purpose: a
