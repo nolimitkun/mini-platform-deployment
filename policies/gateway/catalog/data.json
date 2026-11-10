@@ -16,27 +16,67 @@
   "models": {
     "deepseek-v4-pro": {
       "placement": "external",
+      "price": {
+        "input": 0.66,
+        "output": 1.98
+      },
       "provider": "Deepseek"
     },
     "gemini-3.5-flash": {
       "placement": "gcp",
+      "price": {
+        "input": 1.5,
+        "output": 9
+      },
       "provider": "VertexAI"
     },
     "gemini-3.5-flash-lite": {
       "placement": "gcp",
+      "price": {
+        "input": 0.3,
+        "output": 2.5
+      },
       "provider": "VertexAI"
     },
     "gemini-3.8-flash": {
       "placement": "gcp",
+      "price": {
+        "input": 0.75,
+        "output": 3.75
+      },
       "provider": "VertexAI"
     },
     "gemini-4-argon": {
       "placement": "gcp",
+      "price": {
+        "input": 2,
+        "output": 10
+      },
       "provider": "VertexAI"
     },
     "qwen3.6-27b": {
       "placement": "onprem",
+      "price": {
+        "input": 0,
+        "output": 0
+      },
       "provider": "OpenAI"
     }
+  },
+  "tasks": {
+    "code": [
+      "deepseek-v4-pro",
+      "gemini-3.8-flash",
+      "qwen3.6-27b"
+    ],
+    "general": [
+      "gemini-3.5-flash-lite",
+      "qwen3.6-27b"
+    ],
+    "reasoning": [
+      "gemini-4-argon",
+      "deepseek-v4-pro",
+      "qwen3.6-27b"
+    ]
   }
 }

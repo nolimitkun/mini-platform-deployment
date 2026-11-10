@@ -11,6 +11,8 @@ package gateway.authz
 
 import rego.v1
 
+import data.gateway.lib
+
 default allow := false
 
 # What agentgateway attaches after checking the API key (agentgateway-config
@@ -27,13 +29,6 @@ project := data.projects[project_id]
 # The key is one the project lists. Dropping a key id from the project file
 # revokes it as soon as OPA loads the new bundle.
 authenticated if key_id in project.keys
-
-# The project's placements, capped by its data class even if the generated
-# data says otherwise.
-placements := {p |
-	some p in project.placement
-	p in data.gateway.classes[project.data_class]
-}
 
 # Without the query string, so "/v1/models?x" is still "/v1/models".
 path := split(input.attributes.request.http.path, "?")[0]
@@ -57,7 +52,7 @@ allow if {
 	parts := split(path, "/")
 	parts[1] == "google"
 	count(parts) > 3
-	data.catalog.google_apis[parts[2]].placement in placements
+	data.catalog.google_apis[parts[2]].placement in lib.placements(project_id)
 }
 
 # MCP (the merged endpoint at /mcp). A project with mcp_tools may open
@@ -90,19 +85,7 @@ tool_call if {
 
 model_path if path in {"/v1/chat/completions", "/v1/completions", "/v1/responses", "/v1/messages", "/v1/embeddings"}
 
-# A catalog model in one of the project's placements that its models.allow
-# patterns match.
-allowed_model(m) if {
-	data.catalog.models[m].placement in placements
-	some pattern in project.models_allow
-
-	# null: no delimiters, so * also matches the dots in "qwen3.6-27b"
-	# ([] would default to "."). The same matching as fnmatch in gen-projects.py.
-	glob.match(pattern, null, m)
-}
-
-# Named, owned exceptions (projects/_exceptions.yaml).
-allowed_model(m) if m in object.get(data.exceptions, project_id, {}).models
+allowed_model(m) if m in lib.allowed(project_id)
 
 # Why a request was refused, for the decision log and the 403 body.
 reason := "unknown project" if {

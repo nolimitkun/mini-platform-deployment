@@ -9,8 +9,9 @@ Outputs:
       what the gateway chart needs: one entry per model with its provider
       settings, and the Google API routes.
   policies/gateway/catalog/data.json
-      what the gateway policy needs, as data.catalog: each model's and each
-      Google API's placement and provider. No endpoints or secret names.
+      what the gateway policy needs, as data.catalog: each model's placement,
+      provider and price, each Google API's placement, and the task classes.
+      No endpoints or secret names.
 """
 
 import argparse
@@ -43,8 +44,9 @@ NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$")
 
 def validate(catalog):
     errors = []
-    if set(catalog) - {"models", "googleApis"}:
-        errors.append(f"unknown top-level keys: {sorted(set(catalog) - {'models', 'googleApis'})}")
+    top = {"models", "googleApis", "tasks"}
+    if set(catalog) - top:
+        errors.append(f"unknown top-level keys: {sorted(set(catalog) - top)}")
 
     models = catalog.get("models") or {}
     if not models:
@@ -67,12 +69,30 @@ def validate(catalog):
         if provider not in PROVIDERS:
             errors.append(f"{where}.provider: must be one of {sorted(PROVIDERS)}")
             continue
+        price = m.get("price")
+        if not (
+            isinstance(price, dict)
+            and set(price) == {"input", "output"}
+            and all(isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0 for v in price.values())
+        ):
+            errors.append(f"{where}.price: needs input and output, USD per million tokens, each >= 0")
         spec = PROVIDERS[provider]
-        fields = set(m) - {"placement", "provider"}
+        fields = set(m) - {"placement", "provider", "price"}
         for f in sorted(spec["required"] - fields):
             errors.append(f"{where}: {provider} needs {f}")
         for f in sorted(fields - spec["required"] - spec["optional"]):
             errors.append(f"{where}: {f} is not a {provider} setting")
+
+    for task, prefs in (catalog.get("tasks") or {}).items():
+        where = f"tasks.{task}"
+        if not NAME_RE.match(task) or "." in task:
+            errors.append(f"{where}: name must be lowercase letters, digits and '-'")
+        if not isinstance(prefs, list) or not prefs or len(set(prefs)) != len(prefs):
+            errors.append(f"{where}: must be a non-empty list of distinct model names")
+            continue
+        for m in prefs:
+            if m not in models:
+                errors.append(f"{where}: {m!r} is not a catalog model")
 
     for name, api in (catalog.get("googleApis") or {}).items():
         where = f"googleApis.{name}"
@@ -97,7 +117,7 @@ def render(catalog):
     apis = catalog.get("googleApis") or {}
     gateway = {
         "models": [
-            {"name": name, **{k: v for k, v in m.items() if k != "placement"}}
+            {"name": name, **{k: v for k, v in m.items() if k not in ("placement", "price")}}
             for name, m in models.items()
         ],
         "googleApis": {
@@ -106,8 +126,12 @@ def render(catalog):
         },
     }
     policy = {
-        "models": {name: {"placement": m["placement"], "provider": m["provider"]} for name, m in models.items()},
+        "models": {
+            name: {"placement": m["placement"], "provider": m["provider"], "price": m["price"]}
+            for name, m in models.items()
+        },
         "google_apis": {name: {"placement": a["placement"]} for name, a in apis.items()},
+        "tasks": catalog.get("tasks") or {},
     }
     return {
         GATEWAY_OUT: json.dumps(gateway, indent=2) + "\n",

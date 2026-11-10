@@ -8,6 +8,11 @@
 #   policies/gateway/catalog/data.json                     (OPA: data.catalog)
 # CI (scripts/validate-gitops.sh) fails if either is out of date.
 #
+# price: USD per million tokens, input and output, as agentgateway v1.7.0's
+# built-in price table bills them (the same rates behind its cost metrics; checked
+# against agentgateway_gen_ai_client_cost_usd_total). Self-hosted models have no
+# per-token charge. The policy's "cheapest" routing ranks by these.
+#
 # placement: where the data goes. The data classes in policies/gateway/data.json
 # decide which placements a client may use.
 #   onprem    on this cluster
@@ -22,12 +27,14 @@ models:
     placement: onprem
     provider: OpenAI
     baseURL: http://vllm-router-service.mini-platform.svc.cluster.local/v1
+    price: {input: 0, output: 0}
 
   # Hosted, over the internet. The key comes from Vault (agentgateway-deepseek).
   deepseek-v4-pro:
     placement: external
     provider: Deepseek
     secretRef: agentgateway-deepseek
+    price: {input: 0.66, output: 1.98}
 
   # Gemini on Vertex AI, eu multi-region. agentgateway calls
   # aiplatform.eu.rep.googleapis.com, which scripts/gcp-psc-dns.sh pins to
@@ -36,18 +43,31 @@ models:
     placement: gcp
     provider: VertexAI
     region: eu
+    price: {input: 2, output: 10}
   gemini-3.8-flash:
     placement: gcp
     provider: VertexAI
     region: eu
+    price: {input: 0.75, output: 3.75}
   gemini-3.5-flash:
     placement: gcp
     provider: VertexAI
     region: eu
+    price: {input: 1.5, output: 9}
   gemini-3.5-flash-lite:
     placement: gcp
     provider: VertexAI
     region: eu
+    price: {input: 0.3, output: 2.5}
+
+# Task classes for model "auto" with semantic routing: the vLLM Semantic Router
+# names the class of a prompt, and the policy tries these models in order,
+# keeping only those the project may use. A project with none of them left gets
+# its cheapest allowed model.
+tasks:
+  code: [deepseek-v4-pro, gemini-3.8-flash, qwen3.6-27b]
+  reasoning: [gemini-4-argon, deepseek-v4-pro, qwen3.6-27b]
+  general: [gemini-3.5-flash-lite, qwen3.6-27b]
 
 # Google's own APIs, passed through unchanged with the keyless login added:
 # clients call /google/<name>/<the API's own path>. Every host is pinned to a

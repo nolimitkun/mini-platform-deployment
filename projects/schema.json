@@ -5,7 +5,12 @@
   "description": "One project of the model and tool gateway (docs/agentgateway.md). scripts/gen-projects.py checks this schema plus the cross-file rules it can't express.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["project", "owner", "data_class", "keys"],
+  "required": [
+    "project",
+    "owner",
+    "data_class",
+    "keys"
+  ],
   "properties": {
     "project": {
       "description": "The project id. Must match the file name.",
@@ -17,17 +22,30 @@
       "type": "string",
       "minLength": 1
     },
-    "description": {"type": "string"},
+    "description": {
+      "type": "string"
+    },
     "data_class": {
       "description": "The most sensitive data the project sends. Caps the placements it may use (policies/gateway/data.json classes).",
-      "enum": ["restricted", "confidential", "internal", "public"]
+      "enum": [
+        "restricted",
+        "confidential",
+        "internal",
+        "public"
+      ]
     },
     "placement": {
       "description": "Where the project's requests may go. Optional; defaults to everything its data_class allows, and may only narrow that.",
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": {"enum": ["onprem", "gcp", "external"]}
+      "items": {
+        "enum": [
+          "onprem",
+          "gcp",
+          "external"
+        ]
+      }
     },
     "models": {
       "type": "object",
@@ -38,22 +56,36 @@
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": {"type": "string", "minLength": 1}
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
+    },
+    "routing": {
+      "description": "How model \"auto\" picks a model for this project, always among the models it may use. cheapest: lowest price in catalog/models.yaml. fastest: lowest time to first token measured by the ranking job, cheapest first where none is known yet. semantic: the vLLM Semantic Router names the task class and catalog tasks give the order, cheapest as the fallback. fixed:<model>: always that model. Default: cheapest.",
+      "type": "string",
+      "pattern": "^(cheapest|fastest|semantic|fixed:[a-z0-9.-]+)$"
     },
     "keys": {
       "description": "Ids of the project's API keys. The secrets themselves are in Vault (scripts/bootstrap-vault-secrets.sh). A key whose id is not listed here is refused. Each id is the project id, or the project id followed by a dash and a suffix.",
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": {"type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"}
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"
+      }
     },
     "mcp_tools": {
       "description": "Glob patterns over the gateway's MCP tool names (grafana_..., kagent-tools_...). Empty or absent: no MCP access.",
       "type": "array",
       "uniqueItems": true,
-      "items": {"type": "string", "minLength": 1}
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   }
 }
