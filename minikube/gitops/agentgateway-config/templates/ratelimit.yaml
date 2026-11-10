@@ -1,0 +1,51 @@
+{{- $v := .Values }}
+{{- if $v.rateLimit.enabled }}
+# Per-project limits and spend caps (projects/*.yaml limits and budget), kept
+# by the rate-limit service so they hold across gateway replicas. Each
+# descriptor is (project, kind); the service only limits the kinds a project
+# configures, so a project without limits is never refused here.
+#   requests          requests per minute, counted up front
+#   tokens            tokens per minute, counted when the call completes
+#   budget_micro_usd  micro-USD per 30-day window, agentgateway's cost of the
+#                     call (llm.cost.total), counted when it completes
+# Counted on completion means the call that crosses a limit still finishes and
+# the next one is refused (429).
+#
+# FailOpen: limits and budgets are cost control, not access control; if the
+# rate-limit service is down, requests go through (OPA still decides access).
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: {{ $v.gatewayName }}-rate-limit
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $v.gatewayName }}
+  traffic:
+    rateLimit:
+      global:
+        # group and kind spelled out: the API server defaults them, and Argo
+        # CD would otherwise report the policy as OutOfSync.
+        backendRef:
+          group: ""
+          kind: Service
+          name: {{ $v.rateLimit.service }}
+          port: {{ $v.rateLimit.port }}
+        domain: {{ $v.rateLimit.domain }}
+        failureMode: FailOpen
+        descriptors:
+          - entries:
+              - {name: project, expression: apiKey.project}
+              - {name: kind, expression: '"requests"'}
+            unit: Requests
+          - entries:
+              - {name: project, expression: apiKey.project}
+              - {name: kind, expression: '"tokens"'}
+            unit: Tokens
+          - entries:
+              - {name: project, expression: apiKey.project}
+              - {name: kind, expression: '"budget_micro_usd"'}
+            unit: Tokens
+            cost: int(llm.cost.total * 1000000.0)
+{{- end }}

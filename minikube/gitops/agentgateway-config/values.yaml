@@ -37,6 +37,14 @@ semanticRouter:
   service: semantic-router
   port: 50051
 
+# Per-project rate limits and spend caps (templates/ratelimit.yaml), kept by
+# the rate-limit app. domain must match scripts/gen-projects.py RATELIMIT_DOMAIN.
+rateLimit:
+  enabled: true
+  service: rate-limit
+  port: 8081
+  domain: agentgateway
+
 # Client API keys, one per client, from Vault (scripts/bootstrap-vault-secrets.sh).
 apiKeysSecret: agentgateway-api-keys
 

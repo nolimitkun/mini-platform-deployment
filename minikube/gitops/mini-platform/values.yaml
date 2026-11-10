@@ -250,6 +250,12 @@ applications:
     resourcesFile: minikube/values/agentregistry-postgresql-resources.yaml
     releaseName: agentregistry-postgresql
     wave: "0"
+  # Per-project rate limits and spend caps for the gateway (envoyproxy/ratelimit).
+  rate-limit:
+    chartPath: minikube/gitops/rate-limit
+    valuesFile: minikube/gitops/rate-limit/values.yaml
+    releaseName: rate-limit
+    wave: "1"
   # vLLM Semantic Router: classifies "auto" prompts for the gateway (ext_proc).
   semantic-router:
     chartPath: charts/semantic-router

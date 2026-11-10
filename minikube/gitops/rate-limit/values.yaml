@@ -1,0 +1,16 @@
+# envoyproxy/ratelimit: the global rate-limit service agentgateway asks on
+# every request (agentgateway-config templates/ratelimit.yaml). Its limits are
+# generated from projects/*.yaml into files/config.yaml by
+# scripts/gen-projects.py; counters live in the shared Redis, so they hold
+# across gateway replicas and restarts.
+image: envoyproxy/ratelimit:5ae0682e
+replicas: 1
+grpcPort: 8081
+
+redis:
+  url: redis-master.mini-platform.svc.cluster.local:6379
+  # The shared Redis's password (redis-values.yaml auth.existingSecret).
+  passwordSecret: redis-credentials
+  passwordKey: redis-password
+  # Keeps these counters apart from everything else in the shared Redis.
+  keyPrefix: "agw_rl_"
