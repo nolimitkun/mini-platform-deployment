@@ -387,5 +387,5 @@ Consult it before changing deploy/bootstrap behavior.
   `scripts/deploy-minikube.sh` now refuses to deploy without. Rootless Docker
   cannot raise a netlink send buffer from inside the node, and kube-proxy's
   nftables proxier needs a bigger one than the default to push this platform's
-  ~90 Services in a single batch. The file explains the rest.
+  ~120 Services in a single batch. The file explains the rest.
 - `.github/workflows/validate.yaml` is the CI gate.

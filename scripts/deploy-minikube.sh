@@ -658,7 +658,7 @@ done
 # needs CAP_NET_ADMIN in the *initial* user namespace and rootless Docker does
 # not have it -- the call returns EPERM, so the socket keeps the default
 # sk_sndbuf, which is net.core.wmem_default. The stock 212992 holds exactly one
-# page, and this platform's ~90 Services render to more than that, so the sync
+# page, and this platform's ~120 Services render to more than that, so the sync
 # fails with "Message too long" and kube-proxy stops being able to update
 # Services. Checked here rather than left to fail later because the symptom is
 # so indirect: existing rules keep forwarding, and a Service only goes dark
