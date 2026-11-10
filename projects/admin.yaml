@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=schema.json
+project: admin
+owner: platform team
+description: For people testing and operating the gateway by hand.
+data_class: public
+keys: [admin]
+mcp_tools: ["*"]

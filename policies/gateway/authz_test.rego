@@ -4,10 +4,15 @@ import rego.v1
 
 import data.gateway.authz
 
-req(client, path, body) := {
+# A request with the project's main key (key id = project id).
+req(project, path, body) := req_key(project, project, path, body)
+
+req_key(project, key_id, path, body) := with_metadata({"project": project, "key_id": key_id}, path, body)
+
+with_metadata(md, path, body) := {
 	"attributes": {
 		"request": {"http": {"path": path, "method": "POST"}},
-		"metadataContext": {"filterMetadata": {"agentgateway": {"client": client}}},
+		"metadataContext": {"filterMetadata": {"agentgateway": md}},
 	},
 	"parsed_body": body,
 }
@@ -28,13 +33,50 @@ test_exception_allows_named_model_only if {
 	not authz.allow with input as chat("kagent", "some-other-model")
 }
 
-test_restricted_client_is_onprem_only if {
+vault_app := {
+	"data_class": "restricted", "placement": ["onprem"], "models_allow": ["*"],
+	"keys": ["vault-app"], "mcp_tools": [], "owner": "t",
+}
+
+test_restricted_project_is_onprem_only if {
 	authz.allow with input as chat("vault-app", "qwen3.6-27b")
-		with data.gateway.clients["vault-app"] as "restricted"
+		with data.projects["vault-app"] as vault_app
 	not authz.allow with input as chat("vault-app", "gemini-3.5-flash")
-		with data.gateway.clients["vault-app"] as "restricted"
+		with data.projects["vault-app"] as vault_app
 	not authz.allow with input as req("vault-app", "/google/speech/v2/projects/p/locations/eu/recognizers/_:recognize", {})
-		with data.gateway.clients["vault-app"] as "restricted"
+		with data.projects["vault-app"] as vault_app
+}
+
+# Even if the generated data listed gcp, the restricted class caps it.
+test_data_class_caps_placement if {
+	not authz.allow with input as chat("vault-app", "gemini-3.5-flash")
+		with data.projects["vault-app"] as object.union(vault_app, {"placement": ["onprem", "gcp"]})
+}
+
+test_models_allow_narrows if {
+	single := object.union(vault_app, {"data_class": "internal", "placement": ["onprem", "gcp"], "models_allow": ["gemini-3.5-*"]})
+	authz.allow with input as chat("vault-app", "gemini-3.5-flash-lite")
+		with data.projects["vault-app"] as single
+	not authz.allow with input as chat("vault-app", "qwen3.6-27b")
+		with data.projects["vault-app"] as single
+	not authz.allow with input as chat("vault-app", "gemini-4-argon")
+		with data.projects["vault-app"] as single
+}
+
+test_key_must_be_listed if {
+	authz.allow with input as req_key("open-webui", "open-webui", "/v1/models", {})
+	not authz.allow with input as req_key("open-webui", "open-webui-old", "/v1/models", {})
+	authz.reason == "key open-webui-old is not active for project open-webui" with input as req_key("open-webui", "open-webui-old", "/v1/models", {})
+	authz.allow with input as req_key("open-webui", "open-webui-2", "/v1/models", {})
+		with data.projects["open-webui"].keys as ["open-webui", "open-webui-2"]
+}
+
+# Keys written before projects carry only {"client": ...}, which is the
+# project id, and their key id was that same name.
+test_pre_project_key_metadata if {
+	authz.allow with input as with_metadata({"client": "open-webui"}, "/v1/chat/completions", {"model": "qwen3.6-27b"})
+	not authz.allow with input as with_metadata({"client": "open-webui"}, "/v1/chat/completions", {"model": "deepseek-v4-pro"})
+	not authz.allow with input as with_metadata({"client": "stranger"}, "/v1/models", {})
 }
 
 test_unknown_client_and_model_denied if {
@@ -59,9 +101,9 @@ test_other_paths_denied if {
 }
 
 test_reason if {
-	authz.reason == "model deepseek-v4-pro is not allowed for internal data" with input as chat("open-webui", "deepseek-v4-pro")
-	authz.reason == "unknown client" with input as chat("stranger", "x")
-	authz.reason == "unknown client" with input as {"attributes": {"request": {"http": {"path": "/v1/models"}}}}
+	authz.reason == "model deepseek-v4-pro is not allowed for project open-webui (internal data)" with input as chat("open-webui", "deepseek-v4-pro")
+	authz.reason == "unknown project" with input as chat("stranger", "x")
+	authz.reason == "unknown project" with input as {"attributes": {"request": {"http": {"path": "/v1/models"}}}}
 }
 
 test_decision_shape if {
@@ -83,7 +125,7 @@ test_mcp_tool_calls_by_pattern if {
 	authz.allow with input as mcp("kagent", {"method": "tools/call", "params": {"name": "grafana_query_prometheus"}})
 	authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "grafana_query_loki_logs"}})
 	not authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "kagent-tools_k8s_delete_resource"}})
-	authz.reason == "tool kagent-tools_k8s_delete_resource is not allowed for holmes" with input as mcp("holmes", {"method": "tools/call", "params": {"name": "kagent-tools_k8s_delete_resource"}})
+	authz.reason == "tool kagent-tools_k8s_delete_resource is not allowed for project holmes" with input as mcp("holmes", {"method": "tools/call", "params": {"name": "kagent-tools_k8s_delete_resource"}})
 }
 
 test_mcp_needs_an_entry if {
@@ -91,7 +133,7 @@ test_mcp_needs_an_entry if {
 }
 
 # Every model and Google API in the catalog has a placement some class allows,
-# so nothing is routable but unusable by every client.
+# so nothing is routable but unusable by every project.
 test_catalog_entries_usable_by_some_class if {
 	every m in data.catalog.models {
 		some placements in data.gateway.classes
@@ -108,4 +150,13 @@ test_placement_read_from_catalog if {
 		with data.catalog.models["qwen3.6-27b"].placement as "external"
 	authz.allow with input as chat("open-webui", "new-model")
 		with data.catalog.models["new-model"] as {"placement": "onprem", "provider": "OpenAI"}
+}
+
+# Every project's generated placement is within its data class.
+test_projects_within_their_class if {
+	every p in data.projects {
+		every pl in p.placement {
+			pl in data.gateway.classes[p.data_class]
+		}
+	}
 }

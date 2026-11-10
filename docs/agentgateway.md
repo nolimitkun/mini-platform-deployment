@@ -115,51 +115,107 @@ curl -s http://agentgateway.test/google/tts/v1/text:synthesize \
   -d '{"input":{"text":"Bonjour"},"voice":{"languageCode":"fr-FR","name":"fr-FR-Chirp3-HD-Aoede"},"audioConfig":{"audioEncoding":"MP3"}}'
 ```
 
-## Clients and keys
+## Projects and keys
 
-Each client has its own API key, created by `scripts/bootstrap-vault-secrets.sh`:
+Every API key belongs to a **project**. Each project is one file,
+`projects/<id>.yaml`, checked against [`projects/schema.json`](../projects/schema.json):
+
+```yaml
+project: holmes
+owner: platform team
+data_class: internal            # caps placement (see below)
+placement: [onprem]             # optional; may only narrow the class
+models:
+  allow: ["gemini-3.5-*"]       # optional, default ["*"]; globs over catalog names
+keys: [holmes, holmes-2]        # key ids; the secrets are in Vault
+mcp_tools: ["grafana_*"]        # optional; no MCP access without it
+```
+
+`scripts/gen-projects.py` validates the files, including rules across files:
+
+- the file name is the project id
+- placement stays within the data class
+- every `models.allow` pattern matches a catalog model
+- key ids are `<project>` or `<project>-<suffix>`, and unique
+
+It then generates `policies/gateway/projects/data.json` (`data.projects`) and
+`policies/gateway/exceptions/data.json` (`data.exceptions`). CI fails if they
+are out of date.
+
+Today's projects are the four former clients, each with one key whose id is the
+project id:
+
+| Project | Data class | Mirror (env name the client reads) |
+|---------|------------|------------------------------------|
+| `open-webui` | `internal` | `open-webui-agentgateway` |
+| `kagent` | `internal`, plus the DeepSeek exception | `kagent-agentgateway` |
+| `holmes` | `internal`, plus the DeepSeek exception | `holmes-agentgateway` |
+| `admin` | `public` | none: for people |
+
+Keys are created by `scripts/bootstrap-vault-secrets.sh`, which reads the key
+ids with `gen-projects.py --keys`, so it needs python3 with PyYAML and
+jsonschema:
 
 - `mini-platform/agentgateway-api-keys` is what the gateway reads: one entry per
-  client, `{"key": ..., "metadata": {"client": "<name>"}}`.
-- `mini-platform/agentgateway-client-keys` holds the raw keys.
-- Each client gets a mirror under the env name it reads:
-  `open-webui-agentgateway`, `kagent-agentgateway` and `holmes-agentgateway`.
-- `admin` is for people. It has no mirror.
+  key id, `{"key": ..., "metadata": {"project": ..., "key_id": ...}}`.
+- `mini-platform/agentgateway-client-keys` holds the raw keys under the same
+  ids.
 
-To add a client:
+To add a project, write its file and run `python3 scripts/gen-projects.py`.
+Then merge, and run the bootstrap with `SEED_MISSING_ONLY=true` to create its
+keys.
 
-1. Add it to `AGW_CLIENTS` in the bootstrap script.
-2. Give it a data class in `policies/gateway/data.json`.
-3. Run the bootstrap with `SEED_MISSING_ONLY=true`.
+To rotate a key:
+
+1. Add a second id, such as `holmes-2`, and create it with the bootstrap.
+2. Move the client to the new key.
+3. Remove the old id from the project file. OPA refuses the old key as soon as
+   the new bundle is live (`key holmes is not active for project holmes`). The
+   next bootstrap run drops it from Vault.
 
 ## Policy
 
-`policies/gateway/authz.rego` decides each request. Its data is in
-`policies/gateway/data.json` (classes, clients, exceptions, MCP tools) and in
-`policies/gateway/catalog/data.json` (placements, generated from the catalog).
+`policies/gateway/authz.rego` decides each request from:
 
-- **Data classes.** Each client has one, as in mini-cloud's
-  `docs/gcp/ai-inference.md`:
+- `data.projects` and `data.exceptions`, generated from `projects/`
+- `data.catalog`, generated from `catalog/models.yaml`
+- `data.gateway.classes` in `policies/gateway/data.json`, which maps each data
+  class to the placements it may use
+
+The rules:
+
+- **Data classes,** as in mini-cloud's `docs/gcp/ai-inference.md`:
   - `restricted` and `confidential`: `onprem` only
   - `internal`: `onprem` and `gcp`
   - `public`: also `external`
-- **Exceptions.** A client can get named models outside its class, each with
-  an owner and a reason. Today kagent and Holmes are `internal` with an
-  exception for DeepSeek.
-- **Google APIs.** Allowed for classes that may use `gcp`.
-- **MCP.** A client with an `mcp_tools` entry may open sessions and list
-  tools. Each `tools/call` must name a tool that matches one of its patterns,
-  such as `grafana_*`. Tool names carry the target's prefix: `grafana_...` or
+
+  A project may use a model if the model's placement is in the project's
+  placement (capped by its class) and the name matches `models.allow`.
+- **Exceptions** (`projects/_exceptions.yaml`, owned by the platform team). A
+  project can get named models outside its class, each with an owner and a
+  reason. Today kagent and Holmes have one for DeepSeek.
+- **Keys.** The key's id must be listed in its project's file.
+- **Google APIs.** Allowed when the API's placement (`gcp`) is in the project's
+  placement.
+- **MCP.** A project with `mcp_tools` may open sessions and list tools. Each
+  `tools/call` must name a tool that matches one of its patterns, such as
+  `grafana_*`. Tool names carry the target's prefix: `grafana_...` or
   `kagent-tools_...`.
 - **Everything else** is denied, with a 403 whose body gives the reason:
   ```json
-  {"error":{"message":"model deepseek-v4-pro is not allowed for internal data","type":"policy_denied"}}
+  {"error":{"message":"model deepseek-v4-pro is not allowed for project open-webui (internal data)","type":"policy_denied"}}
   ```
+
+Keys written before projects carry only `{"client": ...}` metadata. The gateway
+and the policy read that name as both the project id and the key id, until every
+key in Vault has been rewritten.
 
 ### Changing a policy
 
-1. Edit the Rego or the data and run `opa test policies/gateway`. CI runs `opa
-   check`, `opa fmt` and `opa test` too (`scripts/validate-gitops.sh`).
+1. Edit the Rego, the data or a project file, regenerate with
+   `scripts/gen-projects.py`, and run `opa test policies/gateway`. CI runs the
+   generators' `--check`, `opa check`, `opa fmt` and `opa test` too
+   (`scripts/validate-gitops.sh`).
 2. Merge to `main`. OCP checks Git about every 30–60 seconds and publishes a new
    bundle. OPA checks MinIO every 10–30 seconds and loads it. No Argo CD sync is
    involved.

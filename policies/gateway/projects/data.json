@@ -1,0 +1,70 @@
+{
+  "admin": {
+    "data_class": "public",
+    "keys": [
+      "admin"
+    ],
+    "mcp_tools": [
+      "*"
+    ],
+    "models_allow": [
+      "*"
+    ],
+    "owner": "platform team",
+    "placement": [
+      "onprem",
+      "gcp",
+      "external"
+    ]
+  },
+  "holmes": {
+    "data_class": "internal",
+    "keys": [
+      "holmes"
+    ],
+    "mcp_tools": [
+      "grafana_*"
+    ],
+    "models_allow": [
+      "*"
+    ],
+    "owner": "platform team",
+    "placement": [
+      "onprem",
+      "gcp"
+    ]
+  },
+  "kagent": {
+    "data_class": "internal",
+    "keys": [
+      "kagent"
+    ],
+    "mcp_tools": [
+      "grafana_*",
+      "kagent-tools_*"
+    ],
+    "models_allow": [
+      "*"
+    ],
+    "owner": "platform team",
+    "placement": [
+      "onprem",
+      "gcp"
+    ]
+  },
+  "open-webui": {
+    "data_class": "internal",
+    "keys": [
+      "open-webui"
+    ],
+    "mcp_tools": [],
+    "models_allow": [
+      "*"
+    ],
+    "owner": "platform team",
+    "placement": [
+      "onprem",
+      "gcp"
+    ]
+  }
+}

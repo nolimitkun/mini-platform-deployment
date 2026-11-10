@@ -92,14 +92,17 @@ Default AI request path: `Open WebUI → agentgateway → vLLM Router → vLLM`.
 **agentgateway** is the platform's model and tool gateway (`docs/agentgateway.md`):
 one OpenAI-compatible endpoint for every model (vLLM, Gemini on Vertex AI over the
 mini-cloud VPN, DeepSeek), passthrough routes to Google's speech APIs, and one MCP
-endpoint over the cluster's MCP servers. Every request carries a per-client API key
+endpoint over the cluster's MCP servers. Every request carries a per-project API key
 and is decided by **OPA** (ext_authz, FailClosed) from the Rego in `policies/gateway`,
 which the **OPA Control Plane (OCP)** builds from this repo's `main` on GitHub into a
 bundle in MinIO — so a policy change goes live on merge, without an Argo CD sync, and
 must pass `opa test` (run by `validate-gitops.sh`). Models and Google APIs are declared
 once in `catalog/models.yaml`; `scripts/gen-catalog.py` generates the gateway chart's
 `files/catalog.json` and the policy's `catalog/data.json` from it (CI checks they are
-current). **agentregistry** is the catalog of
+current). API keys belong to projects, one file each in `projects/` (data class,
+placement, allowed models, key ids, MCP tools); `scripts/gen-projects.py` validates them
+against `projects/schema.json` and generates the policy's `data.projects`, and the Vault
+bootstrap reads the key ids from it. **agentregistry** is the catalog of
 MCP servers and agents; its entries live in `minikube/gitops/agentregistry-catalog`.
 
 An alternative **llm-d serving path** exists behind `enabled: false` app-of-apps
@@ -230,7 +233,7 @@ Seven components speak OIDC natively (Grafana, Open WebUI, Superset,
 JupyterHub, Argo CD, MinIO, Langfuse). Three cannot and sit behind a shared
 **oauth2-proxy** as ingress-nginx forward-auth: MLflow, kagent, and
 agentregistry. HolmesGPT and agentgateway are outside the scheme altogether: no browser UI, so
-they authenticate their own requests (`HOLMES_API_KEY`, per-client gateway API
+they authenticate their own requests (`HOLMES_API_KEY`, per-project gateway API
 keys) and their routes are left unprotected. A route opts in with `protectedPaths` in its own
 `minikube/values/<name>-resources.yaml`, which renders a second Ingress
 carrying the auth annotations plus an unauthenticated `/oauth2` Ingress; the
