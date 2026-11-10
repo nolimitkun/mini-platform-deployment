@@ -384,8 +384,9 @@ Consult it before changing deploy/bootstrap behavior.
 - `tools/` holds what is applied by hand, outside the GitOps reconciliation:
   optional utility workloads (`net-tools.yaml`, `vllm-bench.yaml`) and
   `99-rootless-k8s-netlink.conf`, a host sysctl drop-in that
-  `scripts/deploy-minikube.sh` now refuses to deploy without. Rootless Docker
-  cannot raise a netlink send buffer from inside the node, and kube-proxy's
-  nftables proxier needs a bigger one than the default to push this platform's
-  ~120 Services in a single batch. The file explains the rest.
+  `scripts/deploy-minikube.sh` refuses to deploy without under rootless Docker
+  on Linux. Rootless Docker cannot raise a netlink send buffer from inside the
+  node, and kube-proxy's nftables proxier needs a bigger one than the default
+  to push this platform's ~120 Services in a single batch. The file explains
+  the rest.
 - `.github/workflows/validate.yaml` is the CI gate.
