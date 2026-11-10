@@ -68,6 +68,36 @@
       "type": "string",
       "pattern": "^(cheapest|fastest|semantic|fixed:[a-z0-9.-]+)$"
     },
+    "limits": {
+      "description": "Rate limits, shared by all of the project's keys and all gateway replicas (rate-limit service). Absent: no limit. Tokens are counted when a call completes, so the call that crosses the limit still finishes and the next one is refused.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "requests_per_minute": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "tokens_per_minute": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "budget": {
+      "description": "Spend cap in USD over a fixed 30-day window (the rate-limit service's month: 30-day periods counted from the Unix epoch, not calendar months), at agentgateway's prices (catalog/models.yaml). Self-hosted models cost nothing. Charged when a call completes, so the call that crosses the cap still finishes. Absent: no cap.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "usd_per_30_days"
+      ],
+      "properties": {
+        "usd_per_30_days": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
     "keys": {
       "description": "Ids of the project's API keys. The secrets themselves are in Vault (scripts/bootstrap-vault-secrets.sh). A key whose id is not listed here is refused. Each id is the project id, or the project id followed by a dash and a suffix.",
       "type": "array",

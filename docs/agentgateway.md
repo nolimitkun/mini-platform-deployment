@@ -42,6 +42,7 @@ flowchart LR
 | Gateway config | `agentgateway-config` (`minikube/gitops/agentgateway-config`) | The `agentgateway-proxy` Gateway, one `AgentgatewayModel` per model, passthrough routes to Google's APIs, the merged MCP endpoint, and policies for API keys, OPA and tracing |
 | OPA | `opa-policy` (`minikube/gitops/opa-policy`) | `opa-envoy`, answering ext_authz over gRPC on `opa:9191` |
 | OCP | `opa-policy` | Builds `policies/<bundle>` from this repo's `main` branch on GitHub into `opa-bundles/<bundle>/bundle.tar.gz` in MinIO |
+| Rate-limit service | `rate-limit` (`minikube/gitops/rate-limit`) | Per-project request, token and spend limits, in Redis (see "Rate limits and budgets") |
 | vLLM Semantic Router | `semantic-router` | Classifies `auto` prompts into task classes for the gateway, over ext_proc (see "The semantic router") |
 | agentregistry | `agentregistry`, `agentregistry-postgresql`, `agentregistry-catalog` | The catalog of MCP servers (and later agents), at `agentregistry.test` behind the Keycloak login. Its entries live in `minikube/gitops/agentregistry-catalog/files/catalog.yaml` |
 
@@ -129,6 +130,11 @@ placement: [onprem]             # optional; may only narrow the class
 models:
   allow: ["gemini-3.5-*"]       # optional, default ["*"]; globs over catalog names
 routing: cheapest               # optional, for model "auto": cheapest | fastest | semantic | fixed:<model>
+limits:                         # optional; shared by all the project's keys
+  requests_per_minute: 60
+  tokens_per_minute: 200000
+budget:                         # optional
+  usd_per_30_days: 25
 keys: [holmes, holmes-2]        # key ids; the secrets are in Vault
 mcp_tools: ["grafana_*"]        # optional; no MCP access without it
 ```
@@ -207,6 +213,38 @@ The rules:
   ```json
   {"error":{"message":"model deepseek-v4-pro is not allowed for project open-webui (internal data)","type":"policy_denied"}}
   ```
+
+### Rate limits and budgets
+
+A project's `limits` and `budget` are enforced by the `rate-limit` app
+(`envoyproxy/ratelimit`, chart `minikube/gitops/rate-limit`). Its counters are
+in the shared Redis, so they hold across gateway replicas and restarts.
+`gen-projects.py` generates its config, `rate-limit/files/config.yaml`, from
+the project files. The gateway's `rateLimit` policy (`templates/ratelimit.yaml`)
+asks the service on every request, with three counters per project:
+
+| Field | Counted | When |
+|-------|---------|------|
+| `limits.requests_per_minute` | requests | before the call |
+| `limits.tokens_per_minute` | input + output tokens | when the call completes |
+| `budget.usd_per_30_days` | agentgateway's cost of the call (`llm.cost.total`), in micro-USD | when the call completes |
+
+Tokens and cost are only known once a call completes. So the call that crosses
+a limit still finishes, and the next one gets 429. The budget uses agentgateway's
+prices, the same as the catalog's, so on-prem Qwen costs nothing. Its window is
+the rate-limit service's "month": a fixed 30-day period counted from the Unix
+epoch, not a calendar month.
+
+A project without `limits` or `budget` has no entry in the service's config and
+is never limited. Today only `admin` has limits: 60 requests a minute and $25
+per 30 days.
+
+The policy fails open. If the rate-limit service is down, requests go through;
+limits and budgets are cost control, and OPA still decides access.
+
+A change to a project's limits goes live on the next Argo CD sync of
+`rate-limit`, which restarts the service with the new config. It does not go
+through OCP.
 
 ### Model selection for `auto`
 
@@ -390,8 +428,6 @@ curl -s http://agentgateway.test/v1/chat/completions -H "Authorization: Bearer $
 
 ## Limits
 
-- **Local rate limits only.** Token and request limits are per proxy replica.
-  A shared limit needs a global rate-limit service.
 - **Model list not filtered.** `/v1/models` lists every model to every client.
   OPA only refuses the call.
 - **No MCP auth to the targets.** The targets trust the network.

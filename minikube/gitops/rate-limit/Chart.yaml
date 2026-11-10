@@ -1,0 +1,5 @@
+apiVersion: v2
+name: rate-limit
+description: Mini Platform's rate-limit service (envoyproxy/ratelimit) - per-project request, token and spend limits for agentgateway.
+type: application
+version: 0.1.0

@@ -1,0 +1,84 @@
+{{- $v := .Values }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rate-limit-config
+data:
+  config.yaml: |
+{{ .Files.Get "files/config.yaml" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rate-limit
+  labels: {app.kubernetes.io/name: rate-limit}
+spec:
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels: {app.kubernetes.io/name: rate-limit}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: rate-limit}
+      annotations:
+        # The service loads its config at start; a new config rolls the pod.
+        checksum/config: {{ .Files.Get "files/config.yaml" | sha256sum | trunc 16 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: ratelimit
+          image: {{ $v.image }}
+          command: [/bin/ratelimit]
+          env:
+            - {name: LOG_LEVEL, value: info}
+            - {name: LOG_FORMAT, value: json}
+            - {name: USE_STATSD, value: "false"}
+            - {name: GRPC_PORT, value: {{ $v.grpcPort | quote }}}
+            - {name: REDIS_SOCKET_TYPE, value: tcp}
+            - {name: REDIS_URL, value: {{ $v.redis.url | quote }}}
+            - name: REDIS_AUTH
+              valueFrom:
+                secretKeyRef: {name: {{ $v.redis.passwordSecret }}, key: {{ $v.redis.passwordKey }}}
+            - {name: CACHE_KEY_PREFIX, value: {{ $v.redis.keyPrefix | quote }}}
+            # Config at $RUNTIME_ROOT/$RUNTIME_SUBDIRECTORY/config/*.yaml.
+            - {name: RUNTIME_ROOT, value: /data}
+            - {name: RUNTIME_SUBDIRECTORY, value: ratelimit}
+            - {name: RUNTIME_WATCH_ROOT, value: "false"}
+            # A ConfigMap volume also shows the file under ..data/; without
+            # this the service reads it twice and rejects the duplicate domain.
+            - {name: RUNTIME_IGNOREDOTFILES, value: "true"}
+          ports:
+            - {name: grpc, containerPort: {{ $v.grpcPort }}}
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /healthcheck, port: http}
+          livenessProbe:
+            httpGet: {path: /healthcheck, port: http}
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: config, mountPath: /data/ratelimit/config, readOnly: true}
+      volumes:
+        - name: config
+          configMap: {name: rate-limit-config}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rate-limit
+  labels: {app.kubernetes.io/name: rate-limit}
+spec:
+  selector: {app.kubernetes.io/name: rate-limit}
+  ports:
+    - name: grpc
+      port: {{ $v.grpcPort }}
+      targetPort: grpc
+      appProtocol: kubernetes.io/h2c

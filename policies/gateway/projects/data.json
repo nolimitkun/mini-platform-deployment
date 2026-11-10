@@ -1,9 +1,15 @@
 {
   "admin": {
+    "budget": {
+      "usd_per_30_days": 25
+    },
     "data_class": "public",
     "keys": [
       "admin"
     ],
+    "limits": {
+      "requests_per_minute": 60
+    },
     "mcp_tools": [
       "*"
     ],
@@ -19,10 +25,12 @@
     "routing": "semantic"
   },
   "holmes": {
+    "budget": {},
     "data_class": "internal",
     "keys": [
       "holmes"
     ],
+    "limits": {},
     "mcp_tools": [
       "grafana_*"
     ],
@@ -37,10 +45,12 @@
     "routing": "cheapest"
   },
   "kagent": {
+    "budget": {},
     "data_class": "internal",
     "keys": [
       "kagent"
     ],
+    "limits": {},
     "mcp_tools": [
       "grafana_*",
       "kagent-tools_*"
@@ -56,10 +66,12 @@
     "routing": "cheapest"
   },
   "open-webui": {
+    "budget": {},
     "data_class": "internal",
     "keys": [
       "open-webui"
     ],
+    "limits": {},
     "mcp_tools": [],
     "models_allow": [
       "*"
