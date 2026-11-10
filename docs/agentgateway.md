@@ -223,9 +223,9 @@ agentgateway answers `/v1/models` itself, with every public model and its
 metadata. For that path OPA's decision adds a request header,
 `x-allowed-models`, naming the project's models (`listed_models` in
 `authz.rego`), and the `agentgateway-proxy-models-list` policy keeps only
-those entries. If the header is missing, the list goes out whole. The list is
-cosmetic: authorization still decides every call, so a client that sends its
-own header changes only what it sees.
+those entries. OPA's header replaces any the client sends. If the header is
+missing, the list goes out whole. The list is cosmetic: authorization still
+decides every call.
 
 ### Rate limits and budgets
 
@@ -428,6 +428,21 @@ rejected.
 - **Traces.** OTLP goes to Alloy, then to Tempo, under service name
   `agentgateway-proxy`. Langfuse gets the clients' own traces (kagent, Holmes,
   Open WebUI projects), not a per-call gateway project like LiteLLM's.
+- **Alerts.** Prometheus rules, generated with the rate-limit config by
+  `gen-projects.py` into `minikube/gitops/app-resources/alerts/`, so their
+  thresholds follow `projects/*.yaml`. They show in Grafana under Alerting;
+  Alertmanager has no receivers yet, so nothing is sent anywhere.
+
+  | Alert | Fires when |
+  |---|---|
+  | `GatewayProjectBudgetForecast` | The last 24 hours of spend, times 30, is over 80% of the project's 30-day budget, for 30 minutes |
+  | `GatewayProjectRateLimited` | The gateway answered 429 to a project because of its own limit or budget (`reason="RateLimit"`) in the last 10 minutes |
+  | `GatewayUpstreamThrottled` | A provider answered 429 five times or more in 15 minutes (`reason="Upstream"`), usually the Vertex quota |
+
+  The forecast uses one day because Prometheus keeps 15 days and the
+  rate-limit service's 30-day count isn't in it. A project's very first 429s
+  after a gateway restart don't count: Prometheus can't take an increase from
+  a series that only just appeared.
 
 ## Checks
 

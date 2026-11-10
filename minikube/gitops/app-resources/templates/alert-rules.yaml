@@ -1,0 +1,24 @@
+{{- /*
+Prometheus alert rules, one ConfigMap per entry, mounted into the Prometheus
+server and watched by its config reloader (prometheus-values.yaml,
+extraConfigmapMounts). The rules live beside this chart in alerts/, for the
+same reason dashboards do: the vendored chart is replaced on every bump.
+
+Only prometheus-resources.yaml populates `alertRules`, so this renders nothing
+for every other release that uses this chart.
+*/}}
+{{- range .Values.alertRules }}
+{{- $path := printf "alerts/%s.yml" . }}
+{{- $body := $.Files.Get $path }}
+{{- if not $body }}
+{{- fail (printf "alertRules: %s is listed in a *-resources.yaml but %s does not exist" . $path) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-alerts-{{ . }}
+data:
+  {{ . }}.yml: |
+{{ $body | indent 4 }}
+---
+{{- end }}
