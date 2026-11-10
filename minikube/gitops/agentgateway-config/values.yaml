@@ -30,6 +30,13 @@ auto:
   # millisecond.
   cacheTTL: ""
 
+# vLLM Semantic Router (semantic-router app, templates/vsr.yaml): rewrites
+# "auto" to auto-<task> for projects whose routing is semantic to make use of.
+semanticRouter:
+  enabled: true
+  service: semantic-router
+  port: 50051
+
 # Client API keys, one per client, from Vault (scripts/bootstrap-vault-secrets.sh).
 apiKeysSecret: agentgateway-api-keys
 

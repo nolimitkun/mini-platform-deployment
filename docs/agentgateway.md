@@ -42,6 +42,7 @@ flowchart LR
 | Gateway config | `agentgateway-config` (`minikube/gitops/agentgateway-config`) | The `agentgateway-proxy` Gateway, one `AgentgatewayModel` per model, passthrough routes to Google's APIs, the merged MCP endpoint, and policies for API keys, OPA and tracing |
 | OPA | `opa-policy` (`minikube/gitops/opa-policy`) | `opa-envoy`, answering ext_authz over gRPC on `opa:9191` |
 | OCP | `opa-policy` | Builds `policies/<bundle>` from this repo's `main` branch on GitHub into `opa-bundles/<bundle>/bundle.tar.gz` in MinIO |
+| vLLM Semantic Router | `semantic-router` | Classifies `auto` prompts into task classes for the gateway, over ext_proc (see "The semantic router") |
 | agentregistry | `agentregistry`, `agentregistry-postgresql`, `agentregistry-catalog` | The catalog of MCP servers (and later agents), at `agentregistry.test` behind the Keycloak login. Its entries live in `minikube/gitops/agentregistry-catalog/files/catalog.yaml` |
 
 Endpoints inside the cluster:
@@ -261,9 +262,36 @@ curl -s http://agentgateway.test/v1/chat/completions -H "Authorization: Bearer $
   -d '{"model":"auto","messages":[{"role":"user","content":"hi"}]}' | jq -r .model
 ```
 
-The `auto-<task>` models are for the vLLM Semantic Router, which will rewrite
-`auto` to a task class (not deployed yet). Called directly, they only use the
-task class for projects whose routing is `semantic`.
+### The semantic router
+
+The vLLM Semantic Router (VSR, app `semantic-router`, chart 0.4.0) classifies
+the prompt of every chat completion whose model is `auto`. It rewrites the
+model to `auto-code`, `auto-reasoning` or `auto-general`, and OPA then picks
+the project's model for that class. The steps:
+
+1. agentgateway sends the request to VSR over ext_proc, in the `PreRouting`
+   phase (`templates/vsr.yaml`). Nothing else goes to VSR: other paths, or
+   other models, never leave the gateway for it.
+2. VSR's decisions (`minikube/values/semantic-router-values.yaml`) match
+   domain signals: computer science and engineering → `auto-code`; math,
+   physics or "step by step" → `auto-reasoning`; anything else →
+   `auto-general`. `gen-catalog.py --check` fails if a decision names anything
+   but the catalog's task classes.
+3. The task class matters only for projects whose routing is `semantic`.
+   Today that is `admin`; the others keep `cheapest` and ignore it.
+
+VSR never chooses the concrete model. It has no per-project allowlist, so it
+can't tell that an on-prem-only project must not go to Gemini; OPA can.
+
+If VSR is down, the ext_proc filter fails open. The request goes on as `auto`,
+and the project gets its default, the cheapest model it may use.
+
+VSR sees prompts but keeps none of them. Its response cache, Responses API store
+and tools are off, and response bodies are never sent to it. Its classifier
+models (about 3.6 GB) come from Hugging Face on first start and stay on its
+PVC. It uses about 3 GiB of memory on CPU and adds about 40 ms per `auto`
+request. Its responses carry `x-vsr-selected-decision` and
+`x-vsr-selected-confidence` headers, which show the class it chose.
 
 ### Changing a policy
 

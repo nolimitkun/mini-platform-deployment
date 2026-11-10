@@ -16,7 +16,7 @@
       "gcp",
       "external"
     ],
-    "routing": "cheapest"
+    "routing": "semantic"
   },
   "holmes": {
     "data_class": "internal",

@@ -250,6 +250,12 @@ applications:
     resourcesFile: minikube/values/agentregistry-postgresql-resources.yaml
     releaseName: agentregistry-postgresql
     wave: "0"
+  # vLLM Semantic Router: classifies "auto" prompts for the gateway (ext_proc).
+  semantic-router:
+    chartPath: charts/semantic-router
+    valuesFile: minikube/values/semantic-router-values.yaml
+    releaseName: semantic-router
+    wave: "1"
   agentregistry:
     chartPath: charts/agentregistry
     valuesFile: minikube/values/agentregistry-values.yaml

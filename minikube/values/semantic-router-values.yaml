@@ -1,0 +1,154 @@
+# vLLM Semantic Router (VSR), charts/semantic-router. It classifies each prompt
+# sent as model "auto" and rewrites the model to a task class, auto-<task>; the
+# gateway then asks OPA which model the caller's project gets for that class
+# (docs/agentgateway.md, "Model selection for auto"). VSR never picks a concrete
+# model: it has no per-project allowlist, so it could send an on-prem-only
+# project to Gemini.
+#
+# agentgateway calls it over ext_proc (agentgateway-config templates/vsr.yaml),
+# only for /v1/chat/completions requests whose model is "auto", and fails open:
+# if VSR is down the request goes on as "auto" and gets the project's default.
+#
+# The decisions below must name exactly the catalog's task classes
+# (catalog/models.yaml tasks); scripts/gen-catalog.py --check verifies it.
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9190"
+  prometheus.io/path: /metrics
+
+# The classifier models (mmBERT and friends, about 3.6 GB) are downloaded from
+# Hugging Face at first start and kept on this volume.
+persistence:
+  enabled: true
+  storageClassName: ""
+  size: 5Gi
+
+# Measured: about 3 GiB resident on CPU with the classifiers loaded.
+resources:
+  requests:
+    cpu: 500m
+    memory: 3Gi
+  limits:
+    cpu: "2"
+    memory: 6Gi
+
+# The first start downloads the models: allow up to 30 minutes.
+startupProbe:
+  failureThreshold: 180
+
+dashboard:
+  enabled: false
+
+config:
+  version: v0.3
+  listeners:
+    - name: grpc-50051
+      address: 0.0.0.0
+      port: 50051
+      timeout: 300s
+    # The management API; the router binds it to 127.0.0.1 regardless, so
+    # nothing outside the pod reaches it.
+    - name: http-8080
+      address: 0.0.0.0
+      port: 8080
+      timeout: 300s
+  providers:
+    defaults:
+      model: auto-general
+      reasoning_effort: high
+    # The task classes, as VSR models. VSR's schema needs a backend for each,
+    # but it never calls them: agentgateway sends the request on, to the model
+    # OPA picks.
+    models:
+      - name: auto-code
+        provider_model_id: auto-code
+        backend_refs:
+          - {name: gateway, provider: vllm, endpoint: "agentgateway-proxy.mini-platform.svc.cluster.local:80", protocol: http, weight: 1}
+      - name: auto-reasoning
+        provider_model_id: auto-reasoning
+        backend_refs:
+          - {name: gateway, provider: vllm, endpoint: "agentgateway-proxy.mini-platform.svc.cluster.local:80", protocol: http, weight: 1}
+      - name: auto-general
+        provider_model_id: auto-general
+        backend_refs:
+          - {name: gateway, provider: vllm, endpoint: "agentgateway-proxy.mini-platform.svc.cluster.local:80", protocol: http, weight: 1}
+  routing:
+    modelCards:
+      - name: auto-code
+      - name: auto-reasoning
+      - name: auto-general
+    signals:
+      keywords:
+        - name: thinking
+          operator: OR
+          case_sensitive: false
+          keywords: [step by step, prove, think carefully, derive]
+      domains:
+        - {name: computer science, description: "Algorithms, data structures, programming, software engineering"}
+        - {name: engineering, description: "Engineering disciplines, design, problem-solving, systems"}
+        - {name: math, description: "Mathematics, algebra, calculus, geometry, statistics"}
+        - {name: physics, description: "Physical laws, mechanics, thermodynamics, electromagnetism, quantum physics"}
+        - {name: other, description: "General knowledge and miscellaneous topics"}
+    decisions:
+      - name: reasoning
+        description: Math, physics and multi-step reasoning
+        priority: 30
+        rules:
+          operator: OR
+          conditions:
+            - {type: domain, name: math}
+            - {type: domain, name: physics}
+            - {type: keyword, name: thinking}
+        modelRefs:
+          - {model: auto-reasoning, use_reasoning: false}
+      - name: code
+        description: Programming and software engineering
+        priority: 20
+        rules:
+          operator: OR
+          conditions:
+            - {type: domain, name: computer science}
+            - {type: domain, name: engineering}
+        modelRefs:
+          - {model: auto-code, use_reasoning: false}
+      - name: general
+        description: Everything else
+        priority: 1
+        rules:
+          operator: OR
+          conditions:
+            - {type: domain, name: other}
+        modelRefs:
+          - {model: auto-general, use_reasoning: false}
+  global:
+    router:
+      strategy: priority
+    services:
+      # Off: VSR only classifies here, and none of these may keep prompts.
+      response_api:
+        enabled: false
+        store_backend: memory
+        ttl_seconds: 86400
+        max_responses: 1000
+    stores:
+      # Off: a semantic cache would hand one project's answer to another.
+      response_cache:
+        enabled: false
+        backend_type: memory
+        similarity_threshold: 0.8
+        max_entries: 1000
+        ttl_seconds: 3600
+        eviction_policy: fifo
+        embedding_model: mmbert
+      memory:
+        embedding_model: mmbert
+      vector_store:
+        embedding_model: mmbert
+    integrations:
+      tools:
+        enabled: false
+        top_k: 3
+        similarity_threshold: 0.2
+        tools_db_path: config/tools_db.json
+        fallback_to_empty: true
