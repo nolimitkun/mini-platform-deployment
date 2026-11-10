@@ -1,6 +1,7 @@
 {{- $v := .Values }}
-# Every request needs a client API key (Authorization: Bearer <key>). The
-# entries carry {"client": "<name>"} metadata, which the OPA policy keys on.
+# Every request needs a project API key (Authorization: Bearer <key>). The
+# entries carry {"project": ..., "key_id": ...} metadata, which the OPA policy
+# keys on (projects/*.yaml, scripts/bootstrap-vault-secrets.sh).
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
@@ -18,7 +19,7 @@ spec:
 {{- if $v.extAuth.enabled }}
 ---
 # Then OPA decides (opa-policy chart, policies/gateway in this repo). It gets
-# the request with its body, plus the authenticated client name; FailClosed,
+# the request with its body, plus the key's project and key id; FailClosed,
 # so an unreachable OPA denies everything rather than allowing it.
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
@@ -39,9 +40,12 @@ spec:
         maxSize: {{ $v.extAuth.maxBodyBytes }}
       grpc:
         # Each entry becomes one metadata_context.filter_metadata struct, so
-        # the value has to be a CEL map, not a bare string.
+        # the value has to be a CEL map, not a bare string. The default()s
+        # cover keys written before projects, which carry only {"client": ...}
+        # (that name is now the project id and the key id); drop them once
+        # every key in Vault has project and key_id.
         requestMetadata:
-          agentgateway: '{"client": apiKey.client}'
+          agentgateway: '{"project": default(apiKey.project, apiKey.client), "key_id": default(apiKey.key_id, apiKey.client)}'
 
 {{- end }}
 ---

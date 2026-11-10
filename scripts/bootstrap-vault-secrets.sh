@@ -325,30 +325,35 @@ kv_put mini-platform/holmes-api \
 
 
 # agentgateway, the platform's model and tool gateway (docs/agentgateway.md).
-# One API key per client. agentgateway reads agentgateway-api-keys, one entry
-# per client whose JSON value carries the key and the client name the OPA
-# policy keys on (policies/gateway); each client reads its raw key from
-# agentgateway-client-keys. Both are written from the same values, reused on a
-# SEED_MISSING_ONLY pass so a client never holds a key the gateway does not.
-AGW_CLIENTS=(open-webui kagent holmes admin)
+# API keys belong to projects: each projects/<id>.yaml lists its key ids, and
+# scripts/gen-projects.py --keys prints them. agentgateway reads
+# agentgateway-api-keys, one entry per key id whose JSON value carries the key
+# and the {project, key_id} the OPA policy keys on (policies/gateway); the raw
+# keys are in agentgateway-client-keys under the same key ids. Both are written
+# from the same values, reused on a SEED_MISSING_ONLY pass so a client never
+# holds a key the gateway does not. A key id removed from its project file is
+# dropped from both maps here, and OPA refuses it as soon as the new policy
+# bundle is live.
+agw_keys="$(python3 "$(dirname "$0")/gen-projects.py" --keys)" \
+  || { echo "ERROR: projects/ is invalid (python3 scripts/gen-projects.py)." >&2; exit 1; }
 agw_raw=() agw_json=()
-for client in "${AGW_CLIENTS[@]}"; do
-  key="$(reuse_or_generate mini-platform/agentgateway-client-keys "$client")"
+while read -r key_id project; do
+  key="$(reuse_or_generate mini-platform/agentgateway-client-keys "$key_id")"
   key="${key:-$(rand_b64)}"
-  agw_raw+=("$client=$key")
-  agw_json+=("$client={\"key\":\"$key\",\"metadata\":{\"client\":\"$client\"}}")
-done
+  agw_raw+=("$key_id=$key")
+  agw_json+=("$key_id={\"key\":\"$key\",\"metadata\":{\"project\":\"$project\",\"key_id\":\"$key_id\"}}")
+done <<< "$agw_keys"
 # Written directly rather than through kv_put: on a SEED_MISSING_ONLY pass both
-# paths already exist, and kv_put would skip them, so a client added to
-# AGW_CLIENTS would get a key that is never stored. The loop above already
-# reuses every existing key, so rewriting both maps adds the new clients and
-# rotates nothing.
+# paths already exist, and kv_put would skip them, so a newly listed key id
+# would get a key that is never stored. The loop above already reuses every
+# existing key, so rewriting both maps adds the new keys and rotates nothing.
 vault_cli kv put mini-platform/agentgateway-client-keys "${agw_raw[@]}"
 vault_cli kv put mini-platform/agentgateway-api-keys "${agw_json[@]}"
 
-# The clients' own copies, under the env names each one reads. Taken from the
-# path just written (not the loop) so a SEED_MISSING_ONLY pass that kept an
-# existing agentgateway-client-keys still hands out the key the gateway knows.
+# The clients' own copies of their projects' main keys, under the env names
+# each one reads. Taken from the path just written (not the loop) so a
+# SEED_MISSING_ONLY pass that kept an existing agentgateway-client-keys still
+# hands out the key the gateway knows.
 # kagent: OPENAI_API_KEY, its OpenAI-protocol client's name. Holmes: anything
 # but OPENAI_API_KEY (see holmes-values.yaml).
 kv_put mini-platform/kagent-agentgateway \

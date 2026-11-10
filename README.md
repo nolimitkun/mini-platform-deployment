@@ -780,7 +780,7 @@ component's `minikube/values/<name>-resources.yaml`):
 - **agentregistry** — the open-source build has no login of its own.
 
 **HolmesGPT** and **agentgateway** are outside this scheme entirely. The gateway
-has no browser UI and authenticates every request with a per-client API key. It has no browser UI — every
+has no browser UI and authenticates every request with a per-project API key. It has no browser UI — every
 route is API — so there is no interactive login to federate, and it
 authenticates each request itself against `HOLMES_API_KEY` from
 `mini-platform/holmes-api`. Putting forward-auth in front of it would 302 every
@@ -902,7 +902,7 @@ kubectl -n "$NS" get jobs -l app.kubernetes.io/name=langfuse-kagent-project
 ```
 
 **Model gateway smoke test.** agentgateway serves every model on one
-OpenAI-compatible endpoint, with a per-client API key and OPA deciding each
+OpenAI-compatible endpoint, with a per-project API key and OPA deciding each
 request (see [docs/agentgateway.md](docs/agentgateway.md)):
 
 ```bash
@@ -1071,7 +1071,7 @@ kubectl -n "$NS" run authcheck --rm -it --restart=Never --image=curlimages/curl 
 
 Expect `302 http://mlflow.test/oauth2/start?rd=%2F`. Swapping the host header
 for `agentgateway.test` with path `/v1/models` should instead return `401` and no
-redirect — the gateway authenticates API traffic itself with per-client keys.
+redirect — the gateway authenticates API traffic itself with per-project keys.
 
 **General health:**
 

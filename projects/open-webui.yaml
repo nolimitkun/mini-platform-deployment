@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=schema.json
+project: open-webui
+owner: platform team
+description: Open WebUI, the platform's chat front end for people.
+data_class: internal
+keys: [open-webui]

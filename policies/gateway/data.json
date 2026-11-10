@@ -16,40 +16,6 @@
         "gcp",
         "external"
       ]
-    },
-    "clients": {
-      "open-webui": "internal",
-      "kagent": "internal",
-      "holmes": "internal",
-      "admin": "public"
-    },
-    "exceptions": {
-      "kagent": {
-        "owner": "platform team",
-        "why": "multi-step tool calling the single-GPU local model can't carry; cluster state and telemetry only",
-        "models": [
-          "deepseek-v4-pro"
-        ]
-      },
-      "holmes": {
-        "owner": "platform team",
-        "why": "same as kagent: root-cause analysis over cluster state and telemetry",
-        "models": [
-          "deepseek-v4-pro"
-        ]
-      }
-    },
-    "mcp_tools": {
-      "kagent": [
-        "grafana_*",
-        "kagent-tools_*"
-      ],
-      "holmes": [
-        "grafana_*"
-      ],
-      "admin": [
-        "*"
-      ]
     }
   }
 }

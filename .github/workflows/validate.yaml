@@ -56,9 +56,9 @@ jobs:
           chmod +x /usr/local/bin/opa
           opa version | head -1
 
-      # PyYAML for scripts/gen-catalog.py (the model catalog check).
-      - name: Check PyYAML
-        run: python3 -c 'import yaml' || python3 -m pip install --user pyyaml
+      # PyYAML and jsonschema for scripts/gen-catalog.py and gen-projects.py.
+      - name: Python modules
+        run: python3 -c 'import yaml, jsonschema' || python3 -m pip install --user pyyaml jsonschema
 
       # shellcheck is preinstalled on ubuntu-latest runners.
       - name: Tool versions

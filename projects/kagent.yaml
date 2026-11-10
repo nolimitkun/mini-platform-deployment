@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=schema.json
+project: kagent
+owner: platform team
+description: kagent's agents. Its DeepSeek exception is in _exceptions.yaml.
+data_class: internal
+keys: [kagent]
+mcp_tools: ["grafana_*", "kagent-tools_*"]

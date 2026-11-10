@@ -2,57 +2,84 @@
 # ext_authz protocol. OCP builds this directory into a bundle and publishes it
 # to MinIO, where the OPA next to the gateway picks it up (opa-policy chart).
 #
-# Placement follows the data classes in mini-cloud docs/gcp/ai-inference.md:
-# each client has a class, each class may use some placements, each model or
-# Google API has one placement (data.catalog, generated from the repo's
-# catalog/models.yaml). Anything not explicitly allowed is denied.
+# Every API key belongs to a project (projects/*.yaml, generated into
+# data.projects by scripts/gen-projects.py). A project has a data class, which
+# caps the placements it may use (mini-cloud docs/gcp/ai-inference.md); each
+# model or Google API has one placement (data.catalog, from catalog/models.yaml).
+# Anything not explicitly allowed is denied.
 package gateway.authz
 
 import rego.v1
 
 default allow := false
 
-# The client name agentgateway attaches after checking the API key
-# (agentgateway-config policies.yaml, requestMetadata.client).
-# OPA-Envoy hands the protobuf over as protojson, hence the camelCase.
-client := input.attributes.metadataContext.filterMetadata.agentgateway.client
+# What agentgateway attaches after checking the API key (agentgateway-config
+# policies.yaml, requestMetadata). OPA-Envoy hands the protobuf over as
+# protojson, hence the camelCase.
+key_metadata := input.attributes.metadataContext.filterMetadata.agentgateway
+
+project_id := key_metadata.project
+
+# A key from before projects carried only {"client": ...}; its id was the
+# client name, which is now the project id. Remove once every key in Vault
+# carries project and key_id.
+project_id := key_metadata.client if not key_metadata.project
+
+key_id := object.get(key_metadata, "key_id", project_id)
+
+project := data.projects[project_id]
+
+# The key is one the project lists. Dropping a key id from the project file
+# revokes it as soon as OPA loads the new bundle.
+authenticated if key_id in project.keys
+
+# The project's placements, capped by its data class even if the generated
+# data says otherwise.
+placements := {p |
+	some p in project.placement
+	p in data.gateway.classes[project.data_class]
+}
 
 # Without the query string, so "/v1/models?x" is still "/v1/models".
 path := split(input.attributes.request.http.path, "?")[0]
 
-# Model calls: the requested model must be one the client's class may use.
+# Model calls: the requested model must be one the project may use.
 allow if {
+	authenticated
 	model_path
-	allowed_model(client, input.parsed_body.model)
+	allowed_model(input.parsed_body.model)
 }
 
-# Listing models reveals nothing a client can't already ask for.
+# Listing models reveals nothing a project can't already ask for.
 allow if {
-	client
+	authenticated
 	path == "/v1/models"
 }
 
 # Google's native APIs (speech, TTS, Vertex) under /google/<api>/.
 allow if {
+	authenticated
 	parts := split(path, "/")
 	parts[1] == "google"
 	count(parts) > 3
-	data.catalog.google_apis[parts[2]].placement in placements(client)
+	data.catalog.google_apis[parts[2]].placement in placements
 }
 
-# MCP (the merged endpoint at /mcp). A client with an mcp_tools entry may open
+# MCP (the merged endpoint at /mcp). A project with mcp_tools may open
 # sessions, list tools and so on; each tools/call must name a tool matching one
 # of its patterns. Tool names carry the target as a prefix, e.g.
 # grafana_query_prometheus.
 allow if {
+	authenticated
 	mcp_path
-	data.gateway.mcp_tools[client]
+	count(project.mcp_tools) > 0
 	not tool_call
 }
 
 allow if {
+	authenticated
 	tool_call
-	some pattern in data.gateway.mcp_tools[client]
+	some pattern in project.mcp_tools
 	glob.match(pattern, [], input.parsed_body.params.name)
 }
 
@@ -68,23 +95,28 @@ tool_call if {
 
 model_path if path in {"/v1/chat/completions", "/v1/completions", "/v1/responses", "/v1/messages", "/v1/embeddings"}
 
-# Placements come from the model catalog (catalog/models.yaml, generated into
-# catalog/data.json here by scripts/gen-catalog.py).
-allowed_model(c, m) if data.catalog.models[m].placement in placements(c)
+# A catalog model in one of the project's placements that its models.allow
+# patterns match.
+allowed_model(m) if {
+	data.catalog.models[m].placement in placements
+	some pattern in project.models_allow
 
-# Named, owned exceptions to the class rule.
-allowed_model(c, m) if m in object.get(data.gateway.exceptions, c, {}).models
+	# null: no delimiters, so * also matches the dots in "qwen3.6-27b"
+	# ([] would default to "."). The same matching as fnmatch in gen-projects.py.
+	glob.match(pattern, null, m)
+}
 
-placements(c) := data.gateway.classes[data.gateway.clients[c]]
-
-known_client if data.gateway.clients[client]
+# Named, owned exceptions (projects/_exceptions.yaml).
+allowed_model(m) if m in object.get(data.exceptions, project_id, {}).models
 
 # Why a request was refused, for the decision log and the 403 body.
-reason := "unknown client" if {
-	not known_client
-} else := sprintf("model %v is not allowed for %v data", [input.parsed_body.model, data.gateway.clients[client]]) if {
+reason := "unknown project" if {
+	not project
+} else := sprintf("key %v is not active for project %v", [key_id, project_id]) if {
+	not authenticated
+} else := sprintf("model %v is not allowed for project %v (%v data)", [input.parsed_body.model, project_id, project.data_class]) if {
 	model_path
-} else := sprintf("tool %v is not allowed for %v", [input.parsed_body.params.name, client]) if {
+} else := sprintf("tool %v is not allowed for project %v", [input.parsed_body.params.name, project_id]) if {
 	tool_call
 } else := "denied"
 
