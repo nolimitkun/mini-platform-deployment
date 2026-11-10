@@ -4,3 +4,11 @@ owner: platform team
 description: Open WebUI, the platform's chat front end for people.
 data_class: internal
 keys: [open-webui]
+# People pick "auto" in the model list: the semantic router's task class, then
+# the best model Open WebUI may use for it.
+routing: semantic
+# Shared by everyone chatting through Open WebUI, so the most headroom.
+limits:
+  requests_per_minute: 120
+budget:
+  usd_per_30_days: 50

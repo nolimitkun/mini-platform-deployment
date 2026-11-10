@@ -5,3 +5,9 @@ description: kagent's agents. Its DeepSeek exception is in _exceptions.yaml.
 data_class: internal
 keys: [kagent]
 mcp_tools: ["grafana_*", "kagent-tools_*"]
+# Agents can loop: a stuck tool-calling run hits the request limit within a
+# minute, and the budget caps what one costs over the month.
+limits:
+  requests_per_minute: 60
+budget:
+  usd_per_30_days: 30
