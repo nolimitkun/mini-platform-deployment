@@ -4,6 +4,10 @@
     python3 scripts/gen-catalog.py           write the generated files
     python3 scripts/gen-catalog.py --check   fail if they are out of date (CI)
 
+It also checks that the vLLM Semantic Router's decisions
+(minikube/values/semantic-router-values.yaml) rewrite to exactly the catalog's
+task classes, auto-<task>.
+
 Outputs:
   minikube/gitops/agentgateway-config/files/catalog.json
       what the gateway chart needs: one entry per model with its provider
@@ -27,6 +31,8 @@ ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "catalog" / "models.yaml"
 GATEWAY_OUT = ROOT / "minikube" / "gitops" / "agentgateway-config" / "files" / "catalog.json"
 POLICY_OUT = ROOT / "policies" / "gateway" / "catalog" / "data.json"
+# The vLLM Semantic Router's config: its decisions must name the task classes.
+VSR_VALUES = ROOT / "minikube" / "values" / "semantic-router-values.yaml"
 
 PLACEMENTS = {"onprem", "gcp", "external"}
 
@@ -117,6 +123,29 @@ def validate(catalog):
     return errors
 
 
+def check_semantic_router(catalog):
+    """VSR's decisions must rewrite to exactly the auto-<task> models."""
+    if not VSR_VALUES.exists():
+        return []
+    where = VSR_VALUES.relative_to(ROOT)
+    config = (yaml.safe_load(VSR_VALUES.read_text()) or {}).get("config") or {}
+    expected = {f"auto-{t}" for t in (catalog.get("tasks") or {})}
+    targets = {
+        ref.get("model")
+        for d in (config.get("routing") or {}).get("decisions") or []
+        for ref in d.get("modelRefs") or []
+    }
+    errors = []
+    if targets - expected:
+        errors.append(f"{where}: decisions name {sorted(targets - expected)}, which are not catalog task classes")
+    if expected - targets:
+        errors.append(f"{where}: no decision routes to {sorted(expected - targets)}")
+    default = ((config.get("providers") or {}).get("defaults") or {}).get("model")
+    if default not in expected:
+        errors.append(f"{where}: providers.defaults.model {default!r} is not a catalog task class")
+    return errors
+
+
 def render(catalog):
     models = catalog["models"]
     apis = catalog.get("googleApis") or {}
@@ -151,10 +180,10 @@ def main():
     args = parser.parse_args()
 
     catalog = yaml.safe_load(SOURCE.read_text())
-    errors = validate(catalog)
+    errors = [f"{SOURCE.relative_to(ROOT)}: {e}" for e in validate(catalog)] + check_semantic_router(catalog)
     if errors:
         for e in errors:
-            print(f"{SOURCE.relative_to(ROOT)}: {e}", file=sys.stderr)
+            print(e, file=sys.stderr)
         return 1
 
     stale = []

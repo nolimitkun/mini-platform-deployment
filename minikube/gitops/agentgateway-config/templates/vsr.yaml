@@ -1,0 +1,39 @@
+{{- $v := .Values }}
+{{- if $v.semanticRouter.enabled }}
+# The vLLM Semantic Router (semantic-router app) classifies prompts sent as
+# model "auto" and rewrites the model to a task class, auto-<task>, before the
+# gateway routes them; templates/auto.yaml then asks OPA which model the
+# project gets for that class. PreRouting, so the rewritten model is what
+# routing sees. Only chat completions with model "auto" go to it; anything else
+# never leaves the gateway for VSR.
+#
+# FailOpen: if VSR is down the request goes on as "auto" and the project gets
+# its default model. Response bodies are not sent, so VSR can't cache or keep
+# answers.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: {{ $v.gatewayName }}-semantic-router
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $v.gatewayName }}
+  traffic:
+    phase: PreRouting
+    extProc:
+      conditional:
+        - condition: 'request.path == "/v1/chat/completions" && json(request.body).model == "auto"'
+          policy:
+            backendRef:
+              name: {{ $v.semanticRouter.service }}
+              port: {{ $v.semanticRouter.port }}
+            failureMode: FailOpen
+            processingOptions:
+              requestHeaderMode: Send
+              requestBodyMode: Buffered
+              responseHeaderMode: Send
+              responseBodyMode: None
+              requestTrailerMode: Skip
+              responseTrailerMode: Skip
+{{- end }}

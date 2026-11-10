@@ -5,3 +5,6 @@ description: For people testing and operating the gateway by hand.
 data_class: public
 keys: [admin]
 mcp_tools: ["*"]
+# People testing the gateway get the full model "auto" path: the semantic
+# router's task class, then the best model admin may use for it.
+routing: semantic
