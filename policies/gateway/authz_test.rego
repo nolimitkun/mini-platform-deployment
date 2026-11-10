@@ -160,3 +160,14 @@ test_projects_within_their_class if {
 		}
 	}
 }
+
+test_virtual_models_allowed_with_any_model if {
+	authz.allow with input as chat("open-webui", "auto")
+	authz.allow with input as chat("open-webui", "auto-code")
+	authz.allow with input as chat("open-webui", "auto-reasoning")
+	not authz.allow with input as chat("open-webui", "auto-nosuchtask")
+
+	# A project with no model left may not use them either.
+	not authz.allow with input as chat("vault-app", "auto")
+		with data.projects["vault-app"] as object.union(vault_app, {"models_allow": ["gemini-*"]})
+}

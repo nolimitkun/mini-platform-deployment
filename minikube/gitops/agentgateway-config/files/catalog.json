@@ -48,5 +48,10 @@
       "host": "europe-west1-aiplatform.googleapis.com",
       "http1Only": true
     }
-  }
+  },
+  "tasks": [
+    "code",
+    "general",
+    "reasoning"
+  ]
 }

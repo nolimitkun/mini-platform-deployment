@@ -17,6 +17,15 @@ gcp:
 # catalog, catalog/models.yaml, which scripts/gen-catalog.py renders into this
 # chart's files/catalog.json and into the gateway policy's data.
 
+# Model "auto" and "auto-<task>" (templates/auto.yaml): virtual models that ask
+# OPA's REST API which model the caller's project gets (policies/gateway/select.rego).
+auto:
+  enabled: true
+  opaService: opa
+  opaPort: 8181
+  # Per-project cache of OPA's answer; empty turns caching off.
+  cacheTTL: 1m
+
 # Client API keys, one per client, from Vault (scripts/bootstrap-vault-secrets.sh).
 apiKeysSecret: agentgateway-api-keys
 
