@@ -1,6 +1,6 @@
 # Design: per-project model policy at scale
 
-Status: **built and deployed** (2026-11-10, PRs #24–#33 and mini-platform#24).
+Status: **built and deployed** (2026-11-10, PRs #24–#38 and mini-platform#24).
 This is the design record: what was decided, what changed while building it,
 and the spike evidence behind each choice. To operate it (adding a project,
 rotating a key, changing a limit), use [agentgateway.md](agentgateway.md).
@@ -40,6 +40,7 @@ flowchart LR
   agw -->|callout for auto models| opa
   agw -->|global rate limit| rl[rate-limit service<br/>Redis]
   rlcfg --> rl
+  proj -->|gen-projects.py| alerts[alert rules] --> prom
   opa -.->|http.send, fastest only| prom[(Prometheus)]
   agw --> models[vLLM, Vertex, DeepSeek]
 ```
@@ -56,6 +57,9 @@ flowchart LR
 | 6 | **`project` metric label** and the "Agentgateway projects" dashboard | #30, #31 |
 | 7 | **Latency rankings** for `fastest`, read from Prometheus | #32 |
 | 8 | **Rate limits and spend caps** in a global rate-limit service | #33 |
+| 9 | **Limits and budgets for every project**; Open WebUI on `semantic` | #34 |
+| 10 | **`/v1/models` per project**: OPA names the allowed models, a response transformation filters the gateway's list | #35 |
+| 11 | **Alerts**: budget forecast, project rate-limited, provider throttling, generated from the projects; promtool in CI | #36, #37, #38 |
 
 ## Decisions
 
@@ -207,6 +211,24 @@ sends three descriptors per request:
   - the model mix, which shows what `auto` picked
   - latency and MCP calls
 
+### The model list from OPA, filtered in the gateway
+
+agentgateway answers `/v1/models` itself, and a model's `visibility` is global,
+so it can't hide a model from one project. For that path OPA's allow decision
+adds an `x-allowed-models` request header, `lib.allowed(project)` plus the
+`auto` names, and a response transformation keeps only those entries. One
+source of truth, the same set authorization uses; a test checks that every
+listed model is callable. OPA's header replaces any the client sends, and
+without it the list goes out whole: the list is cosmetic.
+
+### Alerts generated with the limits
+
+`gen-projects.py` also writes Prometheus alert rules, so thresholds follow the
+budgets. The budget forecast takes the last 24 hours × 30 against 80% of the
+budget: Prometheus keeps 15 days, so the 30-day count isn't there. `429`s
+separate on the `reason` label: `RateLimit` is the project's own limit or
+budget, `Upstream` the provider's throttling.
+
 ### One bundle, no OCP stacks
 
 200 projects is a few hundred kilobytes of data, so there is one bundle. OCP
@@ -222,6 +244,7 @@ fleets need different policy.
 | Remove a key from Vault | bootstrap → VSO refresh → gateway reload | VSO interval (1 min) |
 | New model routes or `auto` models | merge → Argo CD sync of `agentgateway-config` | sync |
 | Limits and budgets | merge → Argo CD sync of `rate-limit` (pod restart) | sync |
+| Alert thresholds | merge → Argo CD sync of `prometheus` (config reload) | sync |
 | Rankings | Prometheus → OPA cache | ≤ 2 min |
 
 ## Rollouts that needed care
@@ -235,6 +258,12 @@ fleets need different policy.
 - **Argo CD's root app pins its own source revision** separately from the child
   apps' `deployRevision`. A new app in the app-of-apps list (VSR, rate-limit)
   only appears after the root's own `targetRevision` moves.
+- **Prometheus rule paths** (#36, #37). `rule_files` took
+  `/etc/alerts.d/*/*.yml`; Prometheus allows a glob only in the last path
+  segment and crash-looped, about 15 minutes without metrics (the Deployment is
+  `Recreate`). The rules file had passed `promtool check rules`, but the
+  config had never been checked. CI now renders `prometheus.yml` and runs
+  `promtool check config` on it (#38).
 - **Defaulted fields cause drift.** The API server fills in `group` and `kind`
   on `backendRef`s. Templates spell them out, or Argo CD reports the object
   OutOfSync forever (#31).
@@ -298,6 +327,11 @@ build.** Bundle roots follow the layout: a top-level `data.json` makes the roots
   - reasoning → Gemini 4 Argon (Vertex returned 429)
 - Admin's limit: 60 × 200, then 429 with `retry-after`. The budget counter in
   Redis was charged 5 µUSD for one Flash Lite call.
+- Holmes' limit: 35 requests at once, 30 × 200 and 5 × 429. Open WebUI's `auto`
+  went to Gemini Flash Lite for a general question (`semantic`).
+- `/v1/models`: 9 models for Open WebUI (no DeepSeek), 10 for kagent and Holmes,
+  metadata kept; a spoofed `x-allowed-models` changed nothing.
+- Alert rules: 6 loaded and healthy.
 
 ## Open
 
