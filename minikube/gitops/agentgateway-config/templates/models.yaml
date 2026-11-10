@@ -1,5 +1,11 @@
 {{- $v := .Values }}
-{{- range $v.models }}
+{{- /* Models come from the repo's catalog/models.yaml, through files/catalog.json
+     (scripts/gen-catalog.py). */}}
+{{- $catalog := .Files.Get "files/catalog.json" | fromJson }}
+{{- if not $catalog.models }}
+{{- fail "files/catalog.json is missing or lists no models: run scripts/gen-catalog.py" }}
+{{- end }}
+{{- range $catalog.models }}
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayModel

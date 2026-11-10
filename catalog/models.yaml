@@ -1,0 +1,74 @@
+# The platform's model catalog: the one place a model or a Google API is
+# declared. Both the gateway and the gateway policy are generated from it, so
+# a model can't be routable without a placement, or allowed without a route.
+#
+# After editing, run:  python3 scripts/gen-catalog.py
+# It validates this file and writes
+#   minikube/gitops/agentgateway-config/files/catalog.json  (gateway: models, Google API routes)
+#   policies/gateway/catalog/data.json                     (OPA: data.catalog)
+# CI (scripts/validate-gitops.sh) fails if either is out of date.
+#
+# placement: where the data goes. The data classes in policies/gateway/data.json
+# decide which placements a client may use.
+#   onprem    on this cluster
+#   gcp       Google, over the VPN and PSC (mini-cloud)
+#   external  a third-party API over the internet
+
+# Chat and embedding models. Clients send the key as `model` to the
+# OpenAI-compatible endpoint /v1/chat/completions; one AgentgatewayModel each.
+models:
+  # vLLM on the local GPU (vllm-values.yaml).
+  qwen3.6-27b:
+    placement: onprem
+    provider: OpenAI
+    baseURL: http://vllm-router-service.mini-platform.svc.cluster.local/v1
+
+  # Hosted, over the internet. The key comes from Vault (agentgateway-deepseek).
+  deepseek-v4-pro:
+    placement: external
+    provider: Deepseek
+    secretRef: agentgateway-deepseek
+
+  # Gemini on Vertex AI, eu multi-region. agentgateway calls
+  # aiplatform.eu.rep.googleapis.com, which scripts/gcp-psc-dns.sh pins to
+  # mini-cloud's regional PSC endpoint, so the traffic stays on the VPN.
+  gemini-4-argon:
+    placement: gcp
+    provider: VertexAI
+    region: eu
+  gemini-3.8-flash:
+    placement: gcp
+    provider: VertexAI
+    region: eu
+  gemini-3.5-flash:
+    placement: gcp
+    provider: VertexAI
+    region: eu
+  gemini-3.5-flash-lite:
+    placement: gcp
+    provider: VertexAI
+    region: eu
+
+# Google's own APIs, passed through unchanged with the keyless login added:
+# clients call /google/<name>/<the API's own path>. Every host is pinned to a
+# PSC endpoint by scripts/gcp-psc-dns.sh.
+googleApis:
+  # Speech-to-Text v2 (Chirp 3), eu.
+  speech:
+    placement: gcp
+    host: eu-speech.googleapis.com
+  # Text-to-Speech (Chirp 3 HD voices), eu.
+  tts:
+    placement: gcp
+    host: eu-texttospeech.googleapis.com
+  # Vertex AI in the eu multi-region: Gemini TTS through generateContent.
+  vertex-eu:
+    placement: gcp
+    host: aiplatform.eu.rep.googleapis.com
+  # Vertex AI in europe-west1: the Gemini Live websocket. A websocket upgrade
+  # can't travel over the HTTP/2 connection the gateway otherwise negotiates,
+  # and Google answers the bare GET with a 404, so this one is HTTP/1.1.
+  vertex-europe-west1:
+    placement: gcp
+    host: europe-west1-aiplatform.googleapis.com
+    http1Only: true

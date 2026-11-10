@@ -4,7 +4,8 @@
 #
 # Placement follows the data classes in mini-cloud docs/gcp/ai-inference.md:
 # each client has a class, each class may use some placements, each model or
-# Google API has one placement. Anything not explicitly allowed is denied.
+# Google API has one placement (data.catalog, generated from the repo's
+# catalog/models.yaml). Anything not explicitly allowed is denied.
 package gateway.authz
 
 import rego.v1
@@ -36,8 +37,7 @@ allow if {
 	parts := split(path, "/")
 	parts[1] == "google"
 	count(parts) > 3
-	data.gateway.google_apis[parts[2]] == "gcp"
-	"gcp" in placements(client)
+	data.catalog.google_apis[parts[2]].placement in placements(client)
 }
 
 # MCP (the merged endpoint at /mcp). A client with an mcp_tools entry may open
@@ -68,7 +68,9 @@ tool_call if {
 
 model_path if path in {"/v1/chat/completions", "/v1/completions", "/v1/responses", "/v1/messages", "/v1/embeddings"}
 
-allowed_model(c, m) if data.gateway.models[m] in placements(c)
+# Placements come from the model catalog (catalog/models.yaml, generated into
+# catalog/data.json here by scripts/gen-catalog.py).
+allowed_model(c, m) if data.catalog.models[m].placement in placements(c)
 
 # Named, owned exceptions to the class rule.
 allowed_model(c, m) if m in object.get(data.gateway.exceptions, c, {}).models

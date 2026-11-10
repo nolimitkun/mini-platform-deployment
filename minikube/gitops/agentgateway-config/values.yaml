@@ -13,46 +13,9 @@ gcp:
   audience: //iam.googleapis.com/projects/311800512343/locations/global/workloadIdentityPools/onprem-k8s/providers/minikube
   serviceAccount: litellm-stt@mini-cloud-499820.iam.gserviceaccount.com
 
-# One AgentgatewayModel each. Clients send the name as `model` to the single
-# OpenAI-compatible endpoint, /v1/chat/completions; the names match the ones
-# LiteLLM served so clients move over without renaming anything.
-models:
-  # vLLM on the local GPU (vllm-values.yaml).
-  - name: qwen3.6-27b
-    provider: OpenAI
-    baseURL: http://vllm-router-service.mini-platform.svc.cluster.local/v1
-  # Hosted, over the internet. The key comes from Vault (agentgateway-deepseek).
-  - name: deepseek-v4-pro
-    provider: Deepseek
-    secretRef: agentgateway-deepseek
-  # Gemini on Vertex AI, eu multi-region. agentgateway calls
-  # aiplatform.eu.rep.googleapis.com, which scripts/gcp-psc-dns.sh pins to
-  # mini-cloud's regional PSC endpoint, so the traffic stays on the VPN.
-  - {name: gemini-4-argon, provider: VertexAI, region: eu}
-  - {name: gemini-3.8-flash, provider: VertexAI, region: eu}
-  - {name: gemini-3.5-flash, provider: VertexAI, region: eu}
-  - {name: gemini-3.5-flash-lite, provider: VertexAI, region: eu}
-
-# Google's own APIs, passed through unchanged with the keyless login added:
-# clients call /google/<name>/<the API's own path>. agentgateway does not turn
-# OpenAI /v1/audio calls into Speech or TTS calls the way LiteLLM did, so speech
-# clients use Google's native request shapes. Every host is pinned to a PSC
-# endpoint by scripts/gcp-psc-dns.sh.
-googleApis:
-  # Speech-to-Text v2 (Chirp 3), eu.
-  speech: eu-speech.googleapis.com
-  # Text-to-Speech (Chirp 3 HD voices), eu.
-  tts: eu-texttospeech.googleapis.com
-  # Vertex AI in the eu multi-region: Gemini TTS through generateContent.
-  vertex-eu: aiplatform.eu.rep.googleapis.com
-  # Vertex AI in europe-west1: the Gemini Live websocket.
-  vertex-europe-west1: europe-west1-aiplatform.googleapis.com
-
-# Google API routes that must reach Google over HTTP/1.1: a websocket upgrade
-# can't travel over the HTTP/2 connection the gateway otherwise negotiates,
-# and Google answers the bare GET with a 404.
-http1Only:
-  - vertex-europe-west1
+# Models and Google API routes are not here: they come from the repo's model
+# catalog, catalog/models.yaml, which scripts/gen-catalog.py renders into this
+# chart's files/catalog.json and into the gateway policy's data.
 
 # Client API keys, one per client, from Vault (scripts/bootstrap-vault-secrets.sh).
 apiKeysSecret: agentgateway-api-keys
