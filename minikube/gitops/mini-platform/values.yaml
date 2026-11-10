@@ -153,6 +153,7 @@ applications:
   prometheus:
     chartPath: charts/prometheus
     valuesFile: minikube/values/prometheus-values.yaml
+    resourcesFile: minikube/values/prometheus-resources.yaml
     wave: "-1"
     ignoreDifferences:
       - group: apps

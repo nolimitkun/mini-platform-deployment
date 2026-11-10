@@ -187,6 +187,13 @@ extraScrapeConfigs: |
         target_label: namespace
 
 server:
+  # Alert rules from the app-resources chart (prometheus-resources.yaml).
+  extraConfigmapMounts:
+    - name: alerts-agentgateway-projects
+      mountPath: /etc/alerts.d/agentgateway-projects
+      subPath: ""
+      configMap: prometheus-alerts-agentgateway-projects
+      readOnly: true
   extraFlags:
     - web.enable-lifecycle
     # Tempo's metrics generator remote-writes span metrics and the service
@@ -198,3 +205,26 @@ server:
       mountPath: /etc/prometheus/secrets/mlflow-auth
       subPath: ""
       readOnly: true
+
+# The reloader watches the alert rules too, so a rule change reloads
+# Prometheus without a restart.
+configmapReload:
+  prometheus:
+    extraConfigmapMounts:
+      - name: alerts-agentgateway-projects
+        mountPath: /etc/alerts.d/agentgateway-projects
+        subPath: ""
+        configMap: prometheus-alerts-agentgateway-projects
+        readOnly: true
+    extraVolumeDirs:
+      - /etc/alerts.d/agentgateway-projects
+
+serverFiles:
+  prometheus.yml:
+    # The chart's defaults, plus the mounted alert rules.
+    rule_files:
+      - /etc/config/recording_rules.yml
+      - /etc/config/alerting_rules.yml
+      - /etc/config/rules
+      - /etc/config/alerts
+      - /etc/alerts.d/*/*.yml
