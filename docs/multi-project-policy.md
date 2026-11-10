@@ -307,7 +307,6 @@ build.** Bundle roots follow the layout: a top-level `data.json` makes the roots
 - **Vertex quota.** Gemini 4 Argon and 3.8 Flash return 429
   `RESOURCE_EXHAUSTED` under light load, which needs a quota check for
   `mini-cloud-499820` in `eu`.
-- **`/v1/models`** lists every public model to every project.
 - **Time to first token** needs streaming traffic before `fastest` can use it.
 - **A key service:** keys are created by the bootstrap script. Self-service key
   issue and rotation for 200 projects needs a small service or portal that

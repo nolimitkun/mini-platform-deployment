@@ -109,8 +109,24 @@ reason := "unknown project" if {
 	tool_call
 } else := "denied"
 
+# The models a project sees in /v1/models: the ones it may name, plus the
+# virtual models when it has any. agentgateway answers /v1/models itself with
+# every public model; a response transformation (agentgateway-config
+# policies.yaml) keeps only the ids OPA lists in this header. Cosmetic only:
+# authorization above decides what a project can call.
+listed_models_header := "x-allowed-models"
+
+listed_models := lib.allowed(project_id) | virtual_models if {
+	count(lib.allowed(project_id)) > 0
+} else := set()
+
 # What OPA-Envoy returns to agentgateway: allow, or a 403 with the reason.
-decision := {"allowed": true} if allow
+# Headers on an allowed decision are set on the request, replacing any the
+# client sent.
+decision := {"allowed": true, "headers": {listed_models_header: concat(",", sort(listed_models))}} if {
+	allow
+	path == "/v1/models"
+} else := {"allowed": true} if allow
 
 decision := {
 	"allowed": false,
