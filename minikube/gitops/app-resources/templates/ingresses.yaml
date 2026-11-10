@@ -54,7 +54,9 @@ metadata:
   annotations:
     # Subrequest per incoming request: 202 lets it through, 401 triggers
     # auth-signin. Addressed by Service DNS, so it never leaves the cluster.
-    nginx.ingress.kubernetes.io/auth-url: http://{{ $auth.service }}.{{ $namespace }}.svc.cluster.local:{{ $auth.port }}/oauth2/auth
+    # allowedGroups narrows the groups oauth2-proxy admits for this host only;
+    # a signed-in user outside them gets a 403.
+    nginx.ingress.kubernetes.io/auth-url: http://{{ $auth.service }}.{{ $namespace }}.svc.cluster.local:{{ $auth.port }}/oauth2/auth{{ with $route.allowedGroups }}?allowed_groups={{ join "," . }}{{ end }}
     # $host keeps the browser on the component's own hostname, so the callback
     # and the cookie share an origin. $escaped_request_uri returns the user to
     # where they were headed after login.

@@ -1,11 +1,12 @@
-# Forward-auth for the three components that cannot speak OIDC themselves:
-# MLflow (the Bitnami chart offers basic auth only), kagent (no auth layer at
-# all), and agentregistry (the open-source build has no login). Rather
+# Forward-auth for the components that cannot speak OIDC themselves: MLflow
+# (the Bitnami chart offers basic auth only), kagent (no auth layer at all),
+# agentregistry (the open-source build has no login) and agentgateway's admin
+# UI (no login; admins only, through the route's allowedGroups). Rather
 # than proxying their traffic, oauth2-proxy only answers ingress-nginx's
 # subrequest — see the `protectedPaths` routes in each protected component's
 # minikube/values/<name>-resources.yaml.
 #
-# One deployment serves all three hosts. `redirect-url` is deliberately left
+# One deployment serves all of these hosts. `redirect-url` is deliberately left
 # unset so oauth2-proxy derives the callback from the forwarded Host of each
 # request, which is why the realm's oauth2-proxy client registers a callback per
 # host.
