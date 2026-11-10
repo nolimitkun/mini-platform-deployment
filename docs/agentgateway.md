@@ -127,6 +127,7 @@ data_class: internal            # caps placement (see below)
 placement: [onprem]             # optional; may only narrow the class
 models:
   allow: ["gemini-3.5-*"]       # optional, default ["*"]; globs over catalog names
+routing: cheapest               # optional, for model "auto": cheapest | fastest | semantic | fixed:<model>
 keys: [holmes, holmes-2]        # key ids; the secrets are in Vault
 mcp_tools: ["grafana_*"]        # optional; no MCP access without it
 ```
@@ -205,6 +206,31 @@ The rules:
   ```json
   {"error":{"message":"model deepseek-v4-pro is not allowed for project open-webui (internal data)","type":"policy_denied"}}
   ```
+
+### Model selection for `auto`
+
+`policies/gateway/select.rego` answers which model a project gets when it lets
+the platform choose. It takes `{"project": ..., "task": ...}`, with `task`
+optional, at `/v1/data/gateway/select/result`, and returns `{"model": ...,
+"routing": ...}`.
+
+It only ever picks from `lib.allowed(project)`, the same set authorization
+uses (`policies/gateway/lib.rego`). An unknown project, or one with no allowed
+model, gets no result. The project's `routing` decides the order:
+
+| `routing` | Order |
+|-----------|-------|
+| `cheapest` (default) | Blended price, `(3 × input + output) / 4`, from the catalog's `price` |
+| `fastest` | Time to first token from `data.rankings` (the ranking job, not built yet). Unranked models come after ranked ones, so until the job exists this is `cheapest` |
+| `semantic` | The task class's list in the catalog's `tasks` (the vLLM Semantic Router supplies the class), then `cheapest` |
+| `fixed:<model>` | That model, then `cheapest` |
+
+Catalog prices are the rates agentgateway v1.7.0's built-in price table bills
+in USD per million tokens, checked against its cost metrics. On-prem Qwen has
+no per-token charge, so `cheapest` picks it whenever a project may use it.
+
+Nothing calls this yet. The `auto` virtual models that ask it come in the next
+step.
 
 ### Changing a policy
 

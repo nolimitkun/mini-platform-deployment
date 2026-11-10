@@ -11,6 +11,7 @@ that span files:
   - the file name is the project id
   - placement only narrows what the data class allows
   - every models.allow pattern matches a catalog model (catalog/models.yaml)
+  - a fixed:<model> routing names a model the project may use
   - key ids are the project id or start with it plus "-", and are unique
   - exceptions (projects/_exceptions.yaml) name existing projects and models
 
@@ -47,7 +48,8 @@ def load():
     errors = []
     schema = json.loads(SCHEMA.read_text())
     validator = jsonschema.Draft202012Validator(schema)
-    models = set((yaml.safe_load(CATALOG.read_text()) or {}).get("models") or {})
+    catalog_models = (yaml.safe_load(CATALOG.read_text()) or {}).get("models") or {}
+    models = set(catalog_models)
     classes = json.loads(CLASSES.read_text())["gateway"]["classes"]
 
     projects, key_owner = {}, {}
@@ -87,6 +89,8 @@ def load():
                 errors.append(f"{rel(path)}: key id {key_id!r} is already used by {key_owner[key_id]}")
             key_owner[key_id] = pid
 
+        routing = doc.get("routing", "cheapest")
+
         projects[pid] = {
             "owner": doc["owner"],
             "data_class": doc["data_class"],
@@ -95,12 +99,28 @@ def load():
             "models_allow": allow,
             "keys": doc["keys"],
             "mcp_tools": doc.get("mcp_tools", []),
+            "routing": routing,
         }
 
     if not projects:
         errors.append("projects/: no project files")
 
     exceptions = (yaml.safe_load(EXCEPTIONS.read_text()) or {}).get("exceptions") or {}
+
+    # The same rule as allowed() in policies/gateway/lib.rego.
+    for pid, p in projects.items():
+        if not p["routing"].startswith("fixed:"):
+            continue
+        model = p["routing"].removeprefix("fixed:")
+        by_rule = (
+            model in catalog_models
+            and catalog_models[model]["placement"] in p["placement"]
+            and any(fnmatch.fnmatchcase(model, pat) for pat in p["models_allow"])
+        )
+        by_exception = model in ((exceptions.get(pid) or {}).get("models") or [])
+        if not (by_rule or by_exception):
+            errors.append(f"projects/{pid}.yaml: routing {p['routing']!r} names a model the project may not use")
+
     for pid, exc in exceptions.items():
         where = f"{rel(EXCEPTIONS)}: {pid}"
         if pid not in projects:
