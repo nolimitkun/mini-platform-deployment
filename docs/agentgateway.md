@@ -434,3 +434,11 @@ curl -s http://agentgateway.test/v1/chat/completions -H "Authorization: Bearer $
   NetworkPolicy, on a CNI that enforces it, should allow only the proxy to reach
   them.
 - **Gemini Live websocket.** Routed as plain passthrough. Not tested yet.
+
+## Scaling to many projects
+
+[multi-project-policy.md](multi-project-policy.md) is the design record for
+hundreds of projects with several keys each: the decisions behind projects, the
+catalog, `auto` selection with the vLLM Semantic Router, rankings, rate limits
+and budgets, what changed while building them, and the spikes behind each
+choice.
