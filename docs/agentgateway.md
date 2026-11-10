@@ -434,3 +434,10 @@ curl -s http://agentgateway.test/v1/chat/completions -H "Authorization: Bearer $
   NetworkPolicy, on a CNI that enforces it, should allow only the proxy to reach
   them.
 - **Gemini Live websocket.** Routed as plain passthrough. Not tested yet.
+
+## Scaling to many projects
+
+[multi-project-policy.md](multi-project-policy.md) describes how this grows to
+hundreds of projects with several keys each. It covers per-project placement,
+model and routing rules, and OPA choosing the model for `model: "auto"`. That
+last part was checked in a spike on agentgateway 1.7.
