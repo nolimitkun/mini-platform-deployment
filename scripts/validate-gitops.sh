@@ -13,13 +13,16 @@
 #   - catalog/models.yaml and projects/*.yaml are valid and the files generated
 #     from them are current
 #   - opa check, fmt and test on every policy bundle under policies/
+#   - promtool on Prometheus's rendered prometheus.yml and on the alert rules
+#     under minikube/gitops/app-resources/alerts/
 #
 # The vendored charts live in a separate repository. Point CHARTS_DIR at a local
 # checkout of it (default: ../mini-platform) to verify charts/* paths resolve;
 # when absent those checks are skipped, not failed.
 #
 # Tools used if present: helm (required), python3 with PyYAML and jsonschema
-# (required), kubeconform (optional), shellcheck (optional), opa (optional).
+# (required), kubeconform (optional), shellcheck (optional), opa (optional),
+# promtool (optional).
 # Missing optional tools are reported and skipped, not failed.
 set -euo pipefail
 
@@ -169,6 +172,34 @@ if have opa; then
   done
 else
   skip "opa not installed (policy tests skipped)"
+fi
+
+echo "==> promtool (Prometheus config and alert rules)"
+if have promtool; then
+  for f in minikube/gitops/app-resources/alerts/*.yml; do
+    if out="$(promtool check rules "$f" 2>&1)"; then ok "rules $f"; else bad "rules $f"; echo "$out"; fi
+  done
+  # The config as the chart renders it from prometheus-values.yaml. Syntax
+  # only: the rule and secret files it names exist only inside the pod. This
+  # still catches what Prometheus refuses at startup, such as a rule_files glob
+  # outside the last path segment.
+  if $charts_dir_present; then
+    prom_tmp="$(mktemp -d)"
+    if helm template prometheus "$CHARTS_DIR/charts/prometheus" -n mini-platform \
+        -f minikube/values/prometheus-values.yaml --show-only templates/cm.yaml \
+        | python3 -c 'import sys, yaml; sys.stdout.write(yaml.safe_load(sys.stdin)["data"]["prometheus.yml"])' \
+        >"$prom_tmp/prometheus.yml" \
+      && out="$(promtool check config --syntax-only "$prom_tmp/prometheus.yml" 2>&1)"; then
+      ok "prometheus.yml (prometheus-values.yaml)"
+    else
+      bad "prometheus.yml (prometheus-values.yaml)"; echo "${out:-}"
+    fi
+    rm -rf "$prom_tmp"
+  else
+    skip "prometheus.yml (charts repo not found at $CHARTS_DIR)"
+  fi
+else
+  skip "promtool not installed (Prometheus checks skipped)"
 fi
 
 echo
