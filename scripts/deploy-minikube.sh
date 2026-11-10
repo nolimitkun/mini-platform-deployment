@@ -652,6 +652,35 @@ done
 [[ "$WORKLOAD_TIMEOUT" =~ ^[1-9][0-9]*$ ]] ||
   fail "WORKLOAD_TIMEOUT must be a positive integer"
 
+# kube-proxy's nftables proxier sends each sync to the kernel as one netlink
+# batch, built in 128 KiB pages. nftables would normally keep a big batch under
+# the socket limit by raising its own send buffer with SO_SNDBUFFORCE, but that
+# needs CAP_NET_ADMIN in the *initial* user namespace and rootless Docker does
+# not have it -- the call returns EPERM, so the socket keeps the default
+# sk_sndbuf, which is net.core.wmem_default. The stock 212992 holds exactly one
+# page, and this platform's ~120 Services render to more than that, so the sync
+# fails with "Message too long" and kube-proxy stops being able to update
+# Services. Checked here rather than left to fail later because the symptom is
+# so indirect: existing rules keep forwarding, and a Service only goes dark
+# once one of its pods is recreated. tools/99-rootless-k8s-netlink.conf has the
+# full story and the value.
+#
+# Only rootless Docker on Linux needs it. Rootful Docker keeps the capability,
+# so nftables raises its own buffer; Docker Desktop (macOS, Windows) runs the
+# node in its own VM, whose sysctls the deploy host can't see or set.
+NETLINK_WMEM_MIN=4194304
+if [[ "$(uname -s)" == Linux ]] &&
+   docker info --format '{{ join .SecurityOptions "," }}' 2>/dev/null | grep -q rootless; then
+  host_wmem_default="$(cat /proc/sys/net/core/wmem_default 2>/dev/null || true)"
+  if [[ ! "$host_wmem_default" =~ ^[0-9]+$ ]] ||
+     ((host_wmem_default < NETLINK_WMEM_MIN)); then
+    fail "net.core.wmem_default is ${host_wmem_default:-unreadable}, below the $NETLINK_WMEM_MIN kube-proxy needs under rootless Docker to program this platform's Services.
+It is a host sysctl -- not namespaced, so it cannot be set inside the node. Install the drop-in and rerun:
+  sudo cp $ROOT/tools/99-rootless-k8s-netlink.conf /etc/sysctl.d/
+  sudo sysctl --system"
+  fi
+fi
+
 cd "$ROOT"
 
 # Auto-load a Hugging Face token from the user's cache when one is not already
@@ -725,8 +754,11 @@ start_args=(
   # message and hits the 64 KiB limit -- the platform's ~70 Services render to
   # roughly 85 KiB, so every sync fails with EMSGSIZE and no Service VIP, cluster
   # DNS included, is ever programmed. The nftables proxier talks to nf_tables
-  # directly and has no such batch. It is GA since v1.33 but still not the
-  # default, so it has to be asked for.
+  # directly, which raises that ceiling by a wide margin but does not remove
+  # it: it batches too, and under rootless Docker the batch is bounded by
+  # net.core.wmem_default. That is what the netlink preflight above checks and
+  # what tools/99-rootless-k8s-netlink.conf lifts. It is GA since v1.33 but
+  # still not the default, so it has to be asked for.
   --extra-config=kube-proxy.mode=nftables
   --cpus=8
   # Must stay ahead of the platform's total pod memory *requests*, which is not
