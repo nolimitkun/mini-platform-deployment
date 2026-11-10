@@ -222,9 +222,24 @@ model, gets no result. The project's `routing` decides the order:
 | `routing` | Order |
 |-----------|-------|
 | `cheapest` (default) | Blended price, `(3 × input + output) / 4`, from the catalog's `price` |
-| `fastest` | Time to first token from `data.rankings` (the ranking job, not built yet). Unranked models come after ranked ones, so until the job exists this is `cheapest` |
+| `fastest` | Median model request duration over the last 6 hours (`rankings.rego`), fastest first. Models with fewer than 3 requests in that window come last, in `cheapest` order |
 | `semantic` | The task class's list in the catalog's `tasks` (the vLLM Semantic Router supplies the class), then `cheapest` |
 | `fixed:<model>` | That model, then `cheapest` |
+
+`rankings.rego` asks Prometheus directly, through OPA's `http.send`, for
+`fastest` projects only. It has a 300 ms timeout and keeps the answer for 2
+minutes in OPA's cache. If Prometheus doesn't answer, nothing is ranked and
+`fastest` behaves like `cheapest`. Authorization never depends on it.
+
+Failed calls count toward the duration too, so a model Google is throttling
+(429 after retries) ranks as slow.
+
+The rankings are not in the policy bundle because OCP fails the whole bundle
+build when a data source is unreachable. Rankings there would block every
+policy change, key revocations included, during a Prometheus outage. A
+separate bundle doesn't work either: OPA's readiness waits for every bundle,
+so a missing rankings bundle would make OPA unready and the gateway refuse
+everything.
 
 Catalog prices are the rates agentgateway v1.7.0's built-in price table bills
 in USD per million tokens, checked against its cost metrics. On-prem Qwen has

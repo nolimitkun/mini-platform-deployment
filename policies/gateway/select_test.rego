@@ -3,7 +3,24 @@ package gateway.select_test
 import rego.v1
 
 import data.gateway.lib
+import data.gateway.rankings
 import data.gateway.select
+
+# Prometheus answers for rankings.rego, mocked: no test touches the network.
+prom_result(pairs) := {"status_code": 200, "body": {"status": "success", "data": {
+	"resultType": "vector",
+	"result": [{"metric": {"gen_ai_request_model": m}, "value": [0, v]} | some m, v in pairs],
+}}}
+
+prom_fast_flash(_) := prom_result({"gemini-3.8-flash": "0.12", "qwen3.6-27b": "0.9"})
+
+prom_fast_deepseek(_) := prom_result({"deepseek-v4-pro": "0.05", "qwen3.6-27b": "0.06"})
+
+prom_odd(_) := prom_result({"gemini-3.8-flash": "NaN", "qwen3.6-27b": "+Inf", "deepseek-v4-pro": "1.5"})
+
+prom_down(_) := {"status_code": 0, "error": {"code": "eval_http_send_network_error", "message": "connection refused"}}
+
+prom_500(_) := {"status_code": 500, "body": {"status": "error"}}
 
 # A project for these tests; fields default like gen-projects.py's output.
 proj(overrides) := object.union(
@@ -37,14 +54,31 @@ test_cheapest_respects_models_allow if {
 }
 
 test_fastest_uses_rankings if {
-	rankings := {"gemini-3.8-flash": {"ttft_ms": 120}, "qwen3.6-27b": {"ttft_ms": 900}}
 	select.result.model == "gemini-3.8-flash" with input as {"project": "t"}
 		with data.projects.t as proj({"routing": "fastest"})
-		with data.rankings as rankings
+		with http.send as prom_fast_flash
 }
 
 test_fastest_without_rankings_is_cheapest if {
-	pick_no_task(proj({"routing": "fastest"})) == "qwen3.6-27b"
+	select.result.model == "qwen3.6-27b" with input as {"project": "t"}
+		with data.projects.t as proj({"routing": "fastest"})
+		with http.send as prom_down
+	select.result.model == "qwen3.6-27b" with input as {"project": "t"}
+		with data.projects.t as proj({"routing": "fastest"})
+		with http.send as prom_500
+}
+
+test_rankings_parse if {
+	rankings.latency_ms == {"gemini-3.8-flash": 120, "qwen3.6-27b": 900} with http.send as prom_fast_flash
+
+	# NaN and infinities (too few samples, empty buckets) are left unranked.
+	rankings.latency_ms == {"deepseek-v4-pro": 1500} with http.send as prom_odd
+	rankings.latency_ms == {} with http.send as prom_down
+}
+
+test_rankings_query_targets_the_gateway if {
+	contains(rankings.query, `gateway="mini-platform/agentgateway-proxy"`)
+	contains(rankings.query, ">= 3")
 }
 
 test_semantic_follows_task_prefs_within_allowed if {
@@ -94,7 +128,7 @@ test_selection_within_allowed if {
 		every overrides in narrowing {
 			every routing in routings {
 				every task, _ in tasks {
-					within_allowed(project_id, object.union(project, object.union(overrides, {"routing": routing})), task)
+					within_allowed(project_id, object.union(project, object.union(overrides, {"routing": routing})), task) with http.send as prom_down
 				}
 			}
 		}
@@ -116,8 +150,16 @@ within_allowed(project_id, variant, task) if {
 	m in allowed
 }
 
-# The rankings used by "fastest" in the check above: the overall fastest model
-# is one most narrowed projects may not use.
+# "fastest" again, with rankings where the overall fastest model is one most
+# narrowed projects may not use.
 test_selection_within_allowed_with_rankings if {
-	test_selection_within_allowed with data.rankings as {"deepseek-v4-pro": {"ttft_ms": 50}, "qwen3.6-27b": {"ttft_ms": 60}}
+	routings := {"fastest"}
+	narrowing := [{}, {"placement": ["gcp"]}, {"placement": ["external"]}, {"models_allow": ["gemini-4-*", "deepseek-*"]}]
+	every project_id, project in data.projects {
+		every overrides in narrowing {
+			every routing in routings {
+				within_allowed(project_id, object.union(project, object.union(overrides, {"routing": routing})), "") with http.send as prom_fast_deepseek
+			}
+		}
+	}
 }

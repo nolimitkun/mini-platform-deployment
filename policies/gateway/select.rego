@@ -13,6 +13,7 @@ package gateway.select
 import rego.v1
 
 import data.gateway.lib
+import data.gateway.rankings
 
 project_id := input.project
 
@@ -24,20 +25,20 @@ allowed := lib.allowed(project_id)
 # USD per million tokens (catalog/models.yaml prices).
 blended_price(m) := ((3 * p.input) + p.output) / 4 if p := data.catalog.models[m].price
 
-# Time to first token from the ranking job (data.rankings), when it has one.
-# Unranked models sort after ranked ones.
-unranked_ttft_ms := 1000000000
+# Median request duration from the gateway's metrics (rankings.rego). Unranked
+# models sort after ranked ones.
+unranked_ms := 1000000000
 
-ttft_ms(m) := t if {
-	t := data.rankings[m].ttft_ms
-} else := unranked_ttft_ms
+latency_ms(m) := t if {
+	t := rankings.latency_ms[m]
+} else := unranked_ms
 
 # Allowed models from cheapest to dearest; the name breaks ties, so the order
 # is stable.
 by_price := [m | some pair in sort([[blended_price(m), m] | some m in allowed]); m := pair[1]]
 
 # Allowed models from fastest to slowest, then by price.
-by_speed := [m | some t in sort([[ttft_ms(m), blended_price(m), m] | some m in allowed]); m := t[2]]
+by_speed := [m | some t in sort([[latency_ms(m), blended_price(m), m] | some m in allowed]); m := t[2]]
 
 # The task class's preferred models that the project may use, in the catalog's
 # order. Empty without a task (the router was skipped or is down).
