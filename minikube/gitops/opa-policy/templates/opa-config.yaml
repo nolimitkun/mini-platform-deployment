@@ -20,6 +20,12 @@ data:
         polling:
           min_delay_seconds: 10
           max_delay_seconds: 30
+    # Bounded cache for http.send answers: the model rankings
+    # (policies/gateway/rankings.rego) are fetched from Prometheus at most
+    # every couple of minutes per replica.
+    caching:
+      inter_query_builtin_cache:
+        max_size_bytes: 10000000
     plugins:
       envoy_ext_authz_grpc:
         addr: 0.0.0.0:{{ $v.opa.grpcPort }}
