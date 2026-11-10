@@ -20,12 +20,7 @@ key_metadata := input.attributes.metadataContext.filterMetadata.agentgateway
 
 project_id := key_metadata.project
 
-# A key from before projects carried only {"client": ...}; its id was the
-# client name, which is now the project id. Remove once every key in Vault
-# carries project and key_id.
-project_id := key_metadata.client if not key_metadata.project
-
-key_id := object.get(key_metadata, "key_id", project_id)
+key_id := key_metadata.key_id
 
 project := data.projects[project_id]
 

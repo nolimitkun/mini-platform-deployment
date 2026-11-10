@@ -206,10 +206,6 @@ The rules:
   {"error":{"message":"model deepseek-v4-pro is not allowed for project open-webui (internal data)","type":"policy_denied"}}
   ```
 
-Keys written before projects carry only `{"client": ...}` metadata. The gateway
-and the policy read that name as both the project id and the key id, until every
-key in Vault has been rewritten.
-
 ### Changing a policy
 
 1. Edit the Rego, the data or a project file, regenerate with

@@ -17,14 +17,14 @@ with_metadata(md, path, body) := {
 	"parsed_body": body,
 }
 
-chat(client, model) := req(client, "/v1/chat/completions", {"model": model})
+chat(project, model) := req(project, "/v1/chat/completions", {"model": model})
 
-test_internal_client_gets_onprem_and_gemini if {
+test_internal_project_gets_onprem_and_gemini if {
 	authz.allow with input as chat("open-webui", "qwen3.6-27b")
 	authz.allow with input as chat("open-webui", "gemini-4-argon")
 }
 
-test_internal_client_denied_external_model if {
+test_internal_project_denied_external_model if {
 	not authz.allow with input as chat("open-webui", "deepseek-v4-pro")
 }
 
@@ -71,15 +71,15 @@ test_key_must_be_listed if {
 		with data.projects["open-webui"].keys as ["open-webui", "open-webui-2"]
 }
 
-# Keys written before projects carry only {"client": ...}, which is the
-# project id, and their key id was that same name.
-test_pre_project_key_metadata if {
-	authz.allow with input as with_metadata({"client": "open-webui"}, "/v1/chat/completions", {"model": "qwen3.6-27b"})
-	not authz.allow with input as with_metadata({"client": "open-webui"}, "/v1/chat/completions", {"model": "deepseek-v4-pro"})
-	not authz.allow with input as with_metadata({"client": "stranger"}, "/v1/models", {})
+# Keys need both project and key_id: the pre-project {"client": ...} metadata,
+# or a project without a key id, is refused.
+test_incomplete_key_metadata_denied if {
+	not authz.allow with input as with_metadata({"client": "open-webui"}, "/v1/chat/completions", {"model": "qwen3.6-27b"})
+	not authz.allow with input as with_metadata({"project": "open-webui"}, "/v1/chat/completions", {"model": "qwen3.6-27b"})
+	not authz.allow with input as with_metadata({"key_id": "open-webui"}, "/v1/models", {})
 }
 
-test_unknown_client_and_model_denied if {
+test_unknown_project_and_model_denied if {
 	not authz.allow with input as chat("stranger", "qwen3.6-27b")
 	not authz.allow with input as chat("open-webui", "not-a-model")
 	not authz.allow with input as chat("", "qwen3.6-27b")
@@ -113,7 +113,7 @@ test_decision_shape if {
 	d.http_status == 403
 }
 
-mcp(client, body) := req(client, "/mcp", body)
+mcp(project, body) := req(project, "/mcp", body)
 
 test_mcp_session_and_listing if {
 	authz.allow with input as mcp("kagent", {"method": "initialize"})

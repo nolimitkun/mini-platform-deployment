@@ -40,12 +40,9 @@ spec:
         maxSize: {{ $v.extAuth.maxBodyBytes }}
       grpc:
         # Each entry becomes one metadata_context.filter_metadata struct, so
-        # the value has to be a CEL map, not a bare string. The default()s
-        # cover keys written before projects, which carry only {"client": ...}
-        # (that name is now the project id and the key id); drop them once
-        # every key in Vault has project and key_id.
+        # the value has to be a CEL map, not a bare string.
         requestMetadata:
-          agentgateway: '{"project": default(apiKey.project, apiKey.client), "key_id": default(apiKey.key_id, apiKey.client)}'
+          agentgateway: '{"project": apiKey.project, "key_id": apiKey.key_id}'
 
 {{- end }}
 ---
