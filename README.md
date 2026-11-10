@@ -30,7 +30,9 @@ The default AI request path is:
 ```text
 Open WebUI ──▶ agentgateway ──▶ vLLM Router ──▶ vLLM
                   │  ▲
-                  │  └── OPA (allow/deny per client, model and tool)
+                  │  ├── vLLM Semantic Router (task class for model "auto")
+                  │  ├── rate-limit service (per-project limits and budgets)
+                  │  └── OPA (allow/deny per project, model and tool; picks "auto")
                   │        ▲
                   │        └── OCP ◀── policies/ in Git   (bundles via MinIO)
                   ├──▶ Vertex AI Gemini, Speech, TTS   (mini-cloud VPN, keyless)
@@ -38,13 +40,14 @@ Open WebUI ──▶ agentgateway ──▶ vLLM Router ──▶ vLLM
                   └──▶ MCP: Grafana MCP, kagent tools
 ```
 
-Open WebUI, kagent and HolmesGPT each call **agentgateway** with their own API
-key. It serves every model on one OpenAI-compatible endpoint (`qwen3.6-27b` on
+Open WebUI, kagent and HolmesGPT each call **agentgateway** with an API key of
+their own project (`projects/*.yaml`). It serves every model on one OpenAI-compatible endpoint (`qwen3.6-27b` on
 the vLLM router serving `unsloth/Qwen3.6-27B-MTP-GGUF:Q4_K_M`, the Gemini models
 on Vertex AI, `deepseek-v4-pro`), passes Google's speech APIs through, and merges
 the cluster's MCP servers into one endpoint. Before routing, it asks **OPA**,
-whose policy (`policies/gateway`: data class per client, placement per model,
-allowed tools) the **OPA Control Plane** builds from Git. **agentregistry** is the
+whose policy (`policies/gateway`: data class per project, placement per model,
+allowed tools, the model behind `auto`) the **OPA Control Plane** builds from
+Git. A rate-limit service enforces each project's limits and budget. **agentregistry** is the
 catalog of MCP servers and agents. See [docs/agentgateway.md](docs/agentgateway.md).
 
 Supporting subsystems:
@@ -102,7 +105,7 @@ Every browser-facing service authenticates against Keycloak — see
 | `scripts/port-forward-services.sh` | Host-local or LAN port forwards for browser services |
 | `scripts/check-local-deployment.sh` | Verifies local Argo CD sync/health, pod readiness, secret sync, and optional Open WebUI smoke test |
 | `scripts/set-repo.sh` | Repoints the charts/deploy repo URLs and revisions in one command |
-| `scripts/validate-gitops.sh` | Lints/renders the GitOps charts and shellchecks the scripts; run in CI too |
+| `scripts/validate-gitops.sh` | Lints/renders the GitOps charts, shellchecks the scripts, checks the catalog and projects generators, and runs `opa test` and `promtool`; run in CI too |
 | `tools/` | Optional utility workloads (e.g. network diagnostics) |
 
 The vendored charts (`charts/`) live in the separate
@@ -449,8 +452,8 @@ to `mini-platform/vllm-hf-token`, which vLLM uses to pull the model weights, and
 the `DEEPSEEK_API_KEY` to `mini-platform/agentgateway-deepseek` for the hosted
 model kagent and Holmes run on. It stores the two Holmes read-only integration
 credentials at `mini-platform/holmes-github` and `mini-platform/holmes-argocd`.
-The gateway's API keys are one per client: `mini-platform/agentgateway-api-keys`
-is what the gateway reads, `mini-platform/agentgateway-client-keys` holds the raw
+The gateway's API keys are one per key id listed in `projects/*.yaml`:
+`mini-platform/agentgateway-api-keys` is what the gateway reads, `mini-platform/agentgateway-client-keys` holds the raw
 keys, and each client gets a mirror under the env name it reads
 (`open-webui-agentgateway`, `kagent-agentgateway`, `holmes-agentgateway`). Those
 mirrors, `mini-platform/kagent-grafana` and `mini-platform/holmes-grafana` (the
@@ -517,6 +520,8 @@ shared `minikube/gitops/app-resources` chart rendered against a sibling
 | `mini-platform-agentgateway` | `charts/agentgateway` | `minikube/values/agentgateway-values.yaml` |
 | `mini-platform-agentgateway-config` | `minikube/gitops/agentgateway-config` | `minikube/gitops/agentgateway-config/values.yaml` |
 | `mini-platform-opa-policy` | `minikube/gitops/opa-policy` | `minikube/gitops/opa-policy/values.yaml` |
+| `mini-platform-semantic-router` | `charts/semantic-router` | `minikube/values/semantic-router-values.yaml` |
+| `mini-platform-rate-limit` | `minikube/gitops/rate-limit` | `minikube/gitops/rate-limit/values.yaml` |
 | `mini-platform-agentregistry-postgresql` | `charts/postgresql` | `minikube/values/agentregistry-postgresql-values.yaml` |
 | `mini-platform-agentregistry` | `charts/agentregistry` | `minikube/values/agentregistry-values.yaml` |
 | `mini-platform-agentregistry-catalog` | `minikube/gitops/agentregistry-catalog` | `minikube/gitops/agentregistry-catalog/values.yaml` |
@@ -779,11 +784,10 @@ component's `minikube/values/<name>-resources.yaml`):
 - **kagent** — ships no authentication at all.
 - **agentregistry** — the open-source build has no login of its own.
 
-**HolmesGPT** and **agentgateway** are outside this scheme entirely. The gateway
-has no browser UI and authenticates every request with a per-project API key. It has no browser UI — every
-route is API — so there is no interactive login to federate, and it
-authenticates each request itself against `HOLMES_API_KEY` from
-`mini-platform/holmes-api`. Putting forward-auth in front of it would 302 every
+**HolmesGPT** and **agentgateway** are outside this scheme entirely. Neither
+has a browser UI — every route is API — so there is no interactive login to
+federate. HolmesGPT authenticates each request itself against `HOLMES_API_KEY`
+from `mini-platform/holmes-api`; the gateway checks a per-project API key. Putting forward-auth in front of it would 302 every
 caller for no gain, which is the same reasoning that keeps MLflow's `/api` exempt.
 
 The pattern in both exceptions is the same: a route lists the prefixes it wants

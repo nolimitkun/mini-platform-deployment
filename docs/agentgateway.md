@@ -26,6 +26,8 @@ flowchart LR
   minio[(MinIO<br/>opa-bundles)]
   clients --> keys --> authz --> route
   authz <-->|gRPC :9191| opa
+  gw <-->|ext_proc, auto only| vsr[vLLM Semantic Router]
+  gw <-->|per-project limits| rl[rate-limit service<br/>Redis]
   git --> ocp -->|bundle.tar.gz| minio --> opa
   route --> vllm[vLLM<br/>on-prem GPU]
   route -->|VPN + PSC, keyless| gcp[Vertex AI Gemini<br/>Speech, TTS]
@@ -39,7 +41,7 @@ flowchart LR
 | Piece | Argo CD app | What it does |
 |-------|-------------|--------------|
 | agentgateway controller | `agentgateway`, `agentgateway-crds` | Creates the GatewayClass `agentgateway`. For each Gateway, it runs a proxy Deployment, Service and ServiceAccount named after the Gateway |
-| Gateway config | `agentgateway-config` (`minikube/gitops/agentgateway-config`) | The `agentgateway-proxy` Gateway, one `AgentgatewayModel` per model, passthrough routes to Google's APIs, the merged MCP endpoint, and policies for API keys, OPA and tracing |
+| Gateway config | `agentgateway-config` (`minikube/gitops/agentgateway-config`) | The `agentgateway-proxy` Gateway, one `AgentgatewayModel` per model, the `auto` virtual models, passthrough routes to Google's APIs, the merged MCP endpoint, and policies for API keys, OPA, the semantic router, rate limits, the model list, metrics labels and tracing |
 | OPA | `opa-policy` (`minikube/gitops/opa-policy`) | `opa-envoy`, answering ext_authz over gRPC on `opa:9191` |
 | OCP | `opa-policy` | Builds `policies/<bundle>` from this repo's `main` branch on GitHub into `opa-bundles/<bundle>/bundle.tar.gz` in MinIO |
 | Rate-limit service | `rate-limit` (`minikube/gitops/rate-limit`) | Per-project request, token and spend limits, in Redis (see "Rate limits and budgets") |
@@ -144,21 +146,30 @@ mcp_tools: ["grafana_*"]        # optional; no MCP access without it
 - the file name is the project id
 - placement stays within the data class
 - every `models.allow` pattern matches a catalog model
+- a `fixed:<model>` routing names a model the project may use
 - key ids are `<project>` or `<project>-<suffix>`, and unique
+- exceptions (`projects/_exceptions.yaml`) name existing projects and models
 
-It then generates `policies/gateway/projects/data.json` (`data.projects`) and
-`policies/gateway/exceptions/data.json` (`data.exceptions`). CI fails if they
-are out of date.
+It then generates four files. CI fails if any is out of date:
+
+| File | Read by |
+|------|---------|
+| `policies/gateway/projects/data.json` | OPA, as `data.projects` |
+| `policies/gateway/exceptions/data.json` | OPA, as `data.exceptions` |
+| `minikube/gitops/rate-limit/files/config.yaml` | the rate-limit service |
+| `minikube/gitops/app-resources/alerts/agentgateway-projects.yml` | Prometheus, as alert rules |
 
 Today's projects are the four former clients, each with one key whose id is the
 project id:
 
-| Project | Data class | Mirror (env name the client reads) |
-|---------|------------|------------------------------------|
-| `open-webui` | `internal` | `open-webui-agentgateway` |
-| `kagent` | `internal`, plus the DeepSeek exception | `kagent-agentgateway` |
-| `holmes` | `internal`, plus the DeepSeek exception | `holmes-agentgateway` |
-| `admin` | `public` | none: for people |
+| Project | Data class | Routing for `auto` | Mirror (env name the client reads) |
+|---------|------------|--------------------|------------------------------------|
+| `open-webui` | `internal` | `semantic` | `open-webui-agentgateway` |
+| `kagent` | `internal`, plus the DeepSeek exception | `cheapest` | `kagent-agentgateway` |
+| `holmes` | `internal`, plus the DeepSeek exception | `cheapest` | `holmes-agentgateway` |
+| `admin` | `public` | `semantic` | none: for people |
+
+Their limits and budgets are under "Rate limits and budgets".
 
 Keys are created by `scripts/bootstrap-vault-secrets.sh`, which reads the key
 ids with `gen-projects.py --keys`, so it needs python3 with PyYAML and
@@ -368,10 +379,10 @@ request. Its responses carry `x-vsr-selected-decision` and
 
 ### Changing a policy
 
-1. Edit the Rego, the data or a project file, regenerate with
-   `scripts/gen-projects.py`, and run `opa test policies/gateway`. CI runs the
-   generators' `--check`, `opa check`, `opa fmt` and `opa test` too
-   (`scripts/validate-gitops.sh`).
+1. Edit the Rego, the data, a project file or the catalog, regenerate with
+   `scripts/gen-projects.py` or `scripts/gen-catalog.py`, and run
+   `opa test policies/gateway`. CI runs the generators' `--check`, `opa check`,
+   `opa fmt`, `opa test` and `promtool` too (`scripts/validate-gitops.sh`).
 2. Merge to `main`. OCP checks Git about every 30–60 seconds and publishes a new
    bundle. OPA checks MinIO every 10–30 seconds and loads it. No Argo CD sync is
    involved.
@@ -410,8 +421,9 @@ rejected.
 - **Metrics.** Prometheus finds the proxy, the controller and OPA through their
   `prometheus.io` pod annotations. The proxy's main metrics are
   `agentgateway_gen_ai_client_token_usage`, `agentgateway_gen_ai_client_cost_usd_total`,
-  `agentgateway_gen_ai_server_time_to_first_token` and
-  `agentgateway_requests_total`. The upstream dashboard is in Grafana as
+  `agentgateway_gen_ai_server_request_duration` and `agentgateway_requests_total`.
+  `agentgateway_gen_ai_server_time_to_first_token` appears only once streaming
+  calls go through the gateway; none have yet. The upstream dashboard is in Grafana as
   **Agentgateway**.
 - **Per project.** Every proxy metric carries a `project` label, taken from
   the API key's metadata (`policies.yaml`, `frontend.metrics`). Requests
@@ -457,9 +469,10 @@ curl -s http://agentgateway.test/v1/chat/completions -H "Authorization: Bearer $
 | Check | Expected |
 |-------|----------|
 | No key | 401 |
-| Open WebUI key, `deepseek-v4-pro` | 403, `not allowed for internal data` |
+| Open WebUI key, `deepseek-v4-pro` | 403, `not allowed for project open-webui (internal data)` |
 | Open WebUI key, `/v1/models` | No `deepseek-v4-pro`; kagent's key lists it |
-| Holmes key, `tools/call` of `kagent-tools_*` | 403, `tool ... is not allowed for holmes` |
+| Holmes key, `tools/call` of `kagent-tools_*` | 403, `tool ... is not allowed for project holmes` |
+| 31 quick requests with the Holmes key | the last gets 429 with `retry-after` |
 | `curl opa:8181/v1/data/system/bundles` | Manifest with the latest `main` commit |
 
 ## Limits
