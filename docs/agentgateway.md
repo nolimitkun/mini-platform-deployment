@@ -416,6 +416,18 @@ To add an entry, edit `minikube/gitops/agentregistry-catalog/files/catalog.yaml`
 A PostSync Job posts it to `/v0/apply` and fails the sync if any entry is
 rejected.
 
+## Admin UI
+
+The proxy's built-in admin UI is at `http://agentgateway-admin.test/ui/`, behind
+the Keycloak login and open to `platform-admins` only. It shows the live
+config the controller pushed: binds, listeners, routes, backends and policies.
+It is a viewer here. The controller owns the config, so edits made in the UI
+do not last; change the chart or `projects/` instead.
+
+The admin port (15000) has no login of its own. The chart opens it on the pod
+network behind the ClusterIP Service `agentgateway-proxy-admin`. Nothing on this
+cluster enforces NetworkPolicy, so any pod can reach it there.
+
 ## Telemetry
 
 - **Metrics.** Prometheus finds the proxy, the controller and OPA through their

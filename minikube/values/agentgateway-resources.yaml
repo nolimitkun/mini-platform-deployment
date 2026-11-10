@@ -13,3 +13,13 @@ routes:
     host: agentgateway.test
     service: agentgateway-proxy
     port: 80
+  # The proxy's admin UI (http://agentgateway-admin.test/ui/) and config dump.
+  # No login of its own, so the whole host sits behind Keycloak, admins only.
+  - name: agentgateway-admin
+    host: agentgateway-admin.test
+    service: agentgateway-proxy-admin
+    port: 15000
+    protectedPaths:
+      - /
+    allowedGroups:
+      - platform-admins

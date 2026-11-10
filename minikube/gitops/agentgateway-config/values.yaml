@@ -5,6 +5,17 @@
 # keyless login until that list is updated.
 gatewayName: agentgateway-proxy
 
+# The proxy's built-in admin UI (/ui) and config dump. It has no login of its
+# own and listens only on the pod's loopback by default; this opens it on the
+# pod network behind a ClusterIP Service, <gatewayName>-admin. The only route
+# in from outside is agentgateway-admin.test, behind the Keycloak login and
+# limited to platform-admins (minikube/values/agentgateway-resources.yaml).
+# Nothing on this cluster enforces NetworkPolicy, so any pod can still reach
+# the Service directly. The UI is read-only in practice: the controller owns
+# the config, and edits made through it do not survive.
+admin:
+  port: 15000
+
 # Keyless Google login: the proxy's own service-account token, minted for the
 # onprem-k8s pool's audience and rotated by the kubelet, is exchanged for a
 # Google token that impersonates litellm-stt. Nothing secret in it.

@@ -319,7 +319,7 @@ Once the tunnel assigns an external IP, map the local hostnames:
 export INGRESS_IP="$(kubectl -n ingress-nginx get service ingress-nginx-controller \
   -o jsonpath='{.status.loadBalancer.ingress[0].ip}')"
 printf '%s %s\n' "$INGRESS_IP" \
-  'argocd.test open-webui.test agentgateway.test agentregistry.test langfuse.test mlflow.test grafana.test jupyterhub.test superset.test minio.test keycloak.test kagent.test holmes.test' \
+  'argocd.test open-webui.test agentgateway.test agentgateway-admin.test agentregistry.test langfuse.test mlflow.test grafana.test jupyterhub.test superset.test minio.test keycloak.test kagent.test holmes.test' \
   | sudo tee -a /etc/hosts
 ```
 
@@ -557,6 +557,7 @@ service hostnames:
 | Argo CD | `http://argocd.test` |
 | Open WebUI | `http://open-webui.test` |
 | agentgateway API (`/v1`, `/mcp`, `/google/...`) | `http://agentgateway.test` |
+| agentgateway admin UI (admins) | `http://agentgateway-admin.test/ui/` |
 | agentregistry | `http://agentregistry.test` |
 | Langfuse | `http://langfuse.test` |
 | MLflow | `http://mlflow.test` |
@@ -627,7 +628,7 @@ works instead if you would rather not change it. Then point every hosts entry at
 `127.0.0.1`:
 
 ```bash
-echo "127.0.0.1 argocd.test grafana.test holmes.test jupyterhub.test kagent.test keycloak.test langfuse.test agentgateway.test agentregistry.test minio.test mlflow.test open-webui.test superset.test" | sudo tee -a /etc/hosts
+echo "127.0.0.1 argocd.test grafana.test holmes.test jupyterhub.test kagent.test keycloak.test langfuse.test agentgateway.test agentgateway-admin.test agentregistry.test minio.test mlflow.test open-webui.test superset.test" | sudo tee -a /etc/hosts
 ```
 
 **From other machines on the LAN.** Bind the same forward to all interfaces:

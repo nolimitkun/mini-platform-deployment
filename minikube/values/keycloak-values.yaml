@@ -319,7 +319,7 @@ keycloakConfigCli:
         # single deployment fronting MLflow, kagent and agentregistry, so the
         # callback differs only by host.
         - clientId: oauth2-proxy
-          name: oauth2-proxy (MLflow, kagent, agentregistry)
+          name: oauth2-proxy (MLflow, kagent, agentregistry, agentgateway admin)
           enabled: true
           protocol: openid-connect
           publicClient: false
@@ -330,6 +330,7 @@ keycloakConfigCli:
             - http://mlflow.test/oauth2/callback
             - http://kagent.test/oauth2/callback
             - http://agentregistry.test/oauth2/callback
+            - http://agentgateway-admin.test/oauth2/callback
           webOrigins:
             - +
           defaultClientScopes: *platformScopes

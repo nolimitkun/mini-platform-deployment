@@ -21,6 +21,12 @@ kind: AgentgatewayParameters
 metadata:
   name: {{ $v.gatewayName }}
 spec:
+  {{- with $v.admin }}
+  # Merged into the generated config.yaml (values.yaml, admin).
+  rawConfig:
+    config:
+      adminAddr: "0.0.0.0:{{ .port }}"
+  {{- end }}
   env:
     - name: GOOGLE_APPLICATION_CREDENTIALS
       value: /etc/gcp-wif/credentials.json
@@ -73,3 +79,20 @@ spec:
             kind: AgentgatewayModel
           - group: gateway.networking.k8s.io
             kind: HTTPRoute
+{{- with $v.admin }}
+---
+# The admin UI, for the SSO-protected ingress only (values.yaml, admin).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $v.gatewayName }}-admin
+spec:
+  type: ClusterIP
+  selector:
+    gateway.networking.k8s.io/gateway-name: {{ $v.gatewayName }}
+  ports:
+    - name: admin
+      port: {{ .port }}
+      targetPort: {{ .port }}
+      protocol: TCP
+{{- end }}
