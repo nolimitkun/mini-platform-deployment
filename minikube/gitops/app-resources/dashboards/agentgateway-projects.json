@@ -198,7 +198,7 @@
             "uid": "$datasource"
           },
           "refId": "A",
-          "expr": "sum(increase(agentgateway_requests_total{project=~\"$project\",status=\"403\"}[$__range])) / sum(increase(agentgateway_requests_total{project=~\"$project\"}[$__range]))",
+          "expr": "(sum(increase(agentgateway_requests_total{project=~\"$project\",status=\"403\"}[$__range])) or (0 * sum(increase(agentgateway_requests_total{project=~\"$project\"}[$__range])))) / sum(increase(agentgateway_requests_total{project=~\"$project\"}[$__range]))",
           "legendFormat": ""
         }
       ],
