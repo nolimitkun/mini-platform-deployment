@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=schema.json
+project: model-onboarding
+owner: platform team
+description: >-
+  The model onboarding pipeline (github.com/nolimitkun/model-onboarding-pipeline).
+  It tunes, evaluates and smoke-tests each model deployment it makes through the
+  gateway, by the deployment's own path, before the catalog names it.
+# Its prompts are public benchmark sets and synthetic load; what it calls is on
+# this cluster.
+data_class: internal
+placement: [onprem]
+keys: [model-onboarding]
+deployments: true
+# No catalog model of its own to call.
+models:
+  allow: ["qwen3.6-27b"]
+# No limits or budget: load tests and evaluations are the point, and they only
+# reach the pipeline's own deployments.

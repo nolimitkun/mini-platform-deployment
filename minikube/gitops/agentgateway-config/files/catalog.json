@@ -53,5 +53,9 @@
     "code",
     "general",
     "reasoning"
+  ],
+  "servingNamespaces": [
+    "model-hprd",
+    "model-prod"
   ]
 }

@@ -1,0 +1,16 @@
+{{- $all := prepend .Values.servingNamespaces .Values.onboardingNamespace }}
+{{- range $all }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ . }}
+  labels:
+    app.kubernetes.io/part-of: model-serving
+  annotations:
+    # Ahead of the VaultStaticSecrets (wave -1) the resources file puts in it.
+    argocd.argoproj.io/sync-wave: "-2"
+    # Deleting this application must not take the models and their history
+    # with it.
+    argocd.argoproj.io/sync-options: Delete=false
+{{- end }}

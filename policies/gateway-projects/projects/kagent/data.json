@@ -9,6 +9,7 @@
     "usd_per_30_days": 30
   },
   "data_class": "internal",
+  "deployments": false,
   "keys": [
     "kagent",
     "kagent-helm-agent",

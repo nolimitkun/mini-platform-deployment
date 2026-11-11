@@ -24,6 +24,12 @@ gcp:
   audience: //iam.googleapis.com/projects/311800512343/locations/global/workloadIdentityPools/onprem-k8s/providers/minikube
   serviceAccount: litellm-stt@mini-cloud-499820.iam.gserviceaccount.com
 
+# Releases of the model onboarding pipeline (catalog provider KServe): the
+# Secret, in each serving namespace, with the vLLM key the gateway sends
+# (model-serving chart, servingKeySecret).
+kserve:
+  servingKeySecret: model-serving-key
+
 # Models and Google API routes are not here: they come from the repo's model
 # catalog, catalog/models.yaml, which scripts/gen-catalog.py renders into this
 # chart's files/catalog.json and into the gateway policy's data.

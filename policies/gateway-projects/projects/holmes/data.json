@@ -6,6 +6,7 @@
     "usd_per_30_days": 20
   },
   "data_class": "internal",
+  "deployments": false,
   "keys": [
     "holmes"
   ],

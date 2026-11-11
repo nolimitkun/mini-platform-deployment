@@ -55,6 +55,18 @@ allow if {
 	path == "/v1/models"
 }
 
+# A self-hosted model deployment by KServe's own path route,
+# /<namespace>/<name>/v1/... in a serving namespace (catalog servingNamespaces):
+# the onboarding pipeline evaluating exactly what it deployed, before the
+# catalog names it. Only projects with deployments: true, never an agent's key.
+allow if {
+	authenticated
+	deployment_path
+	project.deployments
+	not agent_id
+	"onprem" in lib.placements(project_id)
+}
+
 # Google's native APIs (speech, TTS, Vertex) under /google/<api>/.
 allow if {
 	authenticated
@@ -127,6 +139,12 @@ tool_call if {
 	input.parsed_body.method == "tools/call"
 }
 
+deployment_path if {
+	parts := split(path, "/")
+	count(parts) > 3
+	parts[1] in data.catalog.serving_namespaces
+}
+
 model_path if path in {"/v1/chat/completions", "/v1/completions", "/v1/responses", "/v1/messages", "/v1/embeddings"}
 
 allowed_model(m) if m in scope_models
@@ -147,6 +165,8 @@ reason := "unknown project" if {
 	not project
 } else := sprintf("key %v is not active for project %v", [key_id, project_id]) if {
 	not authenticated
+} else := sprintf("project %v may not call model deployments directly", [project_id]) if {
+	deployment_path
 } else := sprintf("model %v is not allowed for agent %v (project %v)", [input.parsed_body.model, agent_id, project_id]) if {
 	model_path
 	agent_id

@@ -1,0 +1,29 @@
+# Self-hosted models are served by KServe LLMInferenceServices, which the model
+# onboarding pipeline (github.com/nolimitkun/model-onboarding-pipeline) deploys:
+# its candidates and tuning trials in the HPRD namespace, releases in prod.
+# Weights are read from MinIO (bucket models, minio-values.yaml), streamed by
+# vLLM straight from S3. Clients reach a release through the gateway by its
+# catalog name (catalog/models.yaml, provider KServe); the pipeline reaches
+# every deployment through the gateway too, by KServe's own path route
+# /<namespace>/<name>/v1/..., which only projects with `deployments: true`
+# may use (policies/gateway).
+#
+# KServe itself (and LWS, cert-manager) is installed by the pipeline repo's
+# local/infra/kserve/install.sh for now, not by this chart.
+
+# Where the pipeline runs (Argo Workflows) and where the models it deploys run.
+onboardingNamespace: model-onboarding
+servingNamespaces:
+  - model-hprd
+  - model-prod
+
+# The vLLM API key every LLMInferenceService starts with (VLLM_API_KEY) and the
+# gateway sends to it, from Vault (model-serving-key, field key), in each
+# serving namespace. Clients never hold it: the vLLM pods take requests from the
+# gateway only, which is the one place keys, OPA and budgets are checked.
+servingKeySecret: model-serving-key
+
+# The gateway the routes attach to (agentgateway-config chart).
+gateway:
+  name: agentgateway-proxy
+  namespace: mini-platform

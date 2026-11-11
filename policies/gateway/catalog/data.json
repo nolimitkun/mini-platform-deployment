@@ -63,6 +63,10 @@
       "provider": "OpenAI"
     }
   },
+  "serving_namespaces": [
+    "model-hprd",
+    "model-prod"
+  ],
   "tasks": {
     "code": [
       "deepseek-v4-pro",

@@ -71,8 +71,27 @@ spec:
       port: 80
       protocol: HTTP
       allowedRoutes:
+        # This namespace, plus the KServe serving namespaces (catalog/models.yaml,
+        # servingNamespaces): KServe's own path route of each
+        # LLMInferenceService, which the onboarding pipeline uses, and the
+        # catalog's model routes to releases (provider KServe), which have to
+        # sit next to the InferencePool they target.
         namespaces:
+          {{- $catalog := .Files.Get "files/catalog.json" | fromJson }}
+          {{- if $catalog.servingNamespaces }}
+          from: Selector
+          selector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  - {{ .Release.Namespace }}
+                  {{- range $catalog.servingNamespaces }}
+                  - {{ . }}
+                  {{- end }}
+          {{- else }}
           from: Same
+          {{- end }}
         # Without AgentgatewayModel here the listener serves no model paths.
         kinds:
           - group: agentgateway.dev

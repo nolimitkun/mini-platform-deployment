@@ -1,0 +1,25 @@
+{{- $v := .Values }}
+{{- range $v.servingNamespaces }}
+---
+# KServe's path route for each LLMInferenceService in this namespace
+# (/<namespace>/<name>/v1/..., attached to the gateway by the pipeline's
+# router.gateway.refs): the gateway sends the namespace's vLLM key upstream,
+# whatever key the client presented to the gateway itself. The catalog's model
+# routes set the same key on their own (agentgateway-config templates/models.yaml).
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: kserve-routes-backend-auth
+  namespace: {{ . }}
+spec:
+  targetSelectors:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      matchLabels:
+        app.kubernetes.io/part-of: llminferenceservice
+  backend:
+    auth:
+      secretRef:
+        name: {{ $v.servingKeySecret }}
+        key: key
+{{- end }}

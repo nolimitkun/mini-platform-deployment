@@ -1032,10 +1032,12 @@ path "mini-platform/metadata/*" {
 EOF
 # The Argo CD namespace is bound too: Argo CD only reads an OIDC client secret
 # from a Secret in its own namespace, so keycloak-resources.yaml renders a
-# VaultAuth and a vault-auth ServiceAccount there as well.
+# VaultAuth and a vault-auth ServiceAccount there as well. So are the model
+# namespaces (model-serving-resources.yaml): the onboarding pipeline's and the
+# KServe serving namespaces read their credentials the same way.
 vault_exec write auth/kubernetes/role/mini-platform \
   bound_service_account_names=vault-auth \
-  bound_service_account_namespaces="$NS,$ARGO_NS" \
+  bound_service_account_namespaces="$NS,$ARGO_NS,model-onboarding,model-hprd,model-prod" \
   audience=vault \
   policies=mini-platform-read \
   ttl=1h >/dev/null

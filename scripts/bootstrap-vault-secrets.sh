@@ -373,6 +373,26 @@ while read -r secret field key_id; do
     "$field=$(kv_field mini-platform/agentgateway-client-keys "$key_id")"
 done <<< "$agw_mirrors"
 
+# The model onboarding pipeline's gateway key (projects/model-onboarding.yaml),
+# under the field name the workflow reads (model-serving-resources.yaml mirrors
+# it into the pipeline's namespace as gateway-key).
+kv_put mini-platform/model-onboarding-agentgateway \
+  key="$(kv_field mini-platform/agentgateway-client-keys model-onboarding)"
+
+# Self-hosted model serving (minikube/gitops/model-serving). The vLLM key every
+# LLMInferenceService starts with and the gateway sends upstream; and the two
+# MinIO accounts of the weight store (minio-values.yaml): the pipeline's, which
+# publishes weights and owns its buckets, under the field names its workflow
+# reads, and vLLM's read-only one, under the names the AWS SDKs read.
+kv_put mini-platform/model-serving-key \
+  key="$(rand_b64)"
+kv_put mini-platform/minio-model-onboarding \
+  access-key=model-onboarding \
+  secret-key="$(rand_b64)"
+kv_put mini-platform/minio-model-serving \
+  AWS_ACCESS_KEY_ID=model-serving \
+  AWS_SECRET_ACCESS_KEY="$(rand_b64)"
+
 # DeepSeek, the hosted model kagent's agents and Holmes use through the
 # gateway, which sends this value as the Authorization header (with Bearer
 # added). Required only when this secret is actually written, matching how

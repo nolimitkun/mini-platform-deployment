@@ -17,6 +17,10 @@ spec:
       server: {{ .Values.destination.server }}
     - namespace: {{ .Values.argoNamespace }}
       server: {{ .Values.destination.server }}
+{{- range .Values.extraNamespaces }}
+    - namespace: {{ . }}
+      server: {{ $.Values.destination.server }}
+{{- end }}
   clusterResourceWhitelist:
     - group: "*"
       kind: "*"
