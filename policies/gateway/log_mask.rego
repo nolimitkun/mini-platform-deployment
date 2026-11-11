@@ -16,6 +16,13 @@ mask contains {"op": "upsert", "path": "/input/parsed_body", "value": kept_body}
 	is_object(input.input.parsed_body)
 }
 
+# Any other body (a JSON-RPC batch is an array, a bare string is possible) is
+# dropped whole, as every body was before the model was kept.
+mask contains "/input/parsed_body" if {
+	"parsed_body" in object.keys(input.input)
+	not is_object(input.input.parsed_body)
+}
+
 kept_body := object.union(model, mcp)
 
 model := {"model": input.input.parsed_body.model} if {

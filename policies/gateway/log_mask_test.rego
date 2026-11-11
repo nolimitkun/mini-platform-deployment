@@ -52,3 +52,23 @@ test_key_and_raw_body_always_dropped if {
 	"/input/attributes/request/http/body" in ops
 	"/input/attributes/request/http/raw_body" in ops
 }
+
+test_batch_body_dropped_whole if {
+	ops := log.mask with input as event([{
+		"jsonrpc": "2.0",
+		"method": "tools/call",
+		"params": {"name": "grafana_query", "arguments": {"q": "secret"}},
+	}])
+	"/input/parsed_body" in ops
+	not upsert_value(ops)
+}
+
+test_string_body_dropped_whole if {
+	ops := log.mask with input as event("free text prompt")
+	"/input/parsed_body" in ops
+}
+
+test_object_body_not_dropped if {
+	ops := log.mask with input as event({"model": "qwen3.6-27b"})
+	not "/input/parsed_body" in ops
+}
