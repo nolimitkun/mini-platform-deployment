@@ -121,7 +121,9 @@ def load():
             if not fnmatch.filter(models, pattern):
                 errors.append(f"{rel(path)}: models.allow pattern {pattern!r} matches no catalog model")
 
-        for key_id in doc["keys"]:
+        # Optional: a project whose keys all belong to its agents may omit it.
+        own_keys = doc.get("keys", [])
+        for key_id in own_keys:
             if key_id != pid and not key_id.startswith(pid + "-"):
                 errors.append(f"{rel(path)}: key id {key_id!r} must be {pid!r} or start with {pid + '-'!r}")
             if key_id in key_owner:
@@ -136,7 +138,7 @@ def load():
             # Order kept as the class lists it, so the output is stable.
             "placement": [p for p in class_placements if p in placement],
             "models_allow": allow,
-            "keys": doc["keys"],
+            "keys": own_keys,
             "mcp_tools": doc.get("mcp_tools", []),
             "routing": routing,
             "limits": doc.get("limits", {}),
