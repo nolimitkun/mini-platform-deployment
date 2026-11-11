@@ -114,7 +114,10 @@ alert rules, and the Vault bootstrap reads the key ids from it. Agents
 (`agents/*.yaml`) belong to a project and narrow it: own keys, models, MCP tools,
 owner, autonomy; gen-projects.py adds them to the policy data (`data.agents`,
 each project's `agent_keys`) and to agentregistry, and checks a kagent agent is
-wired to its own ModelConfig and secret. **agentregistry** is the catalog of
+wired to its own ModelConfig and secret. `catalog/tools.yaml` classes every MCP
+tool behind the gateway (read, write, irreversible; unlisted = irreversible) and
+OPA holds each agent to its autonomy; `scripts/tools-drift.py` reports tools that
+appeared, vanished or changed since they were classified. **agentregistry** is the catalog of
 MCP servers and agents; its entries live in `minikube/gitops/agentregistry-catalog`.
 
 An alternative **llm-d serving path** exists behind `enabled: false` app-of-apps

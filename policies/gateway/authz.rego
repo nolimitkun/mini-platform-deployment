@@ -92,9 +92,30 @@ agent_may_use_mcp if count(agent.mcp_tools) > 0
 agent_allows_tool(_) if not agent_id
 
 agent_allows_tool(name) if {
+	agent_tool_matches(name)
+	tool_risk(name) in autonomy_risks[agent.autonomy]
+}
+
+agent_tool_matches(name) if {
 	some pattern in agent.mcp_tools
 	glob.match(pattern, [], name)
 }
+
+# What each autonomy lets an agent do without a human (catalog/tools.yaml).
+# A supervised agent's write, and any agent's irreversible call, needs an
+# approval; there is no approval path through the gateway yet, so they are
+# refused with a reason that says so.
+autonomy_risks := {
+	"read-only": {"read"},
+	"supervised": {"read"},
+	"autonomous": {"read", "write"},
+}
+
+# A tool the catalog doesn't list counts as irreversible: new or renamed tools
+# stay out of agents' reach until someone has classified them.
+tool_risk(name) := data.catalog.tools[name]
+
+tool_risk(name) := "irreversible" if not data.catalog.tools[name]
 
 mcp_path if {
 	parts := split(path, "/")
@@ -131,6 +152,11 @@ reason := "unknown project" if {
 	agent_id
 } else := sprintf("model %v is not allowed for project %v (%v data)", [input.parsed_body.model, project_id, project.data_class]) if {
 	model_path
+} else := sprintf("tool %v is %v: agent %v (%v) needs a human approval for it", [input.parsed_body.params.name, tool_risk(input.parsed_body.params.name), agent_id, agent.autonomy]) if {
+	tool_call
+	agent_tool_matches(input.parsed_body.params.name)
+	some pattern in project.mcp_tools
+	glob.match(pattern, [], input.parsed_body.params.name)
 } else := sprintf("tool %v is not allowed for agent %v (project %v)", [input.parsed_body.params.name, agent_id, project_id]) if {
 	tool_call
 	agent_id
