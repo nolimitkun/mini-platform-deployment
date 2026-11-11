@@ -1,7 +1,7 @@
 # What OPA's decision log keeps of each request. Prompts, tool arguments and
 # the client's API key stay out of Loki; the log keeps who asked (the key's
 # project and id, from the gateway's metadata), for which model or MCP tool,
-# and the verdict. That is also what scripts/policy-replay.sh needs to replay
+# and the verdict. That is also what scripts/policy-replay.py needs to replay
 # a decision against a new bundle.
 #
 # OPA evaluates this against the decision log event, so the request is

@@ -42,12 +42,13 @@ Open WebUI ──▶ agentgateway ──▶ vLLM Router ──▶ vLLM
 
 Open WebUI, kagent and HolmesGPT each call **agentgateway** with an API key of
 their own project (`projects/*.yaml`). It serves every model on one OpenAI-compatible endpoint (`qwen3.6-27b` on
-the vLLM router serving `unsloth/Qwen3.6-27B-MTP-GGUF:Q4_K_M`, the Gemini models
+the vLLM router serving `unsloth/Qwen3.6-27B-NVFP4`, the Gemini models
 on Vertex AI, `deepseek-v4-pro`), passes Google's speech APIs through, and merges
 the cluster's MCP servers into one endpoint. Before routing, it asks **OPA**,
-whose policy (`policies/gateway`: data class per project, placement per model,
-allowed tools, the model behind `auto`) the **OPA Control Plane** builds from
-Git. A rate-limit service enforces each project's limits and budget. **agentregistry** is the
+whose policy (the Rego in `policies/gateway`: data class per project, placement
+per model, allowed tools, the model behind `auto`; and one data file per project
+in `policies/gateway-projects`) the **OPA Control Plane** builds from Git into
+two bundles. A rate-limit service enforces each project's limits and budget. **agentregistry** is the
 catalog of MCP servers and agents. See [docs/agentgateway.md](docs/agentgateway.md).
 
 Supporting subsystems:
@@ -55,9 +56,9 @@ Supporting subsystems:
 ```text
 Vault ──▶ Vault Secrets Operator ──▶ Kubernetes Secrets ──▶ workloads
 
-Ingress NGINX ──▶ Open WebUI, agentgateway, agentregistry, Langfuse, MLflow,
-                  Grafana, JupyterHub, Superset, MinIO Console, Keycloak,
-                  kagent, HolmesGPT, Argo CD
+Ingress NGINX ──▶ Open WebUI, agentgateway (API and admin UI), agentregistry,
+                  Langfuse, MLflow, Grafana, JupyterHub, Superset, MinIO
+                  Console, Keycloak, kagent, HolmesGPT, Argo CD
 
 Prometheus     ──▶ Grafana            (metrics + dashboards)
 Alloy ──▶ Loki ──▶ Grafana            (pod logs, every pod in every namespace)
@@ -251,6 +252,12 @@ after committing later changes to refresh the source.
 ensure the user's Docker service keeps running without an active login (user
 lingering). Otherwise the cluster stops when the SSH session exits — the script
 warns about this but does not change the setting for you.
+
+Rootless Docker also needs a larger netlink send buffer: kube-proxy's nftables
+proxier fails with a smaller one. `deploy-minikube.sh` stops before creating the
+cluster unless `net.core.wmem_default` is at least 4194304, and tells you to
+install `tools/99-rootless-k8s-netlink.conf` into `/etc/sysctl.d/` (it needs
+root) and reload with `sudo sysctl --system`.
 
 ### Manual Deployment Steps
 
@@ -530,6 +537,8 @@ shared `minikube/gitops/app-resources` chart rendered against a sibling
 | `mini-platform-kagent-crds` | `charts/kagent-crds` | `minikube/values/kagent-crds-values.yaml` |
 | `mini-platform-kagent` | `charts/kagent` | `minikube/values/kagent-values.yaml` |
 | `mini-platform-holmes` | `charts/holmes` | `minikube/values/holmes-values.yaml` |
+| `mini-platform-open-webui-holmes-pipe` | `minikube/gitops/open-webui-holmes-pipe` | `minikube/gitops/open-webui-holmes-pipe/values.yaml` |
+| `mini-platform-dcgm-exporter` | `charts/dcgm-exporter` | `minikube/values/dcgm-exporter-values.yaml` |
 | `mini-platform-oauth2-proxy` | `charts/oauth2-proxy` | `minikube/values/oauth2-proxy-values.yaml` |
 
 † **llm-d serving path** (disabled by default): an alternative to the
@@ -757,19 +766,22 @@ claim:
 | Argo CD | `role:admin` | `role:readonly` |
 | MinIO Console | `consoleAdmin` | `consoleAdmin` |
 | MLflow, kagent, agentregistry | access | access |
+| agentgateway admin UI | access | none (403) |
 
 MinIO authorizes from a claim naming one of its own policies rather than from a
 group list, so both groups currently map to `consoleAdmin`; narrowing that means
 adding a MinIO policy and mapping the realm role onto it. MLflow, kagent and
 agentregistry sit behind oauth2-proxy, which admits both groups and cannot express
-a role distinction downstream.
+a role distinction downstream. A route can narrow that per host with
+`allowedGroups` (passed to oauth2-proxy as `?allowed_groups=`); the agentgateway
+admin UI uses it to admit `platform-admins` only.
 
 ### How each component is wired
 
 Seven components speak OIDC themselves and are configured in their own overlay:
 Grafana, Open WebUI, Superset, JupyterHub, Argo CD, MinIO Console and Langfuse.
 
-Three cannot, and sit behind **oauth2-proxy** as ingress-nginx forward-auth
+Four cannot, and sit behind **oauth2-proxy** as ingress-nginx forward-auth
 (`minikube/values/oauth2-proxy-values.yaml`, with each route in its own
 component's `minikube/values/<name>-resources.yaml`):
 
@@ -785,10 +797,12 @@ component's `minikube/values/<name>-resources.yaml`):
   credentials, not a Keycloak account.
 - **kagent** — ships no authentication at all.
 - **agentregistry** — the open-source build has no login of its own.
+- **agentgateway's admin UI** (`agentgateway-admin.test/ui/`) — the proxy's
+  built-in config viewer has no login. Its route admits `platform-admins` only.
 
-**HolmesGPT** and **agentgateway** are outside this scheme entirely. Neither
-has a browser UI — every route is API — so there is no interactive login to
-federate. HolmesGPT authenticates each request itself against `HOLMES_API_KEY`
+**HolmesGPT** and the **agentgateway API** (`agentgateway.test`) are outside
+this scheme entirely. Every route there is API, so there is no interactive login
+to federate. HolmesGPT authenticates each request itself against `HOLMES_API_KEY`
 from `mini-platform/holmes-api`; the gateway checks a per-project API key. Putting forward-auth in front of it would 302 every
 caller for no gain, which is the same reasoning that keeps MLflow's `/api` exempt.
 
