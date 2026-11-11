@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=schema.json
+agent: kagent-observability-agent
+project: kagent
+owner: platform team
+description: Answers questions from Prometheus metrics and Grafana dashboards (kagent's observability-agent).
+runtime: {kind: kagent, name: observability-agent}
+autonomy: read-only
+keys: [kagent-observability-agent]
+models:
+  allow: [deepseek-v4-pro]
+secret: {name: kagent-observability-agent-agentgateway, field: OPENAI_API_KEY}

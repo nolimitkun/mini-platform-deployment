@@ -174,15 +174,23 @@ grafana-mcp:
 # Enabled: the ones whose backing systems actually run on this platform.
 k8s-agent:
   enabled: true
+  # Its own gateway key (agents/kagent-k8s-agent.yaml, kagent-resources.yaml).
+  modelConfigRef: kagent-k8s-agent-model
 helm-agent:
   enabled: true
+  # Its own gateway key (agents/kagent-helm-agent.yaml, kagent-resources.yaml).
+  modelConfigRef: kagent-helm-agent-model
 # Generates and explains PromQL. Note it only writes queries — it holds no
 # Prometheus connection of its own; observability-agent is what executes them.
 promql-agent:
   enabled: true
+  # Its own gateway key (agents/kagent-promql-agent.yaml, kagent-resources.yaml).
+  modelConfigRef: kagent-promql-agent-model
 # Queries Prometheus, Loki, and Tempo live via grafana-mcp above.
 observability-agent:
   enabled: true
+  # Its own gateway key (agents/kagent-observability-agent.yaml, kagent-resources.yaml).
+  modelConfigRef: kagent-observability-agent-model
 
 # Disabled: no service mesh, gateway, CNI-policy layer, or progressive-delivery
 # controller on this platform, so these agents would start up with tools that

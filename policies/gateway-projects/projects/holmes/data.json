@@ -1,4 +1,7 @@
 {
+  "agent_keys": {
+    "holmes": "holmes"
+  },
   "budget": {
     "usd_per_30_days": 20
   },

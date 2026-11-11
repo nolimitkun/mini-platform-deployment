@@ -37,18 +37,20 @@ spec:
         ":method": '"POST"'
         content-type: '"application/json"'
       {{- if .task }}
-      body: '{"input": {"project": apiKey.project, "task": "{{ .task }}"}}'
+      body: '{"input": {"project": apiKey.project, "key_id": apiKey.key_id, "task": "{{ .task }}"}}'
       {{- else }}
-      body: '{"input": {"project": apiKey.project}}'
+      body: '{"input": {"project": apiKey.project, "key_id": apiKey.key_id}}'
       {{- end }}
       transformation:
         model: callout.body.result.model
       {{- with $v.auto.cacheTTL }}
-      # Cached per project: a cache hit skips OPA, so a model the policy has
-      # since revoked is still served until the entry expires (values.yaml).
+      # Cached per key (a registered agent's key has a narrower scope than its
+      # project's): a cache hit skips OPA, so a model the policy has since
+      # revoked is still served until the entry expires (values.yaml).
       cache:
         key:
           - apiKey.project
+          - apiKey.key_id
         ttl: {{ . }}
       {{- end }}
 {{- end }}

@@ -27,6 +27,22 @@ by_rule(project_id) := {m |
 	glob.match(pattern, null, m)
 }
 
+# What a key may use: an agent's key (projects' agent_keys, from
+# agents/*.yaml) gets its project's models narrowed by the agent's patterns;
+# any other key of the project gets the project's. A key can only ever narrow
+# its project, never widen it.
+scoped(project_id, key_id) := agent_allowed(project_id, agent_id) if {
+	agent_id := data.projects[project_id].agent_keys[key_id]
+} else := allowed(project_id)
+
+agent_allowed(project_id, agent_id) := {m |
+	agent := data.agents[agent_id]
+	agent.project == project_id
+	some m in allowed(project_id)
+	some pattern in agent.models_allow
+	glob.match(pattern, null, m)
+}
+
 by_exception(project_id) := {m |
 	data.projects[project_id]
 	some m in object.get(data.exceptions, project_id, {"models": []}).models

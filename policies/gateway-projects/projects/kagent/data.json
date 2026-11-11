@@ -1,10 +1,20 @@
 {
+  "agent_keys": {
+    "kagent-helm-agent": "kagent-helm-agent",
+    "kagent-k8s-agent": "kagent-k8s-agent",
+    "kagent-observability-agent": "kagent-observability-agent",
+    "kagent-promql-agent": "kagent-promql-agent"
+  },
   "budget": {
     "usd_per_30_days": 30
   },
   "data_class": "internal",
   "keys": [
-    "kagent"
+    "kagent",
+    "kagent-helm-agent",
+    "kagent-k8s-agent",
+    "kagent-observability-agent",
+    "kagent-promql-agent"
   ],
   "limits": {
     "requests_per_minute": 60

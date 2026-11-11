@@ -125,7 +125,7 @@ test_mcp_tool_calls_by_pattern if {
 	authz.allow with input as mcp("kagent", {"method": "tools/call", "params": {"name": "grafana_query_prometheus"}})
 	authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "grafana_query_loki_logs"}})
 	not authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "kagent-tools_k8s_delete_resource"}})
-	authz.reason == "tool kagent-tools_k8s_delete_resource is not allowed for project holmes" with input as mcp("holmes", {"method": "tools/call", "params": {"name": "kagent-tools_k8s_delete_resource"}})
+	authz.reason == "tool kagent-tools_k8s_delete_resource is not allowed for agent holmes (project holmes)" with input as mcp("holmes", {"method": "tools/call", "params": {"name": "kagent-tools_k8s_delete_resource"}})
 }
 
 test_mcp_needs_an_entry if {
@@ -216,4 +216,54 @@ test_only_models_listing_gets_the_header if {
 		with data.projects["open-webui"].keys as []
 	d.allowed == false
 	not d.headers["x-allowed-models"]
+}
+
+# Agents (agents/*.yaml): a key in the project's agent_keys gets the agent's
+# scope. "kagent-k8s-agent" is limited to DeepSeek; the project's own key
+# "kagent" still has everything kagent may use.
+test_agent_key_narrows_models if {
+	authz.allow with input as req_key("kagent", "kagent-k8s-agent", "/v1/chat/completions", {"model": "deepseek-v4-pro"})
+	not authz.allow with input as req_key("kagent", "kagent-k8s-agent", "/v1/chat/completions", {"model": "qwen3.6-27b"})
+	authz.reason == "model qwen3.6-27b is not allowed for agent kagent-k8s-agent (project kagent)" with input as req_key("kagent", "kagent-k8s-agent", "/v1/chat/completions", {"model": "qwen3.6-27b"})
+	authz.allow with input as chat("kagent", "qwen3.6-27b")
+}
+
+test_agent_key_lists_only_its_models if {
+	d := authz.decision with input as req_key("kagent", "kagent-k8s-agent", "/v1/models", null)
+	d.headers["x-allowed-models"] == "auto,auto-code,auto-general,auto-reasoning,deepseek-v4-pro"
+}
+
+# An agent never widens its project: a pattern for a model the project can't
+# use matches nothing.
+test_agent_cannot_widen_project if {
+	not authz.allow with input as req_key("kagent", "kagent-k8s-agent", "/v1/chat/completions", {"model": "gemini-4-argon"})
+		with data.agents["kagent-k8s-agent"].models_allow as ["*"]
+		with data.projects.kagent.models_allow as ["deepseek-*"]
+}
+
+# An agent of another project can't lend its scope through a forged mapping.
+test_agent_of_other_project_matches_nothing if {
+	not authz.allow with input as req_key("kagent", "kagent-k8s-agent", "/v1/chat/completions", {"model": "deepseek-v4-pro"})
+		with data.agents["kagent-k8s-agent"].project as "holmes"
+}
+
+test_agent_without_tools_gets_no_mcp if {
+	not authz.allow with input as req_key("kagent", "kagent-k8s-agent", "/mcp", {"method": "initialize"})
+	not authz.allow with input as req_key("kagent", "kagent-k8s-agent", "/mcp", {"method": "tools/call", "params": {"name": "grafana_query_prometheus"}})
+	authz.allow with input as mcp("kagent", {"method": "tools/call", "params": {"name": "grafana_query_prometheus"}})
+}
+
+test_agent_tools_need_agent_and_project_match if {
+	authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "grafana_query_loki_logs"}})
+	not authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "grafana_query_loki_logs"}})
+		with data.agents.holmes.mcp_tools as ["grafana_search_*"]
+	not authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "kagent-tools_k8s_get"}})
+		with data.agents.holmes.mcp_tools as ["*"]
+}
+
+# A key the bundle maps to an agent whose data is missing is refused, not
+# given the project's scope.
+test_agent_key_without_agent_data_is_refused if {
+	not authz.allow with input as req_key("kagent", "kagent-k8s-agent", "/v1/chat/completions", {"model": "deepseek-v4-pro"})
+		with data.agents as {}
 }

@@ -163,3 +163,11 @@ test_selection_within_allowed_with_rankings if {
 		}
 	}
 }
+
+# With an agent's key, "auto" stays within the agent's models.
+test_auto_with_agent_key_stays_in_agent_scope if {
+	r := select.result with input as {"project": "kagent", "key_id": "kagent-k8s-agent"}
+	r.model == "deepseek-v4-pro"
+	r2 := select.result with input as {"project": "kagent", "key_id": "kagent"}
+	r2.model != "deepseek-v4-pro"
+}

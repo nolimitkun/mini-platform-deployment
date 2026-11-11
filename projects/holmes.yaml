@@ -3,7 +3,9 @@ project: holmes
 owner: platform team
 description: HolmesGPT root-cause analysis. Its DeepSeek exception is in _exceptions.yaml.
 data_class: internal
-keys: [holmes]
+# Holmes's key belongs to its agent (agents/holmes.yaml), which narrows this
+# project's scope to what Holmes uses.
+keys: []
 mcp_tools: ["grafana_*"]
 # One investigation is a few dozen calls; this leaves room for two at once
 # and stops a runaway one.

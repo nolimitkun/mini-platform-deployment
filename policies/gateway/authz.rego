@@ -30,6 +30,15 @@ project := data.projects[project_id]
 # revokes it as soon as OPA loads the new bundle.
 authenticated if key_id in project.keys
 
+# The registered agent the key belongs to (agents/*.yaml), if any. Its calls
+# get the agent's scope: fewer models and tools than the project, never more.
+agent_id := project.agent_keys[key_id]
+
+agent := data.agents[agent_id]
+
+# The models this key may use (lib.scoped).
+scope_models := lib.scoped(project_id, key_id)
+
 # Without the query string, so "/v1/models?x" is still "/v1/models".
 path := split(input.attributes.request.http.path, "?")[0]
 
@@ -63,6 +72,7 @@ allow if {
 	authenticated
 	mcp_path
 	count(project.mcp_tools) > 0
+	agent_may_use_mcp
 	not tool_call
 }
 
@@ -71,6 +81,19 @@ allow if {
 	tool_call
 	some pattern in project.mcp_tools
 	glob.match(pattern, [], input.parsed_body.params.name)
+	agent_allows_tool(input.parsed_body.params.name)
+}
+
+# An agent's key needs MCP tools of its own; the project's other keys don't.
+agent_may_use_mcp if not agent_id
+
+agent_may_use_mcp if count(agent.mcp_tools) > 0
+
+agent_allows_tool(_) if not agent_id
+
+agent_allows_tool(name) if {
+	some pattern in agent.mcp_tools
+	glob.match(pattern, [], name)
 }
 
 mcp_path if {
@@ -85,7 +108,7 @@ tool_call if {
 
 model_path if path in {"/v1/chat/completions", "/v1/completions", "/v1/responses", "/v1/messages", "/v1/embeddings"}
 
-allowed_model(m) if m in lib.allowed(project_id)
+allowed_model(m) if m in scope_models
 
 # The gateway's virtual models (agentgateway-config templates/auto.yaml). The
 # gateway asks select.rego which model they stand for after this check, and
@@ -95,7 +118,7 @@ virtual_models := {"auto"} | {sprintf("auto-%s", [t]) | some t, _ in data.catalo
 
 allowed_model(m) if {
 	m in virtual_models
-	count(lib.allowed(project_id)) > 0
+	count(scope_models) > 0
 }
 
 # Why a request was refused, for the decision log and the 403 body.
@@ -103,8 +126,14 @@ reason := "unknown project" if {
 	not project
 } else := sprintf("key %v is not active for project %v", [key_id, project_id]) if {
 	not authenticated
+} else := sprintf("model %v is not allowed for agent %v (project %v)", [input.parsed_body.model, agent_id, project_id]) if {
+	model_path
+	agent_id
 } else := sprintf("model %v is not allowed for project %v (%v data)", [input.parsed_body.model, project_id, project.data_class]) if {
 	model_path
+} else := sprintf("tool %v is not allowed for agent %v (project %v)", [input.parsed_body.params.name, agent_id, project_id]) if {
+	tool_call
+	agent_id
 } else := sprintf("tool %v is not allowed for project %v", [input.parsed_body.params.name, project_id]) if {
 	tool_call
 } else := "denied"
@@ -116,8 +145,8 @@ reason := "unknown project" if {
 # authorization above decides what a project can call.
 listed_models_header := "x-allowed-models"
 
-listed_models := lib.allowed(project_id) | virtual_models if {
-	count(lib.allowed(project_id)) > 0
+listed_models := scope_models | virtual_models if {
+	count(scope_models) > 0
 } else := set()
 
 # What OPA-Envoy returns to agentgateway: allow, or a 403 with the reason.

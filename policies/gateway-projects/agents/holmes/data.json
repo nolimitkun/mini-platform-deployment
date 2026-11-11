@@ -1,0 +1,19 @@
+{
+  "autonomy": "supervised",
+  "description": "Root-cause analysis of alerts and incidents from cluster state, logs, metrics, traces and Argo CD (HolmesGPT).",
+  "keys": [
+    "holmes"
+  ],
+  "mcp_tools": [
+    "grafana_*"
+  ],
+  "models_allow": [
+    "deepseek-v4-pro"
+  ],
+  "owner": "platform team",
+  "project": "holmes",
+  "runtime": {
+    "kind": "holmes",
+    "name": "holmes"
+  }
+}

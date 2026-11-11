@@ -1,0 +1,10 @@
+{{- /*
+  Arbitrary objects a component needs next to its release that no chart
+  renders, e.g. one kagent ModelConfig per registered agent
+  (kagent-resources.yaml). Each entry is a complete manifest; the namespace is
+  the release's.
+*/}}
+{{- range .Values.extraObjects }}
+---
+{{ toYaml . }}
+{{- end }}
