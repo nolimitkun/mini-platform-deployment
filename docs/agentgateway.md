@@ -3,8 +3,8 @@
 Every model call and every shared MCP tool call on the platform goes through one
 gateway, [agentgateway](https://agentgateway.dev). Before routing a request, the
 gateway asks OPA whether this client may use this model or tool. OPA's policy is
-Rego in this repo; the OPA Control Plane (OCP) builds it into a bundle and OPA
-loads it. agentregistry is the catalog where people find the tools.
+Rego in this repo; the OPA Control Plane (OCP) builds it, and each project's
+data, into two bundles that OPA loads together. agentregistry is the catalog where people find the tools.
 
 agentgateway replaces LiteLLM, which this platform used before.
 
@@ -43,7 +43,7 @@ flowchart LR
 | agentgateway controller | `agentgateway`, `agentgateway-crds` | Creates the GatewayClass `agentgateway`. For each Gateway, it runs a proxy Deployment, Service and ServiceAccount named after the Gateway |
 | Gateway config | `agentgateway-config` (`minikube/gitops/agentgateway-config`) | The `agentgateway-proxy` Gateway, one `AgentgatewayModel` per model, the `auto` virtual models, passthrough routes to Google's APIs, the merged MCP endpoint, and policies for API keys, OPA, the semantic router, rate limits, the model list, metrics labels and tracing |
 | OPA | `opa-policy` (`minikube/gitops/opa-policy`) | `opa-envoy`, answering ext_authz over gRPC on `opa:9191` |
-| OCP | `opa-policy` | Builds `policies/<bundle>` from this repo's `main` branch on GitHub into `opa-bundles/<bundle>/bundle.tar.gz` in MinIO |
+| OCP | `opa-policy` | Builds `policies/gateway` into the `gateway-policy` bundle and `policies/gateway-projects` into `gateway-projects`, from this repo's `main` branch on GitHub, into `opa-bundles/<bundle>/bundle.tar.gz` in MinIO |
 | Rate-limit service | `rate-limit` (`minikube/gitops/rate-limit`) | Per-project request, token and spend limits, in Redis (see "Rate limits and budgets") |
 | vLLM Semantic Router | `semantic-router` | Classifies `auto` prompts into task classes for the gateway, over ext_proc (see "The semantic router") |
 | agentregistry | `agentregistry`, `agentregistry-postgresql`, `agentregistry-catalog` | The catalog of MCP servers (and later agents), at `agentregistry.test` behind the Keycloak login. Its entries live in `minikube/gitops/agentregistry-catalog/files/catalog.yaml` |
@@ -259,8 +259,11 @@ prices, the same as the catalog's, so on-prem Qwen costs nothing. Its window is
 the rate-limit service's "month": a fixed 30-day period counted from the Unix
 epoch, not a calendar month.
 
-A project without `limits` or `budget` has no entry in the service's config and
-is never limited. Today every project has both:
+Every project has an entry in the service's config; a kind the project doesn't
+limit is `unlimited`. The config ends in a default entry, matched by any project
+not listed, with a request limit of 0, so a project the service doesn't know
+yet (OPA loads it before the `rate-limit` sync) gets 429 instead of no limits.
+Today every project has both a request limit and a budget:
 
 | Project | Requests per minute | USD per 30 days |
 |---|---|---|
@@ -510,7 +513,8 @@ curl -s http://agentgateway.test/v1/chat/completions -H "Authorization: Bearer $
 | Open WebUI key, `/v1/models` | No `deepseek-v4-pro`; kagent's key lists it |
 | Holmes key, `tools/call` of `kagent-tools_*` | 403, `tool ... is not allowed for project holmes` |
 | 31 quick requests with the Holmes key | the last gets 429 with `retry-after` |
-| `curl opa:8181/v1/data/system/bundles` | Manifest with the latest `main` commit |
+| `curl opa:8181/v1/data/system/bundles` | `gateway-policy` and `gateway-projects`, with disjoint roots |
+| `curl opa:8181/v1/data/projects/<id>` | The project's data as in `main` (manifests carry no revision) |
 
 ## Limits
 

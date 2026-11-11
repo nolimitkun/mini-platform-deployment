@@ -1,6 +1,6 @@
 # Design: per-project model policy at scale
 
-Status: **built and deployed** (2026-11-10, PRs #24–#38 and mini-platform#24).
+Status: **built and deployed** (2026-11-10, PRs #24–#38 and #42, and mini-platform#24).
 This is the design record: what was decided, what changed while building it,
 and the spike evidence behind each choice. To operate it (adding a project,
 rotating a key, changing a limit), use [agentgateway.md](agentgateway.md).
@@ -60,6 +60,7 @@ flowchart LR
 | 9 | **Limits and budgets for every project**; Open WebUI on `semantic` | #34 |
 | 10 | **`/v1/models` per project**: OPA names the allowed models, a response transformation filters the gateway's list | #35 |
 | 11 | **Alerts**: budget forecast, project rate-limited, provider throttling, generated from the projects; promtool in CI | #36, #37, #38 |
+| 12 | **Two bundles** (`gateway-policy`, `gateway-projects` with one file per project); the rate limiter refuses unknown projects; decision log keeps the model; `policy-replay.py` | #42 |
 
 ## Decisions
 
