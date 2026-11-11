@@ -408,8 +408,10 @@ Bundles are not signed: OCP 0.10 cannot sign them, so whoever can write the
    bundles whose directory changed. OPA checks MinIO every 10–30 seconds and
    loads them. No Argo CD sync is involved.
 4. Check the bundles with `kubectl -n mini-platform port-forward deploy/opa
-   8181` and `curl localhost:8181/v1/data/system/bundles`. Each manifest names
-   the Git commit it was built from.
+   8181` and `curl localhost:8181/v1/data/system/bundles`, which lists each
+   loaded bundle and its roots. The manifests carry no revision (OCP 0.10 sets
+   none), so to see that a change is live, query the data or rule it changed,
+   e.g. `curl localhost:8181/v1/data/projects/<id>`.
 
 OPA logs every decision to stdout, and Loki collects them
 (`policies/gateway/log_mask.rego`). The log keeps the project and key id, the
