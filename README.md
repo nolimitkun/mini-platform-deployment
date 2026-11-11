@@ -105,7 +105,8 @@ Every browser-facing service authenticates against Keycloak — see
 | `scripts/port-forward-services.sh` | Host-local or LAN port forwards for browser services |
 | `scripts/check-local-deployment.sh` | Verifies local Argo CD sync/health, pod readiness, secret sync, and optional Open WebUI smoke test |
 | `scripts/set-repo.sh` | Repoints the charts/deploy repo URLs and revisions in one command |
-| `scripts/validate-gitops.sh` | Lints/renders the GitOps charts, shellchecks the scripts, checks the catalog and projects generators, and runs `opa test` and `promtool`; run in CI too |
+| `scripts/validate-gitops.sh` | Lints/renders the GitOps charts, shellchecks the scripts, checks the catalog and projects generators, runs `opa test` and loads the two policy bundles together, and runs `promtool`; run in CI too |
+| `scripts/policy-replay.py` | Replays recent gateway decisions from Loki against the policy in the checkout and lists verdicts that would flip |
 | `tools/` | Optional utility workloads (e.g. network diagnostics) |
 
 The vendored charts (`charts/`) live in the separate
@@ -1103,12 +1104,26 @@ Before committing a change to the GitOps wiring, run the same checks CI runs
 ./scripts/validate-gitops.sh
 ```
 
-It confirms every `valuesFile` referenced by the app-of-apps exists locally and
-every `chartPath` resolves (charts/* against the sibling charts checkout at
-`CHARTS_DIR`, first-party `minikube/gitops/*` locally), lints and renders the
-three `minikube/gitops/` charts, runs `kubeconform` over the rendered manifests,
-and `shellcheck`s the scripts. `kubeconform` and `shellcheck` are used if
-installed and skipped otherwise; CI installs both.
+It confirms every `valuesFile` and `resourcesFile` referenced by the
+app-of-apps exists and every `chartPath` resolves (charts/* against the sibling
+charts checkout at `CHARTS_DIR`, first-party `minikube/gitops/*` locally). It
+also:
+
+- lints and renders the app-of-apps and the shared app-resources chart, and runs
+  `kubeconform` over the rendered manifests;
+- `shellcheck`s the scripts;
+- checks that the files `gen-catalog.py` and `gen-projects.py` generate are
+  current;
+- runs `opa check`, `opa fmt` and `opa test` over `policies/`, then builds the
+  `gateway-policy` and `gateway-projects` bundles and loads them together;
+- runs `promtool` on Prometheus's config and the alert rules.
+
+`kubeconform`, `shellcheck`, `opa` and `promtool` are used if installed and
+skipped otherwise; CI installs them all.
+
+Before merging a policy or project change, `python3 scripts/policy-replay.py`
+replays recent gateway decisions from Loki against the change and lists every
+verdict that would flip (see [docs/agentgateway.md](docs/agentgateway.md)).
 
 ## Production Hardening
 

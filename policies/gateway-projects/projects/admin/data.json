@@ -1,0 +1,25 @@
+{
+  "budget": {
+    "usd_per_30_days": 25
+  },
+  "data_class": "public",
+  "keys": [
+    "admin"
+  ],
+  "limits": {
+    "requests_per_minute": 60
+  },
+  "mcp_tools": [
+    "*"
+  ],
+  "models_allow": [
+    "*"
+  ],
+  "owner": "platform team",
+  "placement": [
+    "onprem",
+    "gcp",
+    "external"
+  ],
+  "routing": "semantic"
+}
