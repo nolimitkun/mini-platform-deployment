@@ -15,7 +15,7 @@
   "models_allow": [
     "*"
   ],
-  "owner": "platform team",
+  "owner": "platform team (propagation test)",
   "placement": [
     "onprem",
     "gcp"

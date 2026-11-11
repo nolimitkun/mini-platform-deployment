@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=schema.json
 project: holmes
-owner: platform team
+owner: platform team (propagation test)
 description: HolmesGPT root-cause analysis. Its DeepSeek exception is in _exceptions.yaml.
 data_class: internal
 keys: [holmes]
