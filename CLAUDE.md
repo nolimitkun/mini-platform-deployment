@@ -93,10 +93,13 @@ Default AI request path: `Open WebUI → agentgateway → vLLM Router → vLLM`.
 one OpenAI-compatible endpoint for every model (vLLM, Gemini on Vertex AI over the
 mini-cloud VPN, DeepSeek), passthrough routes to Google's speech APIs, and one MCP
 endpoint over the cluster's MCP servers. Every request carries a per-project API key
-and is decided by **OPA** (ext_authz, FailClosed) from the Rego in `policies/gateway`,
-which the **OPA Control Plane (OCP)** builds from this repo's `main` on GitHub into a
-bundle in MinIO — so a policy change goes live on merge, without an Argo CD sync, and
-must pass `opa test` (run by `validate-gitops.sh`). Models and Google APIs are declared
+and is decided by **OPA** (ext_authz, FailClosed) from the Rego in `policies/gateway`
+and the per-project data in `policies/gateway-projects` (one `data.json` per project,
+generated), which the **OPA Control Plane (OCP)** builds from this repo's `main` on
+GitHub into two bundles in MinIO with disjoint `.manifest` roots — so a policy change
+goes live on merge, without an Argo CD sync, and must pass `opa test` and the two-bundle
+load (run by `validate-gitops.sh`). `scripts/policy-replay.py` replays recent decisions
+from Loki against a change. Models and Google APIs are declared
 once in `catalog/models.yaml`; `scripts/gen-catalog.py` generates the gateway chart's
 `files/catalog.json` and the policy's `catalog/data.json` from it (CI checks they are
 current). API keys belong to projects, one file each in `projects/` (data class,

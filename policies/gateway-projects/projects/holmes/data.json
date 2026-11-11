@@ -1,0 +1,24 @@
+{
+  "budget": {
+    "usd_per_30_days": 20
+  },
+  "data_class": "internal",
+  "keys": [
+    "holmes"
+  ],
+  "limits": {
+    "requests_per_minute": 30
+  },
+  "mcp_tools": [
+    "grafana_*"
+  ],
+  "models_allow": [
+    "*"
+  ],
+  "owner": "platform team",
+  "placement": [
+    "onprem",
+    "gcp"
+  ],
+  "routing": "cheapest"
+}

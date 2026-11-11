@@ -10,8 +10,16 @@ ocp:
   repo: https://github.com/nolimitkun/mini-platform-deployment.git
   reference: refs/heads/main
   bundles:
-    # bundle name -> directory under policies/
-    gateway: policies/gateway
+    # bundle name -> directory under policies/. Each directory's .manifest
+    # sets the bundle's roots; they must not overlap (validate-gitops.sh).
+    # The Rego and the data that changes with it (catalog, data classes).
+    # Not called "gateway": that was the single bundle holding project data
+    # too, and an OPA still on the old config must not pick up a gateway
+    # bundle without it during a rollout.
+    gateway-policy: policies/gateway
+    # Per-project data (scripts/gen-projects.py), one file per project: a
+    # project change rebuilds only this bundle.
+    gateway-projects: policies/gateway-projects
 
 minio:
   url: http://minio.mini-platform.svc.cluster.local:9000
@@ -28,4 +36,7 @@ opa:
   grpcPort: 9191
   # The rule agentgateway's verdict comes from (policies/gateway/authz.rego).
   decision: gateway/authz/decision
-  bundle: gateway
+  # The bundles OPA loads together (ocp.bundles above).
+  bundles:
+    - gateway-policy
+    - gateway-projects

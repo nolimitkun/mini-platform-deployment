@@ -229,21 +229,42 @@ budget: Prometheus keeps 15 days, so the 30-day count isn't there. `429`s
 separate on the `reason` label: `RateLimit` is the project's own limit or
 budget, `Upstream` the provider's throttling.
 
-### One bundle, no OCP stacks
+### Two bundles: policy and project data
 
-200 projects is a few hundred kilobytes of data, so there is one bundle. OCP
-stacks, which add mandatory sources by label, only matter once separate OPA
-fleets need different policy.
+Size is not the reason. A project is about 400 bytes of data and OPA looks a
+project up by id, so 1,000 projects are under half a megabyte and decide as
+fast as four. The reasons are change and blast radius:
+
+- **`gateway-policy`** (`policies/gateway`) holds the Rego, the data classes and the catalog. It changes
+  rarely, and a mistake there affects every project.
+- **`gateway-projects`** holds one `data.json` per project and per exception.
+  It changes with every project request, and a change touches only its own
+  file, so pull requests for different projects never conflict.
+
+Each bundle's `.manifest` declares its roots, and the roots are disjoint, so
+OPA activates each bundle on its own. OCP stacks, which add mandatory sources
+by label, only matter once separate OPA fleets need different policy.
+
+### A project the rate-limit service doesn't know is refused
+
+OPA learns about a project from Git within a minute or two, but the rate-limit
+service only after an Argo CD sync of `rate-limit`. In between, the service
+used to have no entry for the project and let every call through: no request
+limit, no budget. Its config now ends in a default entry, matched by any project
+not listed, whose request limit is 0, so such calls get 429 until the sync.
+Every listed project has an entry for each kind, with `unlimited: true` where
+the project sets no limit.
 
 ## How long changes take
 
 | Change | Path | Delay |
 |--------|------|-------|
-| Project, catalog or Rego change | merge → OCP rebuild (30–60 s) → OPA poll (10–30 s) | 1–2 min |
+| Project change | merge → OCP rebuilds `gateway-projects` only (30–60 s) → OPA poll (10–30 s) | 1–2 min |
+| Catalog or Rego change | merge → OCP rebuilds `gateway-policy` (30–60 s) → OPA poll (10–30 s) | 1–2 min |
 | Revoke a key | drop its id from the project file | the same |
 | Remove a key from Vault | bootstrap → VSO refresh → gateway reload | VSO interval (1 min) |
 | New model routes or `auto` models | merge → Argo CD sync of `agentgateway-config` | sync |
-| Limits and budgets | merge → Argo CD sync of `rate-limit` (pod restart) | sync |
+| Limits and budgets | merge → Argo CD sync of `rate-limit` (pod restart) | sync; a new project gets 429 until then |
 | Alert thresholds | merge → Argo CD sync of `prometheus` (config reload) | sync |
 | Rankings | Prometheus → OPA cache | ≤ 2 min |
 

@@ -150,12 +150,12 @@ mcp_tools: ["grafana_*"]        # optional; no MCP access without it
 - key ids are `<project>` or `<project>-<suffix>`, and unique
 - exceptions (`projects/_exceptions.yaml`) name existing projects and models
 
-It then generates four files. CI fails if any is out of date:
+It then generates these files. CI fails if any is out of date:
 
 | File | Read by |
 |------|---------|
-| `policies/gateway/projects/data.json` | OPA, as `data.projects` |
-| `policies/gateway/exceptions/data.json` | OPA, as `data.exceptions` |
+| `policies/gateway-projects/projects/<id>/data.json`, one per project | OPA, as `data.projects.<id>` |
+| `policies/gateway-projects/exceptions/<id>/data.json`, one per project with an exception | OPA, as `data.exceptions.<id>` |
 | `minikube/gitops/rate-limit/files/config.yaml` | the rate-limit service |
 | `minikube/gitops/app-resources/alerts/agentgateway-projects.yml` | Prometheus, as alert rules |
 
@@ -379,19 +379,44 @@ request. Its responses carry `x-vsr-selected-decision` and
 
 ### Changing a policy
 
+OPA loads two bundles, each built by OCP from its own directory:
+
+| Bundle | Directory | Roots (`.manifest`) | Changes when |
+|--------|-----------|---------------------|--------------|
+| `gateway-policy` | `policies/gateway` | `gateway`, `catalog`, `system` | the Rego, the data classes or the model catalog change |
+| `gateway-projects` | `policies/gateway-projects` | `projects`, `exceptions` | a project file or an exception changes |
+
+Each bundle activates on its own, so a project change swaps only
+`gateway-projects` and never touches the Rego. (Before the split there was one
+bundle, `gateway`; its object may still sit in the bucket, unused.) The roots must not overlap: OPA
+refuses to activate two bundles that claim the same root, and
+`validate-gitops.sh` builds both and loads them together to catch that in CI.
+Bundles are not signed: OCP 0.10 cannot sign them, so whoever can write the
+`opa-bundles` bucket can change the policy.
+
 1. Edit the Rego, the data, a project file or the catalog, regenerate with
    `scripts/gen-projects.py` or `scripts/gen-catalog.py`, and run
-   `opa test policies/gateway`. CI runs the generators' `--check`, `opa check`,
-   `opa fmt`, `opa test` and `promtool` too (`scripts/validate-gitops.sh`).
-2. Merge to `main`. OCP checks Git about every 30–60 seconds and publishes a new
-   bundle. OPA checks MinIO every 10–30 seconds and loads it. No Argo CD sync is
-   involved.
-3. Check the bundle with `kubectl -n mini-platform port-forward deploy/opa
-   8181` and `curl localhost:8181/v1/data/system/bundles`. The manifest names
-   the Git commit it was built from.
+   `opa test policies/gateway policies/gateway-projects`. CI runs the
+   generators' `--check`, `opa check`, `opa fmt`, `opa test`, the two-bundle
+   load and `promtool` too (`scripts/validate-gitops.sh`).
+2. Replay recent traffic against the change with
+   `python3 scripts/policy-replay.py`. It reads OPA's decisions from Loki,
+   evaluates each logged request with the policy in your checkout and lists
+   every request whose verdict would flip. It needs the cluster, so CI doesn't
+   run it.
+3. Merge to `main`. OCP checks Git about every 30–60 seconds and publishes the
+   bundles whose directory changed. OPA checks MinIO every 10–30 seconds and
+   loads them. No Argo CD sync is involved.
+4. Check the bundles with `kubectl -n mini-platform port-forward deploy/opa
+   8181` and `curl localhost:8181/v1/data/system/bundles`, which lists each
+   loaded bundle and its roots. The manifests carry no revision (OCP 0.10 sets
+   none), so to see that a change is live, query the data or rule it changed,
+   e.g. `curl localhost:8181/v1/data/projects/<id>`.
 
-OPA logs every decision to stdout, and Loki collects them. Request bodies and
-the `authorization` header are masked (`policies/gateway/log_mask.rego`).
+OPA logs every decision to stdout, and Loki collects them
+(`policies/gateway/log_mask.rego`). The log keeps the project and key id, the
+path, the model of a model call and the method and tool name of an MCP call.
+Prompts, tool arguments and the `authorization` header are dropped.
 
 The gateway fails closed: if OPA is down, every request is denied.
 

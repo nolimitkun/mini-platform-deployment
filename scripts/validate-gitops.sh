@@ -12,7 +12,8 @@
 #   - shellcheck on scripts/
 #   - catalog/models.yaml and projects/*.yaml are valid and the files generated
 #     from them are current
-#   - opa check, fmt and test on every policy bundle under policies/
+#   - opa check and fmt on every policy bundle under policies/, opa test over
+#     all of them, and a build of each loaded together (disjoint roots)
 #   - promtool on Prometheus's rendered prometheus.yml and on the alert rules
 #     under minikube/gitops/app-resources/alerts/
 #
@@ -164,12 +165,40 @@ fi
 
 echo "==> opa (policies/)"
 if have opa; then
+  # Every directory under policies/ is one bundle (opa-policy values.yaml
+  # ocp.bundles), and OPA loads them together: the Rego in gateway, the
+  # per-project data in gateway-projects. The tests need both.
+  dirs=()
   for dir in policies/*/; do
     dir="${dir%/}"
+    dirs+=("$dir")
     if opa check --strict "$dir" >/dev/null; then ok "opa check $dir"; else bad "opa check $dir"; fi
     if [[ -z "$(opa fmt --list "$dir")" ]]; then ok "opa fmt $dir"; else bad "opa fmt $dir (run: opa fmt -w $dir)"; fi
-    if opa test "$dir" >/dev/null; then ok "opa test $dir"; else bad "opa test $dir"; opa test "$dir" || true; fi
   done
+  if opa test "${dirs[@]}" >/dev/null; then ok "opa test ${dirs[*]}"; else bad "opa test ${dirs[*]}"; opa test "${dirs[@]}" || true; fi
+  # Build each bundle as OCP does (tests left out, roots from its .manifest)
+  # and activate them together, as OPA does: data outside a bundle's roots, or
+  # two bundles claiming the same root, fails here instead of in the cluster.
+  bundle_tmp="$(mktemp -d)"
+  bundle_args=()
+  built=true
+  for dir in "${dirs[@]}"; do
+    out="$bundle_tmp/$(basename "$dir").tar.gz"
+    if err="$(opa build -b "$dir" --ignore '*_test.rego' -o "$out" 2>&1)"; then
+      bundle_args+=(-b "$out")
+    else
+      built=false
+      bad "opa build $dir"; echo "$err"
+    fi
+  done
+  if [[ "$built" == true ]]; then
+    if err="$(opa eval "${bundle_args[@]}" --fail 'true' 2>&1)"; then
+      ok "bundles load together (roots disjoint)"
+    else
+      bad "bundles load together"; echo "$err"
+    fi
+  fi
+  rm -rf "$bundle_tmp"
 else
   skip "opa not installed (policy tests skipped)"
 fi

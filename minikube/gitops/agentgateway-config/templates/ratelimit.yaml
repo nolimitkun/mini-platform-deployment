@@ -3,7 +3,10 @@
 # Per-project limits and spend caps (projects/*.yaml limits and budget), kept
 # by the rate-limit service so they hold across gateway replicas. Each
 # descriptor is (project, kind); the service only limits the kinds a project
-# configures, so a project without limits is never refused here.
+# configures. A project the service has no entry for at all is refused: its
+# config (scripts/gen-projects.py) ends in a default entry with a request limit
+# of 0, so a project OPA allows before this config is synced gets 429 rather
+# than no limits.
 #   requests          requests per minute, counted up front
 #   tokens            tokens per minute, counted when the call completes
 #   budget_micro_usd  micro-USD per 30-day window, agentgateway's cost of the

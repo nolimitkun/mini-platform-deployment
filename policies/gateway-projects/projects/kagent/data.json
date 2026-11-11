@@ -1,0 +1,25 @@
+{
+  "budget": {
+    "usd_per_30_days": 30
+  },
+  "data_class": "internal",
+  "keys": [
+    "kagent"
+  ],
+  "limits": {
+    "requests_per_minute": 60
+  },
+  "mcp_tools": [
+    "grafana_*",
+    "kagent-tools_*"
+  ],
+  "models_allow": [
+    "*"
+  ],
+  "owner": "platform team",
+  "placement": [
+    "onprem",
+    "gcp"
+  ],
+  "routing": "cheapest"
+}

@@ -1,0 +1,22 @@
+{
+  "budget": {
+    "usd_per_30_days": 50
+  },
+  "data_class": "internal",
+  "keys": [
+    "open-webui"
+  ],
+  "limits": {
+    "requests_per_minute": 120
+  },
+  "mcp_tools": [],
+  "models_allow": [
+    "*"
+  ],
+  "owner": "platform team",
+  "placement": [
+    "onprem",
+    "gcp"
+  ],
+  "routing": "semantic"
+}

@@ -11,15 +11,19 @@ data:
         credentials:
           s3_signing:
             environment_credentials: {}
+    # One entry per OCP bundle. Their .manifest roots are disjoint, so each
+    # one activates on its own: a project change swaps only gateway-projects.
     bundles:
-      {{ $v.opa.bundle }}:
+      {{- range $v.opa.bundles }}
+      {{ . }}:
         service: minio
-        resource: {{ $v.opa.bundle }}/bundle.tar.gz
+        resource: {{ . }}/bundle.tar.gz
         # Keep serving the last good bundle across restarts and MinIO outages.
         persist: true
         polling:
           min_delay_seconds: 10
           max_delay_seconds: 30
+      {{- end }}
     # Bounded cache for http.send answers: the model rankings
     # (policies/gateway/rankings.rego) are fetched from Prometheus at most
     # every couple of minutes per replica.
