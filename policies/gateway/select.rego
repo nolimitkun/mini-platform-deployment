@@ -2,7 +2,9 @@
 # platform choose. agentgateway asks this through a callout virtual model:
 #
 #   POST /v1/data/gateway/select/result
-#   {"input": {"project": "<id>", "task": "<class>"}}   task is optional
+#   {"input": {"project": "<id>", "key_id": "<key>", "task": "<class>"}}
+#   key_id and task are optional; with the key of a registered agent, the
+#   choice stays within the agent's models (lib.scoped)
 #   → {"result": {"model": "<name>", "routing": "<rule>"}}
 #
 # The answer is always one of lib.allowed(project): selection never widens what
@@ -19,7 +21,7 @@ project_id := input.project
 
 project := data.projects[project_id]
 
-allowed := lib.allowed(project_id)
+allowed := lib.scoped(project_id, object.get(input, "key_id", ""))
 
 # What a request costs, blended at three input tokens to one output token, in
 # USD per million tokens (catalog/models.yaml prices).

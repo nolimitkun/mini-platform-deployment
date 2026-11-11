@@ -5,6 +5,14 @@ vaultSecrets:
   # consumer expects.
   - kagent-agentgateway
   - kagent-grafana
+  # Each registered agent's own gateway key (agents/kagent-*.yaml), so OPA
+  # knows which agent is calling and applies its scope. kagent-agentgateway
+  # stays for default-model-config, which agents created in the UI use: they
+  # get the kagent project's scope until they are registered.
+  - kagent-k8s-agent-agentgateway
+  - kagent-helm-agent-agentgateway
+  - kagent-promql-agent-agentgateway
+  - kagent-observability-agent-agentgateway
 
 routes:
   - name: kagent
@@ -16,3 +24,53 @@ routes:
     # reach the ingress.
     protectedPaths:
       - /
+
+# One ModelConfig per registered kagent agent, the same as the chart's
+# default-model-config but with the agent's own key; kagent-values.yaml points
+# each agent's modelConfigRef here. gen-projects.py checks the three stay in
+# step with agents/*.yaml.
+extraObjects:
+  - apiVersion: kagent.dev/v1alpha2
+    kind: ModelConfig
+    metadata:
+      name: kagent-k8s-agent-model
+    spec:
+      provider: OpenAI
+      model: deepseek-v4-pro
+      apiKeySecret: kagent-k8s-agent-agentgateway
+      apiKeySecretKey: OPENAI_API_KEY
+      openAI:
+        baseUrl: http://agentgateway-proxy.mini-platform.svc.cluster.local/v1
+  - apiVersion: kagent.dev/v1alpha2
+    kind: ModelConfig
+    metadata:
+      name: kagent-helm-agent-model
+    spec:
+      provider: OpenAI
+      model: deepseek-v4-pro
+      apiKeySecret: kagent-helm-agent-agentgateway
+      apiKeySecretKey: OPENAI_API_KEY
+      openAI:
+        baseUrl: http://agentgateway-proxy.mini-platform.svc.cluster.local/v1
+  - apiVersion: kagent.dev/v1alpha2
+    kind: ModelConfig
+    metadata:
+      name: kagent-promql-agent-model
+    spec:
+      provider: OpenAI
+      model: deepseek-v4-pro
+      apiKeySecret: kagent-promql-agent-agentgateway
+      apiKeySecretKey: OPENAI_API_KEY
+      openAI:
+        baseUrl: http://agentgateway-proxy.mini-platform.svc.cluster.local/v1
+  - apiVersion: kagent.dev/v1alpha2
+    kind: ModelConfig
+    metadata:
+      name: kagent-observability-agent-model
+    spec:
+      provider: OpenAI
+      model: deepseek-v4-pro
+      apiKeySecret: kagent-observability-agent-agentgateway
+      apiKeySecretKey: OPENAI_API_KEY
+      openAI:
+        baseUrl: http://agentgateway-proxy.mini-platform.svc.cluster.local/v1

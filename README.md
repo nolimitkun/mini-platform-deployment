@@ -41,7 +41,8 @@ Open WebUI ──▶ agentgateway ──▶ vLLM Router ──▶ vLLM
 ```
 
 Open WebUI, kagent and HolmesGPT each call **agentgateway** with an API key of
-their own project (`projects/*.yaml`). It serves every model on one OpenAI-compatible endpoint (`qwen3.6-27b` on
+their own project (`projects/*.yaml`) or, for a registered agent, of the agent
+(`agents/*.yaml`, which narrows its project's models and tools). It serves every model on one OpenAI-compatible endpoint (`qwen3.6-27b` on
 the vLLM router serving `unsloth/Qwen3.6-27B-NVFP4`, the Gemini models
 on Vertex AI, `deepseek-v4-pro`), passes Google's speech APIs through, and merges
 the cluster's MCP servers into one endpoint. Before routing, it asks **OPA**,
@@ -49,7 +50,7 @@ whose policy (the Rego in `policies/gateway`: data class per project, placement
 per model, allowed tools, the model behind `auto`; and one data file per project
 in `policies/gateway-projects`) the **OPA Control Plane** builds from Git into
 two bundles. A rate-limit service enforces each project's limits and budget. **agentregistry** is the
-catalog of MCP servers and agents. See [docs/agentgateway.md](docs/agentgateway.md).
+catalog of MCP servers and the registered agents. See [docs/agentgateway.md](docs/agentgateway.md).
 
 Supporting subsystems:
 

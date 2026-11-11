@@ -354,14 +354,24 @@ vault_cli kv put mini-platform/agentgateway-api-keys "${agw_json[@]}"
 # each one reads. Taken from the path just written (not the loop) so a
 # SEED_MISSING_ONLY pass that kept an existing agentgateway-client-keys still
 # hands out the key the gateway knows.
-# kagent: OPENAI_API_KEY, its OpenAI-protocol client's name. Holmes: anything
-# but OPENAI_API_KEY (see holmes-values.yaml).
+# kagent: OPENAI_API_KEY, its OpenAI-protocol client's name (default-model-config,
+# which agents created in kagent's UI use until they are registered).
 kv_put mini-platform/kagent-agentgateway \
   OPENAI_API_KEY="$(kv_field mini-platform/agentgateway-client-keys kagent)"
-kv_put mini-platform/holmes-agentgateway \
-  AGENTGATEWAY_API_KEY="$(kv_field mini-platform/agentgateway-client-keys holmes)"
 kv_put mini-platform/open-webui-agentgateway \
   OPENAI_API_KEY="$(kv_field mini-platform/agentgateway-client-keys open-webui)"
+
+# Registered agents (agents/*.yaml) read their own key from the secret their
+# file names, e.g. kagent-k8s-agent-agentgateway OPENAI_API_KEY, or Holmes's
+# holmes-agentgateway AGENTGATEWAY_API_KEY (anything but OPENAI_API_KEY, see
+# holmes-values.yaml).
+agw_mirrors="$(python3 "$(dirname "$0")/gen-projects.py" --mirrors)" \
+  || { echo "ERROR: agents/ is invalid (python3 scripts/gen-projects.py)." >&2; exit 1; }
+while read -r secret field key_id; do
+  [[ -n "$secret" ]] || continue
+  kv_put "mini-platform/$secret" \
+    "$field=$(kv_field mini-platform/agentgateway-client-keys "$key_id")"
+done <<< "$agw_mirrors"
 
 # DeepSeek, the hosted model kagent's agents and Holmes use through the
 # gateway, which sends this value as the Authorization header (with Bearer

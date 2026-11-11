@@ -1,4 +1,5 @@
-# The catalog itself is files/catalog.yaml: edit it there.
+# The catalog is files/catalog.yaml (edit it there) plus files/agents.yaml,
+# generated from agents/*.yaml by scripts/gen-projects.py.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -6,6 +7,7 @@ metadata:
 data:
   catalog.yaml: |
 {{ .Files.Get "files/catalog.yaml" | indent 4 }}
+{{ .Files.Get "files/agents.yaml" | indent 4 }}
 ---
 # Applies the catalog after every sync. /v0/apply is idempotent: entries that
 # exist are updated, nothing is deleted.

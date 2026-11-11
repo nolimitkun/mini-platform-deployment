@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=schema.json
+agent: kagent-k8s-agent
+project: kagent
+owner: platform team
+description: Inspects and changes Kubernetes resources in the cluster on request (kagent's k8s-agent).
+runtime: {kind: kagent, name: k8s-agent}
+# kagent's Kubernetes tools can apply and delete resources, with no approval
+# step in between.
+autonomy: autonomous
+keys: [kagent-k8s-agent]
+models:
+  allow: [deepseek-v4-pro]
+secret: {name: kagent-k8s-agent-agentgateway, field: OPENAI_API_KEY}
