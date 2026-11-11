@@ -109,6 +109,7 @@ Every browser-facing service authenticates against Keycloak — see
 | `scripts/set-repo.sh` | Repoints the charts/deploy repo URLs and revisions in one command |
 | `scripts/validate-gitops.sh` | Lints/renders the GitOps charts, shellchecks the scripts, checks the catalog and projects generators, runs `opa test` and loads the two policy bundles together, and runs `promtool`; run in CI too |
 | `scripts/policy-replay.py` | Replays recent gateway decisions from Loki against the policy in the checkout and lists verdicts that would flip |
+| `scripts/tools-drift.py` | Compares the MCP tools behind the gateway with `catalog/tools.yaml`: new, removed or changed tools |
 | `tools/` | Optional utility workloads (e.g. network diagnostics) |
 
 The vendored charts (`charts/`) live in the separate

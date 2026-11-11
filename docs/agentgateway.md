@@ -220,8 +220,38 @@ An agent can only narrow its project. A call with one of its keys gets:
 - the project's rate limit and budget, shared with the project's other keys.
 
 Denials name the agent, for example `model qwen3.6-27b is not allowed for agent
-kagent-k8s-agent (project kagent)`. `autonomy` is recorded and published but
-not yet enforced per tool.
+kagent-k8s-agent (project kagent)`.
+
+### Tool risk and autonomy
+
+`catalog/tools.yaml` lists every tool behind `/mcp` (189 today: Grafana MCP and
+kagent-tools) with the most it can do:
+
+| Risk | Meaning | read-only agent | supervised agent | autonomous agent |
+|------|---------|-----------------|------------------|------------------|
+| `read` | only reads | yes | yes | yes |
+| `write` | changes something that can be changed back | no | needs approval | yes |
+| `irreversible` | deletes, uninstalls, runs arbitrary commands or API calls | no | needs approval | needs approval |
+
+An agent's tool call needs a match in its project's and its own `mcp_tools`
+and a risk its `autonomy` allows. A tool the catalog doesn't list counts as
+`irreversible`, so a new or renamed tool stays out of agents' reach until
+someone classifies it. There is no approval path through the gateway yet, so
+"needs approval" is a 403 that says so: `tool grafana_update_dashboard is write:
+agent holmes (supervised) needs a human approval for it`. A project's own keys
+keep the plain `mcp_tools` rule; risk applies to agents.
+
+The servers' own MCP annotations aren't trusted. kagent-tools marks every tool
+destructive (the MCP default when a server sets no `readOnlyHint`), and
+Grafana's `alerting_manage_routing` claims read-only though it can change
+routing. A tool that can do several things is classed by the worst one.
+
+Each entry also has a `fingerprint`, a hash of the description and input
+schema the server announced when it was classified. `scripts/tools-drift.py`
+lists the live tools through the gateway and reports tools that are new,
+removed or changed since; run it after upgrading kagent or Grafana MCP, and
+before trusting a changed tool, re-check its risk. `gen-catalog.py` puts the
+risks into the policy's `data.catalog.tools`.
 
 `gen-projects.py` adds each agent's keys to its project with an `agent_keys`
 map (key id → agent) and writes `data.agents.<id>` into the `gateway-projects`

@@ -1,0 +1,211 @@
+# Every MCP tool behind the gateway's /mcp, with the most it can do. OPA holds
+# a registered agent (agents/*.yaml) to its autonomy with this:
+#
+#   read          only reads             read-only, supervised and autonomous agents
+#   write         changes something it   autonomous agents; a supervised agent
+#                 can be changed back    needs a human approval (refused today)
+#   irreversible  deletes, executes      no agent on its own: needs an approval
+#                 arbitrary commands or
+#                 API calls, uninstalls
+#
+# A tool not listed here counts as irreversible. The servers' own MCP
+# annotations are not trusted: kagent-tools marks every tool destructive, and
+# Grafana's alerting_manage_routing claims read-only while it can change
+# routing. A tool that can do several things is classed by the worst of them.
+#
+# fingerprint (quoted, so YAML keeps it a string): the first 16 hex digits of sha256 over the tool's description
+# and input schema as the server announces them. scripts/tools-drift.py
+# compares them with the live servers, so a tool that appears, disappears or
+# changes what it says it does is reviewed before an agent relies on it.
+#
+# scripts/gen-catalog.py writes the risks into the policy's data.catalog.tools.
+tools:
+  grafana_add_activity_to_incident: {risk: write, fingerprint: "e799d6e449740f82"}
+  grafana_alerting_manage_routing: {risk: write, fingerprint: "1d0e36719c42cce7"}
+  grafana_alerting_manage_rules: {risk: irreversible, fingerprint: "c6a0ccee9007952d"}
+  grafana_analyze_loki_labels: {risk: read, fingerprint: "d5c6fdf0819020fc"}
+  grafana_check_datasources_health: {risk: read, fingerprint: "beb525a7287829e3"}
+  grafana_create_annotation: {risk: write, fingerprint: "6534a824451a084f"}
+  grafana_create_datasource: {risk: write, fingerprint: "4d3a1b18341e4b51"}
+  grafana_create_folder: {risk: write, fingerprint: "edb6fc1e55f11e81"}
+  grafana_create_incident: {risk: write, fingerprint: "72ef6271d201d66b"}
+  grafana_create_snapshot: {risk: write, fingerprint: "614c062dfbc55dca"}
+  grafana_delete_snapshot: {risk: irreversible, fingerprint: "ed51cd6a0faf97a0"}
+  grafana_find_error_pattern_logs: {risk: read, fingerprint: "52265a7550255096"}
+  grafana_find_slow_requests: {risk: read, fingerprint: "7cc36486eab2b922"}
+  grafana_generate_deeplink: {risk: read, fingerprint: "1ea03d6365ebcb01"}
+  grafana_get_alert_group: {risk: read, fingerprint: "4fefbce18d0f011c"}
+  grafana_get_annotation_tags: {risk: read, fingerprint: "a3504a8753df9e6a"}
+  grafana_get_annotations: {risk: read, fingerprint: "838a558968a62ab4"}
+  grafana_get_assertions: {risk: read, fingerprint: "4a4e5dd75cef716f"}
+  grafana_get_current_oncall_users: {risk: read, fingerprint: "098fb4d4e1daf876"}
+  grafana_get_dashboard_by_uid: {risk: read, fingerprint: "5800994e10a4d68a"}
+  grafana_get_dashboard_panel_queries: {risk: read, fingerprint: "602124742284e349"}
+  grafana_get_dashboard_property: {risk: read, fingerprint: "2a8566c086f6c2f3"}
+  grafana_get_dashboard_summary: {risk: read, fingerprint: "04444e7074098657"}
+  grafana_get_datasource: {risk: read, fingerprint: "cfa3e4d1f50d36fa"}
+  grafana_get_incident: {risk: read, fingerprint: "2a5ba55893e7dd15"}
+  grafana_get_oncall_shift: {risk: read, fingerprint: "56f42326c8b22581"}
+  grafana_get_panel_image: {risk: read, fingerprint: "896e84b0d6a40b5c"}
+  grafana_get_plugin: {risk: read, fingerprint: "98d0aa3c1dc9a3a9"}
+  grafana_get_sift_analysis: {risk: read, fingerprint: "a177a1c67b9f58e7"}
+  grafana_get_sift_investigation: {risk: read, fingerprint: "e5c739a63657cae0"}
+  grafana_get_snapshot: {risk: read, fingerprint: "04e576f96dcf131c"}
+  grafana_grafana_api_request: {risk: irreversible, fingerprint: "5a20ca5cdb689d79"}
+  grafana_install_plugin: {risk: write, fingerprint: "6fa774694fe0b19c"}
+  grafana_list_alert_groups: {risk: read, fingerprint: "c1268baed867a959"}
+  grafana_list_datasources: {risk: read, fingerprint: "baac68d5d88bfaa3"}
+  grafana_list_incidents: {risk: read, fingerprint: "f2bf90d3378d67fb"}
+  grafana_list_loki_label_names: {risk: read, fingerprint: "1bff87b89f1a4049"}
+  grafana_list_loki_label_values: {risk: read, fingerprint: "131cc62e800c4e35"}
+  grafana_list_oncall_schedules: {risk: read, fingerprint: "d620fffd76f75d6e"}
+  grafana_list_oncall_teams: {risk: read, fingerprint: "20ab207a5530035d"}
+  grafana_list_oncall_users: {risk: read, fingerprint: "540e2b0ea09fd8ef"}
+  grafana_list_prometheus_label_names: {risk: read, fingerprint: "60b2e7abfcbfa8a7"}
+  grafana_list_prometheus_label_values: {risk: read, fingerprint: "0e2639a0f9d91ac6"}
+  grafana_list_prometheus_metric_metadata: {risk: read, fingerprint: "3a994ea2f8c4fcd3"}
+  grafana_list_prometheus_metric_names: {risk: read, fingerprint: "f7c98b1c258fd7cf"}
+  grafana_list_provisioning_repositories: {risk: read, fingerprint: "e3670cdc3a262cb5"}
+  grafana_list_pyroscope_label_names: {risk: read, fingerprint: "6688130adbf8e99f"}
+  grafana_list_pyroscope_label_values: {risk: read, fingerprint: "e6112b722efd0b80"}
+  grafana_list_pyroscope_profile_types: {risk: read, fingerprint: "9e63a20f8b89d74e"}
+  grafana_list_sift_investigations: {risk: read, fingerprint: "80525a0461080417"}
+  grafana_list_snapshots: {risk: read, fingerprint: "c491b69ac9c39bf5"}
+  grafana_query_loki_logs: {risk: read, fingerprint: "643f03270b0b7951"}
+  grafana_query_loki_patterns: {risk: read, fingerprint: "4b8304f32493e0c9"}
+  grafana_query_loki_stats: {risk: read, fingerprint: "277a61c93141b1b0"}
+  grafana_query_prometheus: {risk: read, fingerprint: "03d12ff64fcbf091"}
+  grafana_query_prometheus_histogram: {risk: read, fingerprint: "ed70cd8f66fa3f57"}
+  grafana_query_pyroscope: {risk: read, fingerprint: "4917e2d3cc6a166e"}
+  grafana_search_dashboards: {risk: read, fingerprint: "a925cc41b697da56"}
+  grafana_search_folders: {risk: read, fingerprint: "33de46f561f3c4ce"}
+  grafana_search_plugin_information: {risk: read, fingerprint: "36d03445c19d266e"}
+  grafana_suggest_loki_alloy_label_config: {risk: read, fingerprint: "f077c0397f14be8f"}
+  grafana_update_annotation: {risk: write, fingerprint: "1693c321a1aa88bd"}
+  grafana_update_dashboard: {risk: write, fingerprint: "986e020a8846522d"}
+  grafana_update_datasource: {risk: write, fingerprint: "bf20ddd7c996f4ce"}
+  grafana_validate_provisioning_file: {risk: read, fingerprint: "ddc321a903cfe54e"}
+  kagent-tools_argo_check_plugin_logs: {risk: read, fingerprint: "4c74df31349080f5"}
+  kagent-tools_argo_pause_rollout: {risk: write, fingerprint: "d5ca9fc8e5b907c6"}
+  kagent-tools_argo_promote_rollout: {risk: write, fingerprint: "87deaba2fe7a3afc"}
+  kagent-tools_argo_rollouts_list: {risk: read, fingerprint: "e53b03f5bd52d9a6"}
+  kagent-tools_argo_set_rollout_image: {risk: write, fingerprint: "d2575d288109860c"}
+  kagent-tools_argo_verify_argo_rollouts_controller_install: {risk: read, fingerprint: "9c23f171ea5c8fd7"}
+  kagent-tools_argo_verify_gateway_plugin: {risk: read, fingerprint: "269ca3e746a2075a"}
+  kagent-tools_argo_verify_kubectl_plugin_install: {risk: read, fingerprint: "4647dac925753919"}
+  kagent-tools_cilium_connect_to_remote_cluster: {risk: write, fingerprint: "511f16d6bfa1d0e3"}
+  kagent-tools_cilium_delete_key_from_kv_store: {risk: irreversible, fingerprint: "f9fa7a22a97f13b7"}
+  kagent-tools_cilium_delete_pcap_recorder: {risk: irreversible, fingerprint: "d5c4686521c37f3e"}
+  kagent-tools_cilium_delete_policy_rules: {risk: irreversible, fingerprint: "c8514f61f88da385"}
+  kagent-tools_cilium_delete_service: {risk: irreversible, fingerprint: "675cf6412a73366c"}
+  kagent-tools_cilium_delete_xdp_cidr_filters: {risk: irreversible, fingerprint: "eb5fc9e1fdf90bdd"}
+  kagent-tools_cilium_disconnect_endpoint: {risk: write, fingerprint: "ee8aef25b6449a1d"}
+  kagent-tools_cilium_disconnect_remote_cluster: {risk: write, fingerprint: "03fb5b3262421aba"}
+  kagent-tools_cilium_display_encryption_state: {risk: read, fingerprint: "9206594b0b33e621"}
+  kagent-tools_cilium_display_policy_node_information: {risk: read, fingerprint: "1eab8b52cb620211"}
+  kagent-tools_cilium_display_selectors: {risk: read, fingerprint: "b161e973882c2288"}
+  kagent-tools_cilium_flush_ipsec_state: {risk: irreversible, fingerprint: "61f79c5e0574c8cc"}
+  kagent-tools_cilium_fqdn_cache: {risk: read, fingerprint: "77a64b066d4e6bc7"}
+  kagent-tools_cilium_get_bpf_map: {risk: read, fingerprint: "adb520c555414b34"}
+  kagent-tools_cilium_get_daemon_status: {risk: read, fingerprint: "a7579701fc93c571"}
+  kagent-tools_cilium_get_endpoint_details: {risk: read, fingerprint: "b0dd7e08a076d482"}
+  kagent-tools_cilium_get_endpoint_health: {risk: read, fingerprint: "525a7475af97dc5f"}
+  kagent-tools_cilium_get_endpoint_logs: {risk: read, fingerprint: "f8c0077b743dc3fc"}
+  kagent-tools_cilium_get_endpoints_list: {risk: read, fingerprint: "3271110dff5903fa"}
+  kagent-tools_cilium_get_identity_details: {risk: read, fingerprint: "2bff5aef0a82015a"}
+  kagent-tools_cilium_get_kv_store_key: {risk: read, fingerprint: "782b3237b3fa124a"}
+  kagent-tools_cilium_get_pcap_recorder: {risk: read, fingerprint: "d35da169b084fe19"}
+  kagent-tools_cilium_get_service_information: {risk: read, fingerprint: "b917ab974fb22fa8"}
+  kagent-tools_cilium_install_cilium: {risk: write, fingerprint: "93921e0c7808c8d5"}
+  kagent-tools_cilium_list_bgp_peers: {risk: read, fingerprint: "0f6d7bc802d01c8b"}
+  kagent-tools_cilium_list_bgp_routes: {risk: read, fingerprint: "42a60eb939f1fc09"}
+  kagent-tools_cilium_list_bpf_map_events: {risk: read, fingerprint: "594dc27df5011b52"}
+  kagent-tools_cilium_list_bpf_maps: {risk: read, fingerprint: "48486e76d9a28292"}
+  kagent-tools_cilium_list_cluster_nodes: {risk: read, fingerprint: "4ab9f873723f0494"}
+  kagent-tools_cilium_list_envoy_config: {risk: read, fingerprint: "27f47a5194cd0d3f"}
+  kagent-tools_cilium_list_identities: {risk: read, fingerprint: "7ee418bc3e38fad3"}
+  kagent-tools_cilium_list_ip_addresses: {risk: read, fingerprint: "a3e4b383a009e324"}
+  kagent-tools_cilium_list_local_redirect_policies: {risk: read, fingerprint: "42bfd3e851a25b09"}
+  kagent-tools_cilium_list_metrics: {risk: read, fingerprint: "8dc2e7cd883c4979"}
+  kagent-tools_cilium_list_node_ids: {risk: read, fingerprint: "5e449808d457fe70"}
+  kagent-tools_cilium_list_pcap_recorders: {risk: read, fingerprint: "33922bc27d50a14e"}
+  kagent-tools_cilium_list_services: {risk: read, fingerprint: "3495a80405cdac6f"}
+  kagent-tools_cilium_list_xdp_cidr_filters: {risk: read, fingerprint: "271ca21f67fc7764"}
+  kagent-tools_cilium_manage_endpoint_config: {risk: write, fingerprint: "d00d11d17db097d5"}
+  kagent-tools_cilium_manage_endpoint_labels: {risk: write, fingerprint: "66a92f8a3d5bdb1c"}
+  kagent-tools_cilium_request_debugging_information: {risk: write, fingerprint: "28f74a34a13de1b5"}
+  kagent-tools_cilium_set_kv_store_key: {risk: write, fingerprint: "b53adac7639113bc"}
+  kagent-tools_cilium_show_cluster_mesh_status: {risk: read, fingerprint: "82c3cd4e970ea1d9"}
+  kagent-tools_cilium_show_configuration_options: {risk: read, fingerprint: "66771eb811d6cb8d"}
+  kagent-tools_cilium_show_dns_names: {risk: read, fingerprint: "857a8838b2b56cf6"}
+  kagent-tools_cilium_show_features_status: {risk: read, fingerprint: "26a2a8e6f7a7f646"}
+  kagent-tools_cilium_show_ip_cache_information: {risk: read, fingerprint: "e5d05c10cafbfeee"}
+  kagent-tools_cilium_show_load_information: {risk: read, fingerprint: "23da7b5cb1b29fe7"}
+  kagent-tools_cilium_status_and_version: {risk: read, fingerprint: "1121c678fcca1623"}
+  kagent-tools_cilium_toggle_cluster_mesh: {risk: write, fingerprint: "f2b33c081822f4e9"}
+  kagent-tools_cilium_toggle_configuration_option: {risk: write, fingerprint: "5f3a9b69326a7478"}
+  kagent-tools_cilium_toggle_hubble: {risk: write, fingerprint: "746fe9887f1b2fde"}
+  kagent-tools_cilium_uninstall_cilium: {risk: irreversible, fingerprint: "2fe551d8c72661b9"}
+  kagent-tools_cilium_update_pcap_recorder: {risk: write, fingerprint: "c35b5f0175d7f5ef"}
+  kagent-tools_cilium_update_service: {risk: write, fingerprint: "376b3163a24bb160"}
+  kagent-tools_cilium_update_xdp_cidr_filters: {risk: write, fingerprint: "fe8cdbcf08dcebca"}
+  kagent-tools_cilium_upgrade_cilium: {risk: write, fingerprint: "fcd5a2f68eedf6d2"}
+  kagent-tools_cilium_validate_cilium_network_policies: {risk: read, fingerprint: "d73e84e7b16d0819"}
+  kagent-tools_datetime_get_current_time: {risk: read, fingerprint: "f0d725fc11257dd5"}
+  kagent-tools_helm_get_release: {risk: read, fingerprint: "30d75840c5e25ddc"}
+  kagent-tools_helm_list_releases: {risk: read, fingerprint: "c3e919039e8a4fe4"}
+  kagent-tools_helm_repo_add: {risk: write, fingerprint: "6d6f07c9e497ed81"}
+  kagent-tools_helm_repo_update: {risk: write, fingerprint: "35704be7bd5a6782"}
+  kagent-tools_helm_uninstall: {risk: irreversible, fingerprint: "dd922732a6413181"}
+  kagent-tools_helm_upgrade: {risk: write, fingerprint: "b553674b5f7d038d"}
+  kagent-tools_istio_analyze_cluster_configuration: {risk: read, fingerprint: "807396835ea7cfe4"}
+  kagent-tools_istio_apply_waypoint: {risk: write, fingerprint: "cde51f1bd16ce14b"}
+  kagent-tools_istio_delete_waypoint: {risk: irreversible, fingerprint: "96cb2778f2302957"}
+  kagent-tools_istio_generate_manifest: {risk: read, fingerprint: "d224a11a84b1c2c5"}
+  kagent-tools_istio_generate_waypoint: {risk: read, fingerprint: "165f1c9983e062d0"}
+  kagent-tools_istio_install_istio: {risk: write, fingerprint: "cbd6bfc2c3118592"}
+  kagent-tools_istio_list_waypoints: {risk: read, fingerprint: "d74a8d470145e2bc"}
+  kagent-tools_istio_proxy_config: {risk: read, fingerprint: "2694700683fcf3c6"}
+  kagent-tools_istio_proxy_status: {risk: read, fingerprint: "bfab974a7395b91d"}
+  kagent-tools_istio_remote_clusters: {risk: read, fingerprint: "4ed8dcf350bd0ff7"}
+  kagent-tools_istio_version: {risk: read, fingerprint: "c11022826b9d3f01"}
+  kagent-tools_istio_waypoint_status: {risk: read, fingerprint: "5cfa768bac2072c7"}
+  kagent-tools_istio_ztunnel_config: {risk: read, fingerprint: "2c39b6223d02b1f5"}
+  kagent-tools_k8s_annotate_resource: {risk: write, fingerprint: "6f688319741a2eb3"}
+  kagent-tools_k8s_apply_manifest: {risk: write, fingerprint: "8fc6589582382d1f"}
+  kagent-tools_k8s_check_service_connectivity: {risk: write, fingerprint: "f88a975bc0f64ee7"}
+  kagent-tools_k8s_create_resource: {risk: write, fingerprint: "79b0a51e56cb195c"}
+  kagent-tools_k8s_create_resource_from_url: {risk: write, fingerprint: "d261a494634532d8"}
+  kagent-tools_k8s_delete_resource: {risk: irreversible, fingerprint: "1b3f18e4d402f6af"}
+  kagent-tools_k8s_describe_resource: {risk: read, fingerprint: "52f909aaa7d553ce"}
+  kagent-tools_k8s_execute_command: {risk: irreversible, fingerprint: "1e6d862c33e58569"}
+  kagent-tools_k8s_generate_resource: {risk: read, fingerprint: "696addbf6e4b5ec3"}
+  kagent-tools_k8s_get_available_api_resources: {risk: read, fingerprint: "3885f76b734bdf40"}
+  kagent-tools_k8s_get_cluster_configuration: {risk: read, fingerprint: "604a0f3449b2a791"}
+  kagent-tools_k8s_get_events: {risk: read, fingerprint: "5c73487059dd6fe7"}
+  kagent-tools_k8s_get_pod_logs: {risk: read, fingerprint: "0de73d16dd30d827"}
+  kagent-tools_k8s_get_resource_yaml: {risk: read, fingerprint: "86dae51449f96a51"}
+  kagent-tools_k8s_get_resources: {risk: read, fingerprint: "332a07f557bfec2f"}
+  kagent-tools_k8s_label_resource: {risk: write, fingerprint: "1a08e7c0c9fdac35"}
+  kagent-tools_k8s_patch_resource: {risk: write, fingerprint: "19a3f37dbaaee2b4"}
+  kagent-tools_k8s_patch_status: {risk: write, fingerprint: "359f7ed916c9c2f3"}
+  kagent-tools_k8s_remove_annotation: {risk: write, fingerprint: "9167015c6bc7c29d"}
+  kagent-tools_k8s_remove_label: {risk: write, fingerprint: "b15af5b5232fcd62"}
+  kagent-tools_k8s_rollout: {risk: write, fingerprint: "e05c3b405e87c916"}
+  kagent-tools_k8s_scale: {risk: write, fingerprint: "beb88b1d01ab98e7"}
+  kagent-tools_kubescape_check_health: {risk: read, fingerprint: "51b1268dcda0665a"}
+  kagent-tools_kubescape_get_application_profile: {risk: read, fingerprint: "5e2d3d66f464157f"}
+  kagent-tools_kubescape_get_configuration_scan: {risk: read, fingerprint: "a77591c30cfcc17f"}
+  kagent-tools_kubescape_get_network_neighborhood: {risk: read, fingerprint: "974512d93c7d0df0"}
+  kagent-tools_kubescape_get_vulnerability_details: {risk: read, fingerprint: "e9baea3bab656d96"}
+  kagent-tools_kubescape_list_application_profiles: {risk: read, fingerprint: "e5926e46e65f096f"}
+  kagent-tools_kubescape_list_configuration_scans: {risk: read, fingerprint: "ef06958661e679b9"}
+  kagent-tools_kubescape_list_network_neighborhoods: {risk: read, fingerprint: "2cc08f966c9a5b2a"}
+  kagent-tools_kubescape_list_vulnerabilities: {risk: read, fingerprint: "b2b9989ded47d15b"}
+  kagent-tools_kubescape_list_vulnerability_manifests: {risk: read, fingerprint: "38a76974e079af4b"}
+  kagent-tools_prometheus_label_names_tool: {risk: read, fingerprint: "237bc6aa76a8661b"}
+  kagent-tools_prometheus_promql_tool: {risk: read, fingerprint: "39fc679ce5640930"}
+  kagent-tools_prometheus_query_range_tool: {risk: read, fingerprint: "fdd199f187226bd1"}
+  kagent-tools_prometheus_query_tool: {risk: read, fingerprint: "e042368fd7767df8"}
+  kagent-tools_prometheus_targets_tool: {risk: read, fingerprint: "fa86018b944fae60"}
+  kagent-tools_shell: {risk: irreversible, fingerprint: "a988eee4a8fb27d0"}

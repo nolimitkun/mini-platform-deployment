@@ -269,3 +269,47 @@ test_agent_key_without_agent_data_is_refused if {
 	not authz.allow with input as req_key("kagent", "kagent-k8s-agent", "/v1/chat/completions", {"model": "deepseek-v4-pro"})
 		with data.agents as {}
 }
+
+# Tool risk (catalog/tools.yaml) against the agent's autonomy. Holmes is
+# supervised with grafana_*: reads go through, writes and irreversible calls
+# wait for a human.
+test_supervised_agent_reads_only if {
+	authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "grafana_query_prometheus"}})
+	not authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "grafana_update_dashboard"}})
+	authz.reason == "tool grafana_update_dashboard is write: agent holmes (supervised) needs a human approval for it" with input as mcp("holmes", {"method": "tools/call", "params": {"name": "grafana_update_dashboard"}})
+	not authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "grafana_delete_snapshot"}})
+}
+
+test_autonomous_agent_writes_but_not_irreversible if {
+	authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "grafana_update_dashboard"}})
+		with data.agents.holmes.autonomy as "autonomous"
+	not authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "grafana_delete_snapshot"}})
+		with data.agents.holmes.autonomy as "autonomous"
+	authz.reason == "tool grafana_delete_snapshot is irreversible: agent holmes (autonomous) needs a human approval for it" with input as mcp("holmes", {"method": "tools/call", "params": {"name": "grafana_delete_snapshot"}})
+		with data.agents.holmes.autonomy as "autonomous"
+}
+
+test_read_only_agent_never_writes if {
+	not authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "grafana_create_annotation"}})
+		with data.agents.holmes.autonomy as "read-only"
+	authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "grafana_search_dashboards"}})
+		with data.agents.holmes.autonomy as "read-only"
+}
+
+# A tool the catalog doesn't know is irreversible for agents...
+test_unclassified_tool_refused_for_agents if {
+	not authz.allow with input as mcp("holmes", {"method": "tools/call", "params": {"name": "grafana_brand_new_tool"}})
+		with data.agents.holmes.autonomy as "autonomous"
+}
+
+# ...while a project's own key keeps its glob rules (no autonomy to apply).
+test_project_key_unaffected_by_tool_risk if {
+	authz.allow with input as mcp("kagent", {"method": "tools/call", "params": {"name": "grafana_update_dashboard"}})
+}
+
+# The catalog's classes are the three the policy knows.
+test_catalog_tool_risks_are_known if {
+	every _, risk in data.catalog.tools {
+		risk in {"read", "write", "irreversible"}
+	}
+}

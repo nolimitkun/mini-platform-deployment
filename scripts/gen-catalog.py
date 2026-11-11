@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate catalog/models.yaml and generate the files derived from it.
+"""Validate catalog/models.yaml and catalog/tools.yaml and generate the files derived from them.
 
     python3 scripts/gen-catalog.py           write the generated files
     python3 scripts/gen-catalog.py --check   fail if they are out of date (CI)
@@ -15,8 +15,8 @@ Outputs:
       virtual model each).
   policies/gateway/catalog/data.json
       what the gateway policy needs, as data.catalog: each model's placement,
-      provider and price, each Google API's placement, and the task classes.
-      No endpoints or secret names.
+      provider and price, each Google API's placement, the task classes, and
+      each MCP tool's risk (catalog/tools.yaml). No endpoints or secret names.
 """
 
 import argparse
@@ -29,6 +29,10 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "catalog" / "models.yaml"
+TOOLS = ROOT / "catalog" / "tools.yaml"
+# The MCP targets the gateway merges; every tool name starts with one of them.
+GATEWAY_VALUES = ROOT / "minikube" / "gitops" / "agentgateway-config" / "values.yaml"
+RISKS = {"read", "write", "irreversible"}
 GATEWAY_OUT = ROOT / "minikube" / "gitops" / "agentgateway-config" / "files" / "catalog.json"
 POLICY_OUT = ROOT / "policies" / "gateway" / "catalog" / "data.json"
 # The vLLM Semantic Router's config: its decisions must name the task classes.
@@ -146,7 +150,30 @@ def check_semantic_router(catalog):
     return errors
 
 
-def render(catalog):
+def validate_tools(tools_doc):
+    errors = []
+    tools = (tools_doc or {}).get("tools")
+    if not isinstance(tools, dict) or not tools:
+        return [f"{TOOLS.relative_to(ROOT)}: needs a tools mapping"], {}
+    targets = ((yaml.safe_load(GATEWAY_VALUES.read_text()) or {}).get("mcp") or {}).get("targets") or {}
+    for name, t in tools.items():
+        where = f"{TOOLS.relative_to(ROOT)}: {name}"
+        if not any(name.startswith(f"{target}_") for target in targets):
+            errors.append(f"{where}: name must start with an MCP target's prefix ({', '.join(sorted(targets))})")
+        if not isinstance(t, dict) or set(t) - {"risk", "fingerprint"}:
+            errors.append(f"{where}: needs risk and an optional fingerprint, nothing else")
+            continue
+        if t.get("risk") not in RISKS:
+            errors.append(f"{where}: risk must be one of {sorted(RISKS)}")
+        fp = t.get("fingerprint")
+        # A string: unquoted, YAML reads an all-digit or "1e5..."-like value as
+        # a number and the drift check would compare the wrong thing.
+        if fp is not None and not (isinstance(fp, str) and re.fullmatch(r"[0-9a-f]{16}", fp)):
+            errors.append(f"{where}: fingerprint must be 16 hex digits in quotes")
+    return errors, {name: t.get("risk") for name, t in tools.items()}
+
+
+def render(catalog, tool_risks):
     models = catalog["models"]
     apis = catalog.get("googleApis") or {}
     gateway = {
@@ -167,6 +194,7 @@ def render(catalog):
         },
         "google_apis": {name: {"placement": a["placement"]} for name, a in apis.items()},
         "tasks": catalog.get("tasks") or {},
+        "tools": tool_risks,
     }
     return {
         GATEWAY_OUT: json.dumps(gateway, indent=2) + "\n",
@@ -181,13 +209,15 @@ def main():
 
     catalog = yaml.safe_load(SOURCE.read_text())
     errors = [f"{SOURCE.relative_to(ROOT)}: {e}" for e in validate(catalog)] + check_semantic_router(catalog)
+    tool_errors, tool_risks = validate_tools(yaml.safe_load(TOOLS.read_text()))
+    errors += tool_errors
     if errors:
         for e in errors:
             print(e, file=sys.stderr)
         return 1
 
     stale = []
-    for path, content in render(catalog).items():
+    for path, content in render(catalog, tool_risks).items():
         rel = path.relative_to(ROOT)
         if args.check:
             if not path.exists() or path.read_text() != content:
