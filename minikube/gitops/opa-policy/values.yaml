@@ -8,7 +8,7 @@ ocp:
   # Public repo, no credentials. A branch name here, not a commit, so OCP
   # follows it.
   repo: https://github.com/nolimitkun/mini-platform-deployment.git
-  reference: refs/heads/main
+  reference: refs/heads/feat/tool-risk  # TEMP for the pre-merge rollout
   bundles:
     # bundle name -> directory under policies/. Each directory's .manifest
     # sets the bundle's roots; they must not overlap (validate-gitops.sh).
