@@ -136,6 +136,11 @@ reason := "unknown project" if {
 	agent_id
 } else := sprintf("tool %v is not allowed for project %v", [input.parsed_body.params.name, project_id]) if {
 	tool_call
+} else := sprintf("agent %v may use no MCP tools (project %v)", [agent_id, project_id]) if {
+	mcp_path
+	agent_id
+} else := sprintf("project %v may use no MCP tools", [project_id]) if {
+	mcp_path
 } else := "denied"
 
 # The models a project sees in /v1/models: the ones it may name, plus the

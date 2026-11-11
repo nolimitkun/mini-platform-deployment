@@ -110,7 +110,11 @@ current). API keys belong to projects, one file each in `projects/` (data class,
 placement, allowed models, key ids, MCP tools); `scripts/gen-projects.py` validates them
 against `projects/schema.json` and generates the policy's `data.projects` (one file per
 project under `policies/gateway-projects`), the rate-limit config and the per-project
-alert rules, and the Vault bootstrap reads the key ids from it. **agentregistry** is the catalog of
+alert rules, and the Vault bootstrap reads the key ids from it. Agents
+(`agents/*.yaml`) belong to a project and narrow it: own keys, models, MCP tools,
+owner, autonomy; gen-projects.py adds them to the policy data (`data.agents`,
+each project's `agent_keys`) and to agentregistry, and checks a kagent agent is
+wired to its own ModelConfig and secret. **agentregistry** is the catalog of
 MCP servers and agents; its entries live in `minikube/gitops/agentregistry-catalog`.
 
 An alternative **llm-d serving path** exists behind `enabled: false` app-of-apps

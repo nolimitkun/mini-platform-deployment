@@ -192,6 +192,67 @@ To rotate a key:
    the new bundle is live (`key holmes is not active for project holmes`). The
    next bootstrap run drops it from Vault.
 
+## Agents
+
+A project is a budget and a data class; an agent is one thing acting inside
+it. `agents/<id>.yaml` registers an agent (schema `agents/schema.json`):
+
+```yaml
+agent: kagent-k8s-agent
+project: kagent              # data class, placement, limits, budget come from here
+owner: platform team
+description: Inspects and changes Kubernetes resources ...   # its mission
+runtime: {kind: kagent, name: k8s-agent}
+autonomy: autonomous         # read-only | supervised | autonomous
+keys: [kagent-k8s-agent]     # its own gateway keys
+models:
+  allow: [deepseek-v4-pro]   # narrows the project's models
+mcp_tools: []                # narrows the project's MCP tools; absent = none
+secret: {name: kagent-k8s-agent-agentgateway, field: OPENAI_API_KEY}
+```
+
+An agent can only narrow its project. A call with one of its keys gets:
+
+- the project's models, narrowed by the agent's `models.allow` (`lib.scoped`);
+  `auto` chooses within them too, since the gateway passes the key id to OPA;
+- MCP tools that match both the project's and the agent's patterns, and no MCP
+  at all if the agent lists none;
+- the project's rate limit and budget, shared with the project's other keys.
+
+Denials name the agent, for example `model qwen3.6-27b is not allowed for agent
+kagent-k8s-agent (project kagent)`. `autonomy` is recorded and published but
+not yet enforced per tool.
+
+`gen-projects.py` adds each agent's keys to its project with an `agent_keys`
+map (key id → agent) and writes `data.agents.<id>` into the `gateway-projects`
+bundle, so registering, changing or removing an agent touches only its own
+files. It also checks the wiring a kagent agent needs: a `modelConfigRef` in
+`kagent-values.yaml` naming a ModelConfig in `kagent-resources.yaml`
+`extraObjects` that reads the agent's secret, listed in `vaultSecrets`.
+`bootstrap-vault-secrets.sh` writes each agent's key to its `secret`
+(`gen-projects.py --mirrors`), and every agent appears in agentregistry as an
+`Agent` (`agentregistry-catalog/files/agents.yaml`, generated).
+
+Registered today:
+
+| Agent | Project | Autonomy | Models | MCP tools |
+|-------|---------|----------|--------|-----------|
+| `kagent-k8s-agent` | kagent | autonomous | `deepseek-v4-pro` | none through the gateway |
+| `kagent-helm-agent` | kagent | autonomous | `deepseek-v4-pro` | none through the gateway |
+| `kagent-promql-agent` | kagent | read-only | `deepseek-v4-pro` | none through the gateway |
+| `kagent-observability-agent` | kagent | read-only | `deepseek-v4-pro` | none through the gateway |
+| `holmes` | holmes | supervised | `deepseek-v4-pro` | `grafana_*` |
+
+kagent's agents still call their MCP servers directly, not through the gateway
+(see "MCP and agentregistry"), so their tool use isn't scoped here yet. The
+`kagent` project keeps its own key for `default-model-config`, which agents
+created in kagent's UI use until they are registered: they get the project's
+scope.
+
+To register an agent: add the file, wire its runtime to the key (for kagent,
+the three places above), run `scripts/gen-projects.py`, merge, run the Vault
+bootstrap (`SEED_MISSING_ONLY=true` creates the new key), then sync.
+
 ## Policy
 
 `policies/gateway/authz.rego` decides each request from:
@@ -436,7 +497,8 @@ Holmes' GitHub MCP server stays direct: it reads its GitHub token from the
 kagent's own agents still use their `RemoteMCPServer` entries directly. The chart
 generates those, with no way to add the gateway key.
 
-agentregistry lists `platform-tools`, the gateway's MCP endpoint. agentregistry
+agentregistry lists `platform-tools`, the gateway's MCP endpoint, and every
+registered agent (see "Agents"), with its owner, autonomy, models and tools. agentregistry
 v0.4.0 accepts only Bedrock models, so models are not in it; `GET /v1/models` on
 the gateway is the model list.
 
@@ -511,7 +573,9 @@ curl -s http://agentgateway.test/v1/chat/completions -H "Authorization: Bearer $
 | No key | 401 |
 | Open WebUI key, `deepseek-v4-pro` | 403, `not allowed for project open-webui (internal data)` |
 | Open WebUI key, `/v1/models` | No `deepseek-v4-pro`; kagent's key lists it |
-| Holmes key, `tools/call` of `kagent-tools_*` | 403, `tool ... is not allowed for project holmes` |
+| Holmes key, `tools/call` of `kagent-tools_*` | 403, `tool ... is not allowed for agent holmes (project holmes)` |
+| `kagent-k8s-agent` key, `qwen3.6-27b` | 403, `not allowed for agent kagent-k8s-agent (project kagent)`; the `kagent` key gets 200 |
+| `kagent-k8s-agent` key, `/v1/models` | `deepseek-v4-pro` and the `auto` models only |
 | 31 quick requests with the Holmes key | the last gets 429 with `retry-after` |
 | `curl opa:8181/v1/data/system/bundles` | `gateway-policy` and `gateway-projects`, with disjoint roots |
 | `curl opa:8181/v1/data/projects/<id>` | The project's data as in `main` (manifests carry no revision) |

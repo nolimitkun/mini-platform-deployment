@@ -130,6 +130,7 @@ test_mcp_tool_calls_by_pattern if {
 
 test_mcp_needs_an_entry if {
 	not authz.allow with input as mcp("open-webui", {"method": "initialize"})
+	authz.reason == "project open-webui may use no MCP tools" with input as mcp("open-webui", {"method": "initialize"})
 }
 
 # Every model and Google API in the catalog has a placement some class allows,
@@ -249,6 +250,7 @@ test_agent_of_other_project_matches_nothing if {
 
 test_agent_without_tools_gets_no_mcp if {
 	not authz.allow with input as req_key("kagent", "kagent-k8s-agent", "/mcp", {"method": "initialize"})
+	authz.reason == "agent kagent-k8s-agent may use no MCP tools (project kagent)" with input as req_key("kagent", "kagent-k8s-agent", "/mcp", {"method": "initialize"})
 	not authz.allow with input as req_key("kagent", "kagent-k8s-agent", "/mcp", {"method": "tools/call", "params": {"name": "grafana_query_prometheus"}})
 	authz.allow with input as mcp("kagent", {"method": "tools/call", "params": {"name": "grafana_query_prometheus"}})
 }
