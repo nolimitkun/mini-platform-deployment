@@ -21,11 +21,17 @@ kind: AgentgatewayParameters
 metadata:
   name: {{ $v.gatewayName }}
 spec:
-  {{- with $v.admin }}
-  # Merged into the generated config.yaml (values.yaml, admin).
+  {{- if or $v.admin $v.analytics.enabled }}
+  # Merged into the generated config.yaml (values.yaml, admin and analytics).
   rawConfig:
     config:
+      {{- with $v.admin }}
       adminAddr: "0.0.0.0:{{ .port }}"
+      {{- end }}
+      {{- if $v.analytics.enabled }}
+      database:
+        url: "sqlite:////var/lib/agentgateway/requests.db?mode=rwc"
+      {{- end }}
   {{- end }}
   env:
     - name: GOOGLE_APPLICATION_CREDENTIALS
@@ -34,7 +40,16 @@ spec:
     spec:
       template:
         spec:
+          {{- if $v.analytics.enabled }}
+          securityContext:
+            fsGroup: 10101   # the proxy's user: the request log volume is writable
+          {{- end }}
           volumes:
+            {{- if $v.analytics.enabled }}
+            - name: request-log
+              persistentVolumeClaim:
+                claimName: {{ $v.gatewayName }}-request-log
+            {{- end }}
             - name: gcp-wif-token
               projected:
                 sources:
@@ -54,6 +69,22 @@ spec:
                 - name: gcp-wif-config
                   mountPath: /etc/gcp-wif
                   readOnly: true
+                {{- if $v.analytics.enabled }}
+                - name: request-log
+                  mountPath: /var/lib/agentgateway
+                {{- end }}
+{{- if $v.analytics.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $v.gatewayName }}-request-log
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ $v.analytics.storage }}
+{{- end }}
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway

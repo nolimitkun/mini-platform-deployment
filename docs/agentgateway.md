@@ -591,6 +591,16 @@ config the controller pushed: binds, listeners, routes, backends and policies.
 It is a viewer here. The controller owns the config, so edits made in the UI
 do not last; change the chart or `projects/` instead.
 
+In Kubernetes mode the UI is read-only by design: the standalone docs' editing,
+adding models or MCP servers, does not apply. What it offers: the live config
+views, LLM > Models, LLM > Client Setup (client settings for a chosen model),
+the CEL Playground, and LLM > Analytics: spend, tokens and calls over time per
+model, provider or user, from a request log the proxy keeps in SQLite on the
+PVC `agentgateway-proxy-request-log` (values.yaml, `analytics`). Costs come from
+agentgateway's built-in price table, the rates `catalog/models.yaml` mirrors;
+self-hosted models count as $0. Each replica would keep its own log, so it is a
+per-request view; the Prometheus metrics stay the source for budgets and alerts.
+
 The admin port (15000) has no login of its own. The chart opens it on the pod
 network behind the ClusterIP Service `agentgateway-proxy-admin`. Nothing on this
 cluster enforces NetworkPolicy, so any pod can reach it there.

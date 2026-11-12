@@ -16,6 +16,16 @@ gatewayName: agentgateway-proxy
 admin:
   port: 15000
 
+# The admin UI's LLM > Analytics page (spend, tokens and calls per model,
+# provider, user): the proxy keeps a request log in SQLite, on this volume so
+# the history survives restarts. Costs come from agentgateway's built-in price
+# table, the same rates as catalog/models.yaml; self-hosted models count as $0.
+# One replica: each replica would keep its own log. The Prometheus metrics stay
+# the source for budgets and alerts.
+analytics:
+  enabled: true
+  storage: 2Gi
+
 # Keyless Google login: the proxy's own service-account token, minted for the
 # onprem-k8s pool's audience and rotated by the kubelet, is exchanged for a
 # Google token that impersonates litellm-stt. Nothing secret in it.
