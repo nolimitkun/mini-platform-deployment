@@ -28,7 +28,7 @@ Two principles shape the design:
 The default AI request path is:
 
 ```text
-Open WebUI ──▶ agentgateway ──▶ vLLM Router ──▶ vLLM
+Open WebUI ──▶ agentgateway ──▶ KServe InferencePool (EPP) ──▶ vLLM   (weights from MinIO)
                   │  ▲
                   │  ├── vLLM Semantic Router (task class for model "auto")
                   │  ├── rate-limit service (per-project limits and budgets)
@@ -42,8 +42,10 @@ Open WebUI ──▶ agentgateway ──▶ vLLM Router ──▶ vLLM
 
 Open WebUI, kagent and HolmesGPT each call **agentgateway** with an API key of
 their own project (`projects/*.yaml`) or, for a registered agent, of the agent
-(`agents/*.yaml`, which narrows its project's models and tools). It serves every model on one OpenAI-compatible endpoint (`qwen3.6-27b` on
-the vLLM router serving `unsloth/Qwen3.6-27B-NVFP4`, the Gemini models
+(`agents/*.yaml`, which narrows its project's models and tools). It serves every model on one OpenAI-compatible endpoint (`qwen3.6-27b`:
+`unsloth/Qwen3.6-27B-NVFP4` as a KServe release that the model onboarding
+pipeline tuned, evaluated and deployed, its weights streamed from MinIO; see
+"Self-hosted models" in `docs/agentgateway.md`; the Gemini models
 on Vertex AI, `deepseek-v4-pro`), passes Google's speech APIs through, and merges
 the cluster's MCP servers into one endpoint. Before routing, it asks **OPA**,
 whose policy (the Rego in `policies/gateway`: data class per project, placement
@@ -282,9 +284,8 @@ bundled iptables 1.8.9 sends that as one netlink message; this platform's ~70
 Services exceed the 64 KiB message limit, so every sync fails and no Service
 VIP — cluster DNS included — is ever programmed.
 
-The default
-[`minikube/values/vllm-values.yaml`](minikube/values/vllm-values.yaml) requests
-an NVIDIA GPU. On a host with NVIDIA container runtime support, start with GPU
+The self-hosted models (KServe releases of the model onboarding pipeline)
+need an NVIDIA GPU. On a host with NVIDIA container runtime support, start with GPU
 passthrough instead:
 
 ```bash
@@ -295,8 +296,8 @@ minikube start -p mini-platform \
   --cpus=8 --memory=65536 --disk-size=100g
 ```
 
-Without GPU access, adjust the vLLM overlay before deploying or its pod stays
-unschedulable. Then confirm a default StorageClass exists:
+Without GPU access, the KServe releases stay unschedulable; the rest of the
+platform runs. Then confirm a default StorageClass exists:
 
 ```bash
 kubectl config use-context mini-platform
@@ -516,7 +517,7 @@ shared `minikube/gitops/app-resources` chart rendered against a sibling
 | `mini-platform-langfuse-kagent-project` | `minikube/gitops/langfuse-project` | `minikube/gitops/langfuse-project/kagent-values.yaml` |
 | `mini-platform-mlflow` | `charts/mlflow` | `minikube/values/mlflow-values.yaml` |
 | `mini-platform-trino` | `charts/trino` | `minikube/values/trino-values.yaml` |
-| `mini-platform-vllm` | `charts/vllm-stack` | `minikube/values/vllm-values.yaml` |
+| `mini-platform-vllm`† | `charts/vllm-stack` | `minikube/values/vllm-values.yaml` |
 | `mini-platform-llm-d-modelserver`† | `minikube/gitops/llm-d-modelserver` | `minikube/gitops/llm-d-modelserver/values.yaml` |
 | `mini-platform-llm-d-scheduler`† | `charts/llm-d-scheduler` | `minikube/values/llm-d-scheduler-values.yaml` |
 | `mini-platform-prometheus` | `charts/prometheus` | `minikube/values/prometheus-values.yaml` |
@@ -543,13 +544,11 @@ shared `minikube/gitops/app-resources` chart rendered against a sibling
 | `mini-platform-dcgm-exporter` | `charts/dcgm-exporter` | `minikube/values/dcgm-exporter-values.yaml` |
 | `mini-platform-oauth2-proxy` | `charts/oauth2-proxy` | `minikube/values/oauth2-proxy-values.yaml` |
 
-† **llm-d serving path** (disabled by default): an alternative to the
-production-stack router, using the Gateway API Inference Extension standalone
-scheduler with llm-d's prefix-cache/load-aware scoring plus a vLLM decode
-deployment that mirrors the production-stack engine configuration. The node's
-single GPU cannot host both inference paths simultaneously — to switch, set
-`enabled: true` on the two llm-d apps **and** scale the `vllm` overlay's
-`replicaCount` to 0 (or the reverse), then commit and push. The llm-d client
+† **llm-d serving path** (disabled by default), and the **production-stack
+`vllm` app** (disabled: retired for the KServe releases, kept for a rollback).
+The node's single GPU holds one inference path at a time: enabling either means
+scaling the KServe release in `model-prod` to 0 and pointing the catalog's
+`qwen3.6-27b` back at its service. The llm-d client
 entrypoint is `llm-d-epp.mini-platform.svc` port 80.
 
 ## Accessing Services
