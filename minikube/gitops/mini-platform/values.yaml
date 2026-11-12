@@ -135,14 +135,20 @@ applications:
     chartPath: charts/trino
     valuesFile: minikube/values/trino-values.yaml
     wave: "-2"
+  # The production-stack vLLM, retired: self-hosted models are KServe
+  # releases of the model onboarding pipeline now (catalog provider KServe,
+  # docs/agentgateway.md "Self-hosted models"). Kept for a rollback: enable it
+  # and point the catalog's qwen3.6-27b back at vllm-router-service; the
+  # node's single GPU holds one of the two at a time.
   vllm:
+    enabled: false
     chartPath: charts/vllm-stack
     valuesFile: minikube/values/vllm-values.yaml
     resourcesFile: minikube/values/vllm-resources.yaml
     wave: "-2"
   # Alternative inference path: llm-d (GAIE standalone scheduler + vLLM decode
-  # pods). Disabled by default — the node's single GPU cannot host llm-d and
-  # production-stack (vllm) at the same time. To switch paths, set
+  # pods). Disabled by default — the node's single GPU holds one inference
+  # path at a time (today the KServe releases). To switch paths, set
   # enabled: true here AND servingEngineSpec.modelSpec[0].replicaCount: 0 in
   # minikube/values/vllm-values.yaml (or the reverse), then commit and push.
   llm-d-modelserver:

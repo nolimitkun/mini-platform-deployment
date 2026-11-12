@@ -93,6 +93,6 @@ serviceMonitor:
 # pod read — and the attribution that actually matters is already there without
 # it. DCGM_EXPORTER_KUBERNETES (set by the chart) reads the kubelet
 # pod-resources socket, so each series already carries the pod, namespace and
-# container holding the GPU: today, `pod="vllm-qwen-deployment-vllm-..."`. That
+# container holding the GPU: today, the KServe release's vLLM pod. That
 # is what makes these joinable with vLLM's own metrics, and it is why the scrape
 # job sets honor_labels.

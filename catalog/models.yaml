@@ -35,11 +35,14 @@ servingNamespaces:
 # Chat and embedding models. Clients send the key as `model` to the
 # OpenAI-compatible endpoint /v1/chat/completions; one AgentgatewayModel each.
 models:
-  # vLLM on the local GPU (vllm-values.yaml).
+  # On the local GPU: the model onboarding pipeline's release in model-prod
+  # (KServe LLMInferenceService, weights from MinIO). A new release is a new
+  # deployment / servedModel here; clients keep calling qwen3.6-27b.
   qwen3.6-27b:
     placement: onprem
-    provider: OpenAI
-    baseURL: http://vllm-router-service.mini-platform.svc.cluster.local/v1
+    provider: KServe
+    deployment: model-prod/unsloth-qwen3-6-27b-nvfp4-ccdaab7e-e8eb38
+    servedModel: unsloth/Qwen3.6-27B-NVFP4@ccdaab7e68af2409599b8949a8f2685703c9bae5
     price: {input: 0, output: 0}
 
   # Hosted, over the internet. The key comes from Vault (agentgateway-deepseek).
