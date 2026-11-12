@@ -89,6 +89,44 @@ To add a model or a Google API:
 The policy change goes live when OCP rebuilds the bundle from `main`. The
 gateway change goes live on the next Argo CD sync.
 
+### Self-hosted models (KServe)
+
+Models on the local GPU are served by KServe `LLMInferenceService`s that the
+model onboarding pipeline (`model-onboarding-pipeline`) creates. The platform's
+`model-serving` app (`minikube/gitops/model-serving`) owns what they run in:
+
+- the namespaces `model-onboarding` (the pipeline) and `model-hprd` /
+  `model-prod` (the serving namespaces, listed as `servingNamespaces` in
+  `catalog/models.yaml`);
+- their credentials, from Vault through VSO: the pipeline's gateway key
+  (`gateway-key`) and MinIO account (`s3-creds`), and in each serving namespace
+  the read-only MinIO account (`model-weights-s3`) and the vLLM key
+  (`model-serving-key`);
+- an `AgentgatewayPolicy` that sends the vLLM key on the routes KServe creates.
+
+There is one gateway: KServe attaches each service's HTTPRoute
+(`/<namespace>/<name>/v1/...`) to `agentgateway-proxy`, whose listener admits
+routes from the serving namespaces. The InferencePool's endpoint picker (EPP)
+chooses the vLLM replica; this needs the controller's inference extension
+(`inferenceExtension.enabled` in `agentgateway-values.yaml`).
+
+Two ways in:
+
+- **By model name**, for everyone. A catalog entry with `provider: KServe`
+  names a release (`deployment: model-prod/<name>`) and the name vLLM serves
+  (`servedModel`). The chart renders an `AgentgatewayModel` next to the pool
+  that rewrites the model name, so clients keep using the catalog name and a
+  new release is a one-line catalog change. KServe models must be `onprem`.
+- **By deployment path**, for the pipeline only. OPA allows
+  `/<serving namespace>/...` to projects with `deployments: true` and on-prem
+  placement (`model-onboarding`), never to agent keys. The pipeline evaluates
+  and tunes candidates there before any catalog entry points at them.
+
+Weights live in MinIO, bucket `models` (versioned, object locking), at
+`s3://models/<repo>/<revision>/`. The pipeline's account can write but not
+delete; the serving account can only read. vLLM streams the weights from MinIO
+(`--load-format runai_streamer`); nothing is copied to a volume first.
+
 ### Google login without a key
 
 The proxy runs as the ServiceAccount `agentgateway-proxy`. Its projected token is
@@ -139,6 +177,8 @@ budget:                         # optional
   usd_per_30_days: 25
 keys: [holmes, holmes-2]        # key ids; the secrets are in Vault
 mcp_tools: ["grafana_*"]        # optional; no MCP access without it
+deployments: false              # optional; true: may call KServe deployment paths
+                                # (needs onprem placement; see "Self-hosted models")
 ```
 
 `scripts/gen-projects.py` validates the files, including rules across files:
@@ -149,6 +189,7 @@ mcp_tools: ["grafana_*"]        # optional; no MCP access without it
 - a `fixed:<model>` routing names a model the project may use
 - key ids are `<project>` or `<project>-<suffix>`, and unique
 - exceptions (`projects/_exceptions.yaml`) name existing projects and models
+- `deployments: true` only with `onprem` in the placement
 
 It then generates these files. CI fails if any is out of date:
 
@@ -159,8 +200,8 @@ It then generates these files. CI fails if any is out of date:
 | `minikube/gitops/rate-limit/files/config.yaml` | the rate-limit service |
 | `minikube/gitops/app-resources/alerts/agentgateway-projects.yml` | Prometheus, as alert rules |
 
-Today's projects are the four former clients, each with one key whose id is the
-project id:
+Today's projects are the four former clients and the onboarding pipeline, each
+with one key whose id is the project id:
 
 | Project | Data class | Routing for `auto` | Mirror (env name the client reads) |
 |---------|------------|--------------------|------------------------------------|
@@ -168,6 +209,7 @@ project id:
 | `kagent` | `internal`, plus the DeepSeek exception | `cheapest` | `kagent-agentgateway` |
 | `holmes` | `internal`, plus the DeepSeek exception | `cheapest` | `holmes-agentgateway` |
 | `admin` | `public` | `semantic` | none: for people |
+| `model-onboarding` | `internal`, on-prem only, `deployments: true` | none | `model-onboarding-agentgateway` (VSO puts it in `model-onboarding/gateway-key`) |
 
 Their limits and budgets are under "Rate limits and budgets".
 
