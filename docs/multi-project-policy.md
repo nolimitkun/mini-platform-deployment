@@ -220,7 +220,9 @@ sends three descriptors per request:
 agentgateway answers `/v1/models` itself, and a model's `visibility` is global,
 so it can't hide a model from one project. For that path OPA's allow decision
 adds an `x-allowed-models` request header, `lib.allowed(project)` plus the
-`auto` names, and a response transformation keeps only those entries. One
+`auto` names, and a response transformation answers with those names. It never
+reads the upstream body: on a Gateway-wide policy that would buffer every
+response, streaming included (fixed after #35 kept the metadata that way). One
 source of truth, the same set authorization uses; a test checks that every
 listed model is callable. OPA's header replaces any the client sends, and
 without it the list goes out whole: the list is cosmetic.

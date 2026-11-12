@@ -363,13 +363,18 @@ The rules:
 `GET /v1/models` shows each project only the models it may call, plus `auto`
 and `auto-<task>` when it has any. Open WebUI's model picker is that list.
 
-agentgateway answers `/v1/models` itself, with every public model and its
-metadata. For that path OPA's decision adds a request header,
-`x-allowed-models`, naming the project's models (`listed_models` in
-`authz.rego`), and the `agentgateway-proxy-models-list` policy keeps only
-those entries. OPA's header replaces any the client sends. If the header is
-missing, the list goes out whole. The list is cosmetic: authorization still
-decides every call.
+For that path OPA's decision adds a request header, `x-allowed-models`,
+naming the project's models (`listed_models` in `authz.rego`), and the
+`agentgateway-proxy-models-list` policy answers with exactly those: ids, with
+`owned_by: virtual` for the `auto` names. OPA's header replaces any the client
+sends. If the header is missing, agentgateway's own list (every public model)
+goes out whole. The list is cosmetic: authorization still decides every call.
+
+The policy builds the list from the header and never reads the upstream
+response. A Gateway-wide policy that reads `response.body` makes agentgateway
+buffer every response on every route, whatever the policy's condition:
+streamed completions then arrive as one block. Keep `response.body` out of
+policies attached to the Gateway.
 
 ### Rate limits and budgets
 
