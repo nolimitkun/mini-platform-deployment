@@ -175,16 +175,25 @@ keycloakConfigCli:
 
       clients:
         # The project registry's API checks access tokens issued to this client
-        # (azp) and reads the groups claim. Public, with the password grant, so
-        # people can get a token from the command line until the portal page
-        # does the authorization code flow.
+        # (azp) and reads the groups claim. Public, no secret: its portal page
+        # (registry.test/portal/) logs in with the authorization code flow and
+        # PKCE, and the password grant gives a token on the command line.
+        # webOrigins: the page fetches its tokens from Keycloak cross-origin.
         - clientId: project-registry
           name: Project registry
           enabled: true
           protocol: openid-connect
           publicClient: true
-          standardFlowEnabled: false
+          standardFlowEnabled: true
           directAccessGrantsEnabled: true
+          rootUrl: http://registry.test
+          redirectUris:
+            - http://registry.test/portal/*
+          webOrigins:
+            - http://registry.test
+          attributes:
+            pkce.code.challenge.method: S256
+            post.logout.redirect.uris: http://registry.test/portal/*
           defaultClientScopes: [acr, basic, email, profile, roles, web-origins, groups]
 
         - clientId: grafana
