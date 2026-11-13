@@ -1,8 +1,10 @@
 # Design: project registry (phase 2)
 
-Status: **design, not built** (2026-11-13). One technical premise, rate limits
-set by OPA per request, was verified in a spike (below). Everything else is
-proposed.
+Status: **proof of concept built and deployed on minikube** (2026-11-13): the
+core below, in [nolimitkun/project-registry](https://github.com/nolimitkun/project-registry)
+and the `project-registry` and `opa-policy` apps. OAuth clients for callers and
+the portal page are not built yet. [Proof of concept](#proof-of-concept) has
+what was built, what differs from this design and what was measured.
 
 Today a project is a file, `projects/<id>.yaml`, changed by pull request.
 [multi-project-policy.md](multi-project-policy.md) records that design and
@@ -289,20 +291,95 @@ Distributing bundles through an OCI registry later is `opa build` plus
 6. **JWTs.** New projects get only an OAuth client. Existing API keys get an
    end date.
 
-## Proof of concept on minikube
+## Proof of concept
 
-**Pieces:** a FastAPI registry on the cluster's Postgres, the publisher, and a
-minimal portal page (a Backstage plugin later).
+### What was built
 
-**Checks:**
+- **The registry** (`registry/api.py`, FastAPI on its own PostgreSQL). Every
+  edit is a change request.
+  - It is validated by rendering the whole data bundle with it, using
+    `scripts/gen-projects.py` from this repo at the commit of the active policy
+    bundle. That makes it the one validation library, kept in Git.
+  - Its approvals come from `data.portal.required_approvals`
+    (`policies/gateway/portal.rego`, in the policy bundle) and are checked
+    against the caller's Keycloak groups. Nobody approves their own change.
+  - Every step goes to the append-only audit log.
+- **The publisher** (`registry/publisher.py`) runs in one database transaction:
+  1. take approved changes, batched at most every 30 seconds, and apply them;
+  2. render the bundle;
+  3. replay recent decisions;
+  4. build, sign and upload the bundle, then activate it.
 
-- Change one project's limit from 60 to 120 requests a minute: only its
-  counts change, and the rate-limit pod doesn't restart.
-- OPA refuses to load a bundle with a bad signature and keeps the previous
-  one.
-- A change that alters another project's decisions is stopped by the replay.
-- With the registry stopped, the gateway keeps serving.
-- A JWT call and an API key call for the same project get the same decision.
+  A failure anywhere leaves the records, and what OPA loads, unchanged, and
+  marks the changes `failed` with the reason. A change is `active` once every
+  OPA has reported its revision through the status plugin.
+- **The policy build** (`registry/policybuild.py`): a CronJob that, when `main`
+  moves, runs `opa test`, then builds, signs and activates `gateway-policy`.
+  It replaces OPA Control Plane, which is removed.
+- **Signing**: one RSA key in Vault Transit, not exportable. The builders'
+  Vault role (`bundle-signer`) can only sign. `opa build` computes the file
+  hashes with a throwaway key, and the token is then re-signed through Transit
+  (`registry/bundles.py`). OPA verifies both bundles.
+- **The import** (`registry/importer.py`, a PostSync hook): the first load from
+  `projects/*.yaml` and `agents/*.yaml`. It activates only if the registry's
+  render equals the commit's `policies/gateway-projects` byte for byte. It
+  did: 5 projects, 5 agents, 2 exceptions.
+- **Limits from OPA**: the allow decision carries `limits` as dynamic metadata.
+  Every descriptor's `limitOverride` reads it, defaulting to 0. The rate-limit
+  config is down to the domain and a default entry.
+
+### Where it differs from this design
+
+- **CI is a CronJob in the cluster.** GitHub Actions can't reach this cluster's
+  Vault or MinIO. It isn't an Argo CD PostSync hook either: a commit that only
+  changes `policies/` renders no different manifests, so Argo CD never syncs
+  and the hook never runs.
+- **The replay compares the active and the candidate data bundle.** Both are
+  evaluated against the logged inputs, under the active policy. Comparing with
+  the logged verdicts, as first written, would blame a project change for
+  every verdict a policy or catalog change had flipped since the requests were
+  logged, and block every publish for the replay window.
+- **Records are documents.** The registry stores each project, agent and
+  exception as the JSON of its YAML file (`resource.spec`), not in the
+  normalized tables of the data model above. Rendering through
+  `gen-projects.py` needs exactly that format.
+- **Owners are groups.** Each project has an owner group (`project_owner`). The
+  import gives every project `platform-admins`. Who may submit a change is not
+  restricted yet; who approves it is.
+- **Callers still use API keys.** The OAuth clients (and the JWT-versus-API-key
+  check below) come with the portal, in the next round.
+
+### Checks (all on the cluster, through the gateway)
+
+| Check | Result |
+|-------|--------|
+| `admin` 60 → 3 requests a minute, then 3 → 120 | 3/min: `admin` gets 429 at once, `open-webui` keeps 200; 120/min: 200 again. Active everywhere 9 s after the last approval. The rate-limit pod never restarted (0 restarts across 7 publishes) |
+| Approvals | Lowering a limit: the owner only. Raising: the owner and the cost owner. Security can't approve a cost change (403), and nobody can approve their own (403) |
+| Replay | 1,800–1,860 logged decisions replayed per publish; 0 changed for other projects |
+| Bad signature | A `gateway-projects` bundle with `admin` edited to 1/min, uploaded straight to MinIO: OPA refuses it (`data.json: digest mismatch`) and keeps the signed one; `admin` keeps its real limit |
+| Registry down | API and publisher at 0 pods: the gateway keeps serving models and chat, and OPA's status reports fail quietly |
+| Policy build | A failing `opa test` publishes nothing (tested in the repo); on the cluster the first build replaced OCP's unsigned bundle, which OPA refused for its missing signature |
+
+A change that alters another project's decisions can't be produced through
+valid project data with the current Rego: every rule reads only the
+requesting project's entries, and agents are checked against their project.
+The valve is tested with real `opa eval` in the repo (`tests/test_replay.py`);
+on the cluster, every publish so far changed nothing for other projects.
+
+### Not built yet
+
+- one OAuth client per project and the JWT path (decision "Callers authenticate
+  with JWTs");
+- the portal page;
+- `project_budget_usd` on `/metrics` and the one join alert rule;
+- the daily export of the registry to `projects/` in Git (until then, Git keeps
+  the import's snapshot, and API keys in Vault are still provisioned from it);
+- copies of the bundles to other sites;
+- the model choices as the intersection of the catalog and the model
+  registry's `prod` versions.
+
+A key rotation in Transit needs a new key id in OPA's config: the public key
+OPA has is version 1's.
 
 ## Spike: limits set by OPA
 
@@ -333,9 +410,15 @@ Docker, the same images as the cluster. The cluster was not touched.
 | Change a to 10 and c to 3 through OPA's data API | live at once, no rate-limit restart |
 | Rate-limit service stopped, `failClosed` | 500 (the cluster uses `FailOpen` on purpose) |
 
-**Not tested:**
+**Followed up in the proof of concept** (on the cluster, with the registry):
 
-- **Tokens and budget overrides.** They go through the same descriptor code
-  as requests (`build_request`), but only requests were tested.
-- **Changing a limit mid-window.** Whether the current window's count carries
-  over was not established; the test crossed a minute boundary.
+- **Tokens.** A limit of 30 tokens a minute: two 20-token calls went through
+  and the third was refused. So the override still applies when the cost is
+  counted on the response.
+- **Budget.** A budget of 1 micro-USD refused the next call, DeepSeek or the
+  free local model, because the project had already spent more than that in
+  the 30-day window. Restoring it to $25 let calls through again.
+- **Changing a limit mid-window.** The window's count carries over: the cache
+  key doesn't include the limit. Lowering a limit below what was already
+  counted refuses the next call at once, and raising it lets calls through at
+  once.

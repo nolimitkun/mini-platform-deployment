@@ -166,8 +166,9 @@ fi
 echo "==> opa (policies/)"
 if have opa; then
   # Every directory under policies/ is one bundle (opa-policy values.yaml
-  # ocp.bundles), and OPA loads them together: the Rego in gateway, the
-  # per-project data in gateway-projects. The tests need both.
+  # bundles), and OPA loads them together: the Rego in gateway, the
+  # per-project data in gateway-projects (the project registry publishes it;
+  # this directory is the snapshot the import came from). The tests need both.
   dirs=()
   for dir in policies/*/; do
     dir="${dir%/}"
@@ -176,7 +177,7 @@ if have opa; then
     if [[ -z "$(opa fmt --list "$dir")" ]]; then ok "opa fmt $dir"; else bad "opa fmt $dir (run: opa fmt -w $dir)"; fi
   done
   if opa test "${dirs[@]}" >/dev/null; then ok "opa test ${dirs[*]}"; else bad "opa test ${dirs[*]}"; opa test "${dirs[@]}" || true; fi
-  # Build each bundle as OCP does (tests left out, roots from its .manifest)
+  # Build each bundle as the builders do (tests left out, roots from its .manifest)
   # and activate them together, as OPA does: data outside a bundle's roots, or
   # two bundles claiming the same root, fails here instead of in the cluster.
   bundle_tmp="$(mktemp -d)"

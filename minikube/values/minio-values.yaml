@@ -58,8 +58,9 @@ metrics:
     enabled: false
 
 
-# OPA policy bundles (opa-policy chart): OCP publishes them here and the OPA
-# beside agentgateway downloads them. One write account and one read account,
+# OPA policy bundles: the policy build (opa-policy chart) and the project
+# registry's publisher write them here, signed, and the OPA beside agentgateway
+# downloads and verifies them. One write account and one read account,
 # each scoped to the bucket; their secret keys come from Vault
 # (minio-resources.yaml). Setting `users` also drops the chart's default
 # console/console123 account from what the post-install job creates.
@@ -120,6 +121,8 @@ policies:
       - resources: ["arn:aws:s3:::models"]
         actions: ["s3:GetBucketLocation", "s3:ListBucket"]
 users:
+  # The writers' account. Named after OPA Control Plane, its first user; the
+  # name stays so existing credentials keep working.
   - accessKey: ocp
     existingSecret: opa-bundles-writer
     existingSecretKey: AWS_SECRET_ACCESS_KEY

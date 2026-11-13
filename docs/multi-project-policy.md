@@ -5,6 +5,14 @@ This is the design record: what was decided, what changed while building it,
 and the spike evidence behind each choice. To operate it (adding a project,
 rotating a key, changing a limit), use [agentgateway.md](agentgateway.md).
 
+> **Since the phase 2 proof of concept** ([project-registry.md](project-registry.md)),
+> three things below describe how it was, not how it is: OPA Control Plane no
+> longer builds the bundles (a policy build signs `gateway-policy`, the project
+> registry's publisher signs `gateway-projects`); project data comes from the
+> registry, not from `projects/*.yaml`; and the rate-limit config no longer
+> lists projects, because each project's limits travel with OPA's decision.
+> The table "How long changes take" has the current delays.
+
 The target is about **200 projects, each with several API keys**. Each project
 gets its own model policy:
 
@@ -265,12 +273,12 @@ the project sets no limit.
 
 | Change | Path | Delay |
 |--------|------|-------|
-| Project change | merge → OCP rebuilds `gateway-projects` only (30–60 s) → OPA poll (10–30 s) | 1–2 min |
-| Catalog or Rego change | merge → OCP rebuilds `gateway-policy` (30–60 s) → OPA poll (10–30 s) | 1–2 min |
-| Revoke a key | drop its id from the project file | the same |
+| Project change | registry change approved → publisher (batches every 30 s, renders, replays, signs) → OPA poll (10–30 s) | under 1 min (measured: active everywhere 9 s after approval) |
+| Catalog or Rego change | merge → policy build (every minute: opa test, build, sign) → OPA poll (10–30 s) | 1–2 min |
+| Revoke a key | drop its id from the project in the registry | the same as a project change |
 | Remove a key from Vault | bootstrap → VSO refresh → gateway reload | VSO interval (1 min) |
 | New model routes or `auto` models | merge → Argo CD sync of `agentgateway-config` | sync |
-| Limits and budgets | merge → Argo CD sync of `rate-limit` (pod restart) | sync; a new project gets 429 until then |
+| Limits and budgets | with the project data bundle: OPA returns them, the gateway sends them as `limitOverride` | as a project change; no restart |
 | Alert thresholds | merge → Argo CD sync of `prometheus` (config reload) | sync |
 | Rankings | Prometheus → OPA cache | ≤ 2 min |
 
