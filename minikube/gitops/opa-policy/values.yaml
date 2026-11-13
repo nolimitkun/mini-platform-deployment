@@ -34,13 +34,13 @@ signing:
   # public key comes from publicKeySecret. All three change together, with the
   # project registry's, in one commit (docs/project-registry.md "Rotating the
   # signing key").
-  keyVersion: 1
-  keyid: opa-bundles
+  keyVersion: 2
+  keyid: opa-bundles-v2
   publicKeySecret: opa-bundle-signing
   # The field of that secret holding this version's public key: public_key for
   # version 1, public_key_v<N> after a rotation, written next to the old one so
   # an OPA pod that restarts mid-rotation still finds the key it is configured for.
-  publicKeyField: public_key
+  publicKeyField: public_key_v2
   serviceAccount: policy-builder
 
 minio:
