@@ -1,3 +1,7 @@
+vaultSecrets:
+  # GITHUB_TOKEN for the daily export to Git (empty until someone stores one).
+  - registry-git
+
 routes:
   # The portal (/portal/) and the API. Both check Keycloak tokens themselves
   # (the portal logs in with the authorization code flow and PKCE), so no

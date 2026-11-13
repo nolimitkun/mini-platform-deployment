@@ -421,6 +421,16 @@ kv_put mini-platform/keycloak-registry-users \
   SSO_SECURITY_REVIEWER_PASSWORD="$(rand_b64)" \
   SSO_COST_OWNER_PASSWORD="$(rand_b64)"
 
+# The project registry's daily export to Git opens a PR with this token: a
+# fine-grained GitHub token for the deployment repo only (Contents and Pull
+# requests, read and write), created by a person and stored with
+#   vault kv put mini-platform/registry-git GITHUB_TOKEN=...
+# Seeded empty, so the secret exists and the job just says it has no token;
+# never overwritten (not even by --rotate-secrets): only a person sets it.
+if ! vault_cli kv get mini-platform/registry-git >/dev/null 2>&1; then
+  vault_cli kv put mini-platform/registry-git GITHUB_TOKEN=""
+fi
+
 # MinIO accounts for the OPA policy bundles: the policy build and the project
 # registry write them, OPA reads them.
 # The access key names the account; the field names are what the AWS SDKs in

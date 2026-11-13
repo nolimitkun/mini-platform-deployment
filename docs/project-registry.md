@@ -340,6 +340,15 @@ REGISTRY_TOKEN=$TOKEN python3 scripts/registry-export.py --url http://127.0.0.1:
 git diff --stat                        # review, then open a PR
 ```
 
+**Daily, in the cluster:** the CronJob `project-registry-git-export` (03:00 UTC)
+does the same from the registry's database. It clones this repo, runs
+`registry-export.py --from-file`, and if anything changed it force-pushes the
+`registry-export` branch and opens a PR, or updates the open one. Nothing merges
+by itself. Its token is a fine-grained GitHub token for this repo only (Contents
+and Pull requests, read and write), stored with
+`vault kv put mini-platform/registry-git GITHUB_TOKEN=...`; without one the job
+does nothing. To run it now: `kubectl -n mini-platform create job --from=cronjob/project-registry-git-export export-now`.
+
 The script rewrites only the files whose record changed (the others keep their
 comments), deletes the files of removed records, and runs `gen-projects.py`, so
 the generated files match. A new key id still needs the Vault bootstrap
@@ -529,9 +538,8 @@ on the cluster, every publish so far changed nothing for other projects.
   with JWTs");
 - a portal page richer than the PoC's (one page: lists, a JSON merge patch
   editor, approvals; a Backstage plugin later);
-- an automatic export to Git: `scripts/registry-export.py` is run by hand and
-  its result reviewed as a PR, and API keys in Vault are still provisioned from
-  the files;
+- API keys in Vault are still provisioned from the exported files, by the
+  bootstrap, after the export PR is merged;
 - copies of the bundles to other sites;
 - the model choices as the intersection of the catalog and the model
   registry's `prod` versions.
