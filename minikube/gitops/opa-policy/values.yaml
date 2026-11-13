@@ -10,7 +10,7 @@ policyBuild:
   schedule: "* * * * *"
   # Public repo, no credentials. A branch name, not a commit: the build follows it.
   repo: https://github.com/nolimitkun/mini-platform-deployment.git
-  ref: feat/registry-round2   # TEMPORARY, for the branch test on the cluster: back to main before merge
+  ref: main
   dir: policies/gateway
   testDirs: policies/gateway,policies/gateway-projects
   # "" for the bundles OPA loads. A branch build sets its own prefix (e.g.
