@@ -9,7 +9,8 @@ vaultSecrets:
   # dependencies.
   - minio-root-credentials
   # The OPA bundle accounts (minio-values.yaml). Declared here, the earliest
-  # consumer; OCP and OPA (opa-policy, a later wave) read the same Secrets.
+  # consumer; the bundle builders and OPA (opa-policy, project-registry, later
+  # waves) read the same Secrets.
   - opa-bundles-writer
   - opa-bundles-reader
   # The model weight store's accounts (minio-values.yaml). The pipeline and

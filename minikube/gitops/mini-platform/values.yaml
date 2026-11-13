@@ -285,14 +285,31 @@ applications:
     valuesFile: minikube/values/agentgateway-values.yaml
     releaseName: agentgateway
     wave: "0"
-  # OCP builds the Rego in policies/ into bundles in MinIO (wave -2, which
-  # also creates the bucket and both accounts); OPA serves them to the
-  # gateway. Before the gateway config, which fails closed without OPA.
+  # The policy build (a CronJob) tests, builds and signs the Rego in
+  # policies/gateway into a bundle in MinIO (wave -1, which also creates the
+  # bucket and both accounts); OPA verifies and serves it, with the project
+  # registry's gateway-projects bundle, to the gateway. Before the gateway
+  # config, which fails closed without OPA.
   opa-policy:
     chartPath: minikube/gitops/opa-policy
     valuesFile: minikube/gitops/opa-policy/values.yaml
+    resourcesFile: minikube/values/opa-policy-resources.yaml
     releaseName: opa-policy
     wave: "0"
+  # The project registry (docs/project-registry.md): projects, agents and
+  # exceptions as change requests with approvals decided by policy, published
+  # as the signed gateway-projects bundle. Its own database first.
+  project-registry-postgresql:
+    chartPath: charts/postgresql
+    valuesFile: minikube/values/project-registry-postgresql-values.yaml
+    resourcesFile: minikube/values/project-registry-postgresql-resources.yaml
+    releaseName: project-registry-postgresql
+    wave: "0"
+  project-registry:
+    chartPath: minikube/gitops/project-registry
+    valuesFile: minikube/gitops/project-registry/values.yaml
+    releaseName: project-registry
+    wave: "1"
   # agentregistry and its own database. After kagent's CRDs (wave -4), which
   # it writes Agent and MCPServer resources of.
   agentregistry-postgresql:

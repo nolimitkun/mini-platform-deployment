@@ -35,6 +35,7 @@ spec:
             - --diagnostic-addr=0.0.0.0:8282
             - --config-file=/config/config.yaml
             - --set=persistence_directory=/var/opa
+            - --set-file=keys.{{ $v.signing.keyid }}.key=/keys/public_key
           env:
             - {name: AWS_REGION, value: {{ $v.minio.region | quote }}}
           envFrom:
@@ -60,7 +61,12 @@ spec:
           volumeMounts:
             - {name: config, mountPath: /config, readOnly: true}
             - {name: persist, mountPath: /var/opa}
+            - {name: signing-key, mountPath: /keys, readOnly: true}
       volumes:
+        - name: signing-key
+          secret:
+            secretName: {{ $v.signing.publicKeySecret }}
+            items: [{key: public_key, path: public_key}]
         - name: config
           configMap: {name: opa-config}
         - name: persist

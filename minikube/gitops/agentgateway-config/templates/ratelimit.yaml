@@ -1,12 +1,14 @@
 {{- $v := .Values }}
 {{- if $v.rateLimit.enabled }}
-# Per-project limits and spend caps (projects/*.yaml limits and budget), kept
-# by the rate-limit service so they hold across gateway replicas. Each
-# descriptor is (project, kind); the service only limits the kinds a project
-# configures. A project the service has no entry for at all is refused: its
-# config (scripts/gen-projects.py) ends in a default entry with a request limit
-# of 0, so a project OPA allows before this config is synced gets 429 rather
-# than no limits.
+# Per-project limits and spend caps, kept by the rate-limit service so they hold
+# across gateway replicas. Each descriptor is (project, kind), and its limit
+# comes from OPA: the allow decision carries the project's limits as dynamic
+# metadata (policies/gateway/authz.rego `limits`), read here as extauthz.* and
+# sent as the descriptor's limitOverride. A limit change therefore goes live
+# with the project data bundle, and the service's config holds no project
+# (rate-limit chart: the domain and a default entry). Every override defaults
+# to 0: agentgateway skips a descriptor whose expression fails, which would
+# mean no limit, so a request OPA allowed without limits is refused (429).
 #   requests          requests per minute, counted up front
 #   tokens            tokens per minute, counted when the call completes
 #   budget_micro_usd  micro-USD per 30-day window, agentgateway's cost of the
@@ -42,13 +44,16 @@ spec:
               - {name: project, expression: apiKey.project}
               - {name: kind, expression: '"requests"'}
             unit: Requests
+            limitOverride: '{"unit": "minute", "requestsPerUnit": has(extauthz.requests_per_minute) ? int(extauthz.requests_per_minute) : 0}'
           - entries:
               - {name: project, expression: apiKey.project}
               - {name: kind, expression: '"tokens"'}
             unit: Tokens
+            limitOverride: '{"unit": "minute", "requestsPerUnit": has(extauthz.tokens_per_minute) ? int(extauthz.tokens_per_minute) : 0}'
           - entries:
               - {name: project, expression: apiKey.project}
               - {name: kind, expression: '"budget_micro_usd"'}
             unit: Tokens
             cost: int(llm.cost.total * 1000000.0)
+            limitOverride: '{"unit": "month", "requestsPerUnit": has(extauthz.budget_micro_usd) ? int(extauthz.budget_micro_usd) : 0}'
 {{- end }}

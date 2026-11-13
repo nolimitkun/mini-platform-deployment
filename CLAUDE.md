@@ -98,11 +98,17 @@ one OpenAI-compatible endpoint for every model (self-hosted KServe releases, Gem
 mini-cloud VPN, DeepSeek), passthrough routes to Google's speech APIs, and one MCP
 endpoint over the cluster's MCP servers. Every request carries a per-project API key
 and is decided by **OPA** (ext_authz, FailClosed) from the Rego in `policies/gateway`
-and the per-project data in `policies/gateway-projects` (one `data.json` per project,
-generated), which the **OPA Control Plane (OCP)** builds from this repo's `main` on
-GitHub into two bundles in MinIO with disjoint `.manifest` roots — so a policy change
+and the per-project data, two bundles in MinIO with disjoint `.manifest` roots, both
+signed with a Vault Transit key that never leaves Vault (OPA verifies them): the
+**policy build** (`opa-policy`, a CronJob running the `project-registry` image) runs
+`opa test` and builds and signs `gateway-policy` when `main` moves — so a policy change
 goes live on merge, without an Argo CD sync, and must pass `opa test` and the two-bundle
-load (run by `validate-gitops.sh`). `scripts/policy-replay.py` replays recent decisions
+load (run by `validate-gitops.sh`); the **project registry** (`project-registry`, code in
+`nolimitkun/project-registry`, docs/project-registry.md) holds the projects, agents and
+exceptions as change requests with policy-decided approvals (`policies/gateway/portal.rego`)
+and publishes `gateway-projects` after replaying recent decisions. OPA Control Plane was
+removed. Each project's rate limits travel with OPA's allow decision (dynamic metadata →
+`limitOverride`); the rate-limit config lists no project. `scripts/policy-replay.py` replays recent decisions
 from Loki against a change. Models and Google APIs are declared
 once in `catalog/models.yaml`; `scripts/gen-catalog.py` generates the gateway chart's
 `files/catalog.json` and the policy's `catalog/data.json` from it (CI checks they are
@@ -307,8 +313,8 @@ Each entry maps a `chartPath` (under `charts/` in the charts repo, or
 | `-4` (also) | agentgateway CRDs |
 | `-3` | Stateful deps (postgres, redis, qdrant, spark-operator) |
 | `-2` | Keycloak, Langfuse, MLflow, Trino |
-| `-1` → `0` | MinIO, Prometheus, dcgm-exporter, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset, the agentgateway controller, OPA + OCP (`opa-policy`), agentregistry's PostgreSQL |
-| `1` → `2` | agentgateway's Gateway/models/policies (`agentgateway-config`) and agentregistry, then Open WebUI, kagent, HolmesGPT, oauth2-proxy and the agentregistry catalog |
+| `-1` → `0` | MinIO, Prometheus, dcgm-exporter, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset, the agentgateway controller, OPA and the policy build (`opa-policy`), the PostgreSQL of agentregistry and of the project registry |
+| `1` → `2` | agentgateway's Gateway/models/policies (`agentgateway-config`), the project registry and agentregistry, then Open WebUI, kagent, HolmesGPT, oauth2-proxy and the agentregistry catalog |
 | `3` | Open WebUI Holmes Pipe, after Holmes and its API-key mapping are healthy |
 
 All generated Applications use `automated` sync with `prune: true`,
@@ -331,7 +337,7 @@ provider — the console falls back to username/password with no SSO button and
 never recovers without a restart. Sharing Keycloak's wave was enough to lose
 that race every time, since MinIO is serving within seconds and Keycloak has a
 database and a realm import ahead of it. MLflow and Langfuse each ship their own MinIO subchart; the only consumers of
-this one are OCP and OPA (`opa-policy`, wave `0`), so the later wave costs
+this one are the bundle builders and OPA (`opa-policy`, `project-registry`, wave `0`–`1`), so the later wave costs
 nothing.
 The wave only orders the initial rollout, though; a container that restarts
 later can lose the lookup to any transient, which is why the deploy script ends

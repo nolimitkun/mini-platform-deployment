@@ -8,6 +8,8 @@ vaultSecrets:
   # it — MinIO, Langfuse, Grafana, JupyterHub, Superset and Open WebUI all read
   # a single key out of the same Secret in this or a later wave.
   - keycloak-sso
+  # The project registry's reviewer accounts (security-reviewer, cost-owner).
+  - keycloak-registry-users
 
 # Argo CD is the one consumer outside the mini-platform namespace: it resolves
 # `$argocd-oidc:clientSecret` against a Secret in its own namespace, and only

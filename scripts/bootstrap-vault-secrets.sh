@@ -404,7 +404,25 @@ kv_put mini-platform/agentregistry-postgresql \
 kv_put mini-platform/agentregistry-db \
   AGENT_REGISTRY_DATABASE_URL="postgres://agentregistry:${AGENTREGISTRY_DB_PASSWORD}@agentregistry-postgresql:5432/agentregistry?sslmode=disable"
 
-# MinIO accounts for the OPA policy bundles: OCP writes them, OPA reads them.
+# The project registry's PostgreSQL (its own release), and the URL the registry
+# reads, from one password as for agentregistry above.
+REGISTRY_DB_PASSWORD="$(reuse_or_generate mini-platform/project-registry-postgresql password)"
+REGISTRY_DB_PASSWORD="${REGISTRY_DB_PASSWORD:-$(rand_hex)}"
+kv_put mini-platform/project-registry-postgresql \
+  postgres-password="$(rand_hex)" \
+  password="$REGISTRY_DB_PASSWORD"
+kv_put mini-platform/project-registry-db \
+  DATABASE_URL="postgresql://registry:${REGISTRY_DB_PASSWORD}@project-registry-postgresql:5432/registry"
+
+# The project registry's reviewer accounts in Keycloak (security-reviewer,
+# cost-owner), a secret of their own so keycloak-sso keeps its fields on
+# upgrades.
+kv_put mini-platform/keycloak-registry-users \
+  SSO_SECURITY_REVIEWER_PASSWORD="$(rand_b64)" \
+  SSO_COST_OWNER_PASSWORD="$(rand_b64)"
+
+# MinIO accounts for the OPA policy bundles: the policy build and the project
+# registry write them, OPA reads them.
 # The access key names the account; the field names are what the AWS SDKs in
 # both read from the environment.
 kv_put mini-platform/opa-bundles-writer \

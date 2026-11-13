@@ -34,7 +34,8 @@ Open WebUI ──▶ agentgateway ──▶ KServe InferencePool (EPP) ──▶
                   │  ├── rate-limit service (per-project limits and budgets)
                   │  └── OPA (allow/deny per project, model and tool; picks "auto")
                   │        ▲
-                  │        └── OCP ◀── policies/ in Git   (bundles via MinIO)
+                  │        └── signed bundles via MinIO ◀── policy build (policies/ in Git)
+                  │                                     ◀── project registry (projects, approvals)
                   ├──▶ Vertex AI Gemini, Speech, TTS   (mini-cloud VPN, keyless)
                   ├──▶ DeepSeek                        (internet)
                   └──▶ MCP: Grafana MCP, kagent tools
@@ -49,9 +50,10 @@ pipeline tuned, evaluated and deployed, its weights streamed from MinIO; see
 on Vertex AI, `deepseek-v4-pro`), passes Google's speech APIs through, and merges
 the cluster's MCP servers into one endpoint. Before routing, it asks **OPA**,
 whose policy (the Rego in `policies/gateway`: data class per project, placement
-per model, allowed tools, the model behind `auto`; and one data file per project
-in `policies/gateway-projects`) the **OPA Control Plane** builds from Git into
-two bundles. A rate-limit service enforces each project's limits and budget. **agentregistry** is the
+per model, allowed tools, the model behind `auto`) and per-project data come in
+two signed bundles: a policy build makes one from Git, the **project registry**'s
+publisher the other ([docs/project-registry.md](docs/project-registry.md)), and
+OPA verifies both. Each project's limits travel with OPA's decision. A rate-limit service enforces each project's limits and budget. **agentregistry** is the
 catalog of MCP servers and the registered agents. See [docs/agentgateway.md](docs/agentgateway.md).
 
 Supporting subsystems:
@@ -386,7 +388,7 @@ kubectl -n argocd get applications
 
 Sync waves order the rollout: Argo CD and Vault/VSO come first, then the
 stateful dependencies, then the application tier, and finally the gateway (with
-OPA and OCP ahead of it), Open WebUI and the agents. Each release brings its own ingress route and
+OPA, the policy build and the project registry ahead of it), Open WebUI and the agents. Each release brings its own ingress route and
 `VaultStaticSecret` mappings with it, so a secret is declared on the
 earliest-syncing application that consumes it — and, where a release needs a
 dependency *running* rather than just a Secret, a wave later still (MinIO reads
@@ -528,6 +530,8 @@ shared `minikube/gitops/app-resources` chart rendered against a sibling
 | `mini-platform-opa-policy` | `minikube/gitops/opa-policy` | `minikube/gitops/opa-policy/values.yaml` |
 | `mini-platform-semantic-router` | `charts/semantic-router` | `minikube/values/semantic-router-values.yaml` |
 | `mini-platform-rate-limit` | `minikube/gitops/rate-limit` | `minikube/gitops/rate-limit/values.yaml` |
+| `mini-platform-project-registry-postgresql` | `charts/postgresql` | `minikube/values/project-registry-postgresql-values.yaml` |
+| `mini-platform-project-registry` | `minikube/gitops/project-registry` | `minikube/gitops/project-registry/values.yaml` |
 | `mini-platform-model-serving` | `minikube/gitops/model-serving` | `minikube/gitops/model-serving/values.yaml` |
 | `mini-platform-agentregistry-postgresql` | `charts/postgresql` | `minikube/values/agentregistry-postgresql-values.yaml` |
 | `mini-platform-agentregistry` | `charts/agentregistry` | `minikube/values/agentregistry-values.yaml` |

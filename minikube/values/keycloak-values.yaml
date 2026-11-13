@@ -94,6 +94,12 @@ keycloakConfigCli:
     # client secrets reach Keycloak without ever being written to Git.
     - name: IMPORT_VARSUBSTITUTION_ENABLED
       value: "true"
+    # The project registry's two reviewer accounts, from their own Vault secret
+    # (keycloak-registry-users) so keycloak-sso stays as it was on upgrades.
+    - name: SSO_SECURITY_REVIEWER_PASSWORD
+      valueFrom: {secretKeyRef: {name: keycloak-registry-users, key: SSO_SECURITY_REVIEWER_PASSWORD}}
+    - name: SSO_COST_OWNER_PASSWORD
+      valueFrom: {secretKeyRef: {name: keycloak-registry-users, key: SSO_COST_OWNER_PASSWORD}}
   # Vault-managed, via VSO. Supplies every *_CLIENT_SECRET and the two seed user
   # passwords interpolated below. Written by scripts/bootstrap-vault-secrets.sh.
   extraEnvVarsSecret: keycloak-sso
@@ -133,6 +139,12 @@ keycloakConfigCli:
           path: /platform-users
           realmRoles:
             - platform-viewer
+        # Approval roles in the project registry (docs/project-registry.md
+        # "Approval rules are policy"); platform-admins is the platform team.
+        - name: security-reviewers
+          path: /security-reviewers
+        - name: cost-owners
+          path: /cost-owners
 
       # Keycloak emits no group claim by default. Argo CD's RBAC, Grafana's
       # role_attribute_path, Superset's AUTH_ROLES_MAPPING and oauth2-proxy's
@@ -157,6 +169,19 @@ keycloakConfigCli:
                 userinfo.token.claim: "true"
 
       clients:
+        # The project registry's API checks access tokens issued to this client
+        # (azp) and reads the groups claim. Public, with the password grant, so
+        # people can get a token from the command line until the portal page
+        # does the authorization code flow.
+        - clientId: project-registry
+          name: Project registry
+          enabled: true
+          protocol: openid-connect
+          publicClient: true
+          standardFlowEnabled: false
+          directAccessGrantsEnabled: true
+          defaultClientScopes: [acr, basic, email, profile, roles, web-origins, groups]
+
         - clientId: grafana
           name: Grafana
           enabled: true
@@ -363,6 +388,32 @@ keycloakConfigCli:
               temporary: false
           groups:
             - /platform-users
+        # Reviewers in the project registry, so a change can be approved by
+        # someone other than its author (four eyes) in each approval role.
+        - username: security-reviewer
+          enabled: true
+          emailVerified: true
+          email: security-reviewer@mini-platform.test
+          firstName: Security
+          lastName: Reviewer
+          credentials:
+            - type: password
+              value: $(env:SSO_SECURITY_REVIEWER_PASSWORD)
+              temporary: false
+          groups:
+            - /security-reviewers
+        - username: cost-owner
+          enabled: true
+          emailVerified: true
+          email: cost-owner@mini-platform.test
+          firstName: Cost
+          lastName: Owner
+          credentials:
+            - type: password
+              value: $(env:SSO_COST_OWNER_PASSWORD)
+              temporary: false
+          groups:
+            - /cost-owners
 
 postgresql:
   enabled: true

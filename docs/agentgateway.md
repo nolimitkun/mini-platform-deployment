@@ -1,10 +1,12 @@
-# Model and tool gateway: agentgateway, OPA, OCP, agentregistry
+# Model and tool gateway: agentgateway, OPA, the project registry, agentregistry
 
 Every model call and every shared MCP tool call on the platform goes through one
 gateway, [agentgateway](https://agentgateway.dev). Before routing a request, the
 gateway asks OPA whether this client may use this model or tool. OPA's policy is
-Rego in this repo; the OPA Control Plane (OCP) builds it, and each project's
-data, into two bundles that OPA loads together. agentregistry is the catalog where people find the tools.
+Rego in this repo, built and signed by the policy build; each project's data is
+published, signed, by the [project registry](project-registry.md). OPA loads the
+two bundles together and verifies both signatures. agentregistry is the catalog
+where people find the tools.
 
 agentgateway replaces LiteLLM, which this platform used before.
 
@@ -21,14 +23,18 @@ flowchart LR
     route[model / route / MCP]
   end
   opa[OPA<br/>opa-envoy]
-  ocp[OCP]
+  build[policy build<br/>CronJob]
+  registry[project registry<br/>+ publisher]
   git[(policies/ in Git)]
   minio[(MinIO<br/>opa-bundles)]
   clients --> keys --> authz --> route
   authz <-->|gRPC :9191| opa
   gw <-->|ext_proc, auto only| vsr[vLLM Semantic Router]
-  gw <-->|per-project limits| rl[rate-limit service<br/>Redis]
-  git --> ocp -->|bundle.tar.gz| minio --> opa
+  gw <-->|limits from OPA| rl[rate-limit service<br/>Redis]
+  git --> build -->|gateway-policy, signed| minio
+  registry -->|gateway-projects, signed| minio
+  minio --> opa
+  opa -.->|status: loaded revisions| registry
   route --> vllm[vLLM<br/>on-prem GPU]
   route -->|VPN + PSC, keyless| gcp[Vertex AI Gemini<br/>Speech, TTS]
   route -->|internet| ds[DeepSeek]
@@ -43,8 +49,9 @@ flowchart LR
 | agentgateway controller | `agentgateway`, `agentgateway-crds` | Creates the GatewayClass `agentgateway`. For each Gateway, it runs a proxy Deployment, Service and ServiceAccount named after the Gateway |
 | Gateway config | `agentgateway-config` (`minikube/gitops/agentgateway-config`) | The `agentgateway-proxy` Gateway, one `AgentgatewayModel` per model, the `auto` virtual models, passthrough routes to Google's APIs, the merged MCP endpoint, and policies for API keys, OPA, the semantic router, rate limits, the model list, metrics labels and tracing |
 | OPA | `opa-policy` (`minikube/gitops/opa-policy`) | `opa-envoy`, answering ext_authz over gRPC on `opa:9191` |
-| OCP | `opa-policy` | Builds `policies/gateway` into the `gateway-policy` bundle and `policies/gateway-projects` into `gateway-projects`, from this repo's `main` branch on GitHub, into `opa-bundles/<bundle>/bundle.tar.gz` in MinIO |
-| Rate-limit service | `rate-limit` (`minikube/gitops/rate-limit`) | Per-project request, token and spend limits, in Redis (see "Rate limits and budgets") |
+| Policy build | `opa-policy` | A CronJob (`policy-build`): when this repo's `main` moves, runs `opa test`, builds `policies/gateway` into the `gateway-policy` bundle with the commit as its revision, signs it with Vault Transit and activates it in MinIO (`opa-bundles/gateway-policy/`) |
+| Project registry | `project-registry`, `project-registry-postgresql` | Projects, agents and exceptions as change requests with approvals, published as the signed `gateway-projects` bundle ([project-registry.md](project-registry.md)) |
+| Rate-limit service | `rate-limit` (`minikube/gitops/rate-limit`) | Counts each project's requests, tokens and spend in Redis; the limits come from OPA with each request (see "Rate limits and budgets") |
 | vLLM Semantic Router | `semantic-router` | Classifies `auto` prompts into task classes for the gateway, over ext_proc (see "The semantic router") |
 | agentregistry | `agentregistry`, `agentregistry-postgresql`, `agentregistry-catalog` | The catalog of MCP servers (and later agents), at `agentregistry.test` behind the Keycloak login. Its entries live in `minikube/gitops/agentregistry-catalog/files/catalog.yaml` |
 
@@ -86,8 +93,9 @@ To add a model or a Google API:
 2. Run `python3 scripts/gen-catalog.py` and commit the generated files with it.
    CI (`validate-gitops.sh`) fails if they are out of date.
 
-The policy change goes live when OCP rebuilds the bundle from `main`. The
-gateway change goes live on the next Argo CD sync.
+The policy change goes live when the policy build rebuilds the bundle from
+`main` (within a minute or two). The gateway change goes live on the next Argo
+CD sync.
 
 ### Self-hosted models (KServe)
 
@@ -163,6 +171,15 @@ curl -s http://agentgateway.test/google/tts/v1/text:synthesize \
 ```
 
 ## Projects and keys
+
+> **Project registry (phase 2 PoC).** Since the registry imported them, the
+> projects, agents and exceptions OPA sees come from the
+> [project registry](project-registry.md), not from Git: change them there (a
+> change request, approved by policy, published within about a minute).
+> `projects/*.yaml` and `agents/*.yaml` were the import's source and are no
+> longer read by OPA. They still drive what isn't in the registry yet: the API
+> keys in Vault (`bootstrap-vault-secrets.sh`), the alert rules and the
+> agentregistry catalog. Below is the record format both use.
 
 Every API key belongs to a **project**. Each project is one file,
 `projects/<id>.yaml`, checked against [`projects/schema.json`](../projects/schema.json):
@@ -385,10 +402,11 @@ policies attached to the Gateway.
 
 A project's `limits` and `budget` are enforced by the `rate-limit` app
 (`envoyproxy/ratelimit`, chart `minikube/gitops/rate-limit`). Its counters are
-in the shared Redis, so they hold across gateway replicas and restarts.
-`gen-projects.py` generates its config, `rate-limit/files/config.yaml`, from
-the project files. The gateway's `rateLimit` policy (`templates/ratelimit.yaml`)
-asks the service on every request, with three counters per project:
+in the shared Redis, so they hold across gateway replicas and restarts. The
+limits themselves travel with OPA's allow decision: `authz.rego` returns the
+project's limits as dynamic metadata, agentgateway reads them as `extauthz.*`,
+and its `rateLimit` policy (`templates/ratelimit.yaml`) sends each one to the
+service as the descriptor's `limitOverride`. Three counters per project:
 
 | Field | Counted | When |
 |-------|---------|------|
@@ -402,10 +420,17 @@ prices, the same as the catalog's, so on-prem Qwen costs nothing. Its window is
 the rate-limit service's "month": a fixed 30-day period counted from the Unix
 epoch, not a calendar month.
 
-Every project has an entry in the service's config; a kind the project doesn't
-limit is `unlimited`. The config ends in a default entry, matched by any project
-not listed, with a request limit of 0, so a project the service doesn't know
-yet (OPA loads it before the `rate-limit` sync) gets 429 instead of no limits.
+A limit the project doesn't set is sent as unlimited (4,000,000,000: the
+override is a uint32, which also caps a budget at about $4,000 per 30 days in
+micro-USD). Every override defaults to 0, so a request OPA allowed without
+limits is refused rather than unlimited. The service's config holds only the
+domain and a default entry and never changes with projects.
+
+A limit change goes live with the project data bundle, about a minute after
+it is approved, without restarting the service. The current window's count
+carries over: lowering a limit below what was already counted refuses the next
+call at once, and the budget counted so far in the 30-day window stays.
+
 Today every project has both a request limit and a budget:
 
 | Project | Requests per minute | USD per 30 days |
@@ -417,10 +442,6 @@ Today every project has both a request limit and a budget:
 
 The policy fails open. If the rate-limit service is down, requests go through;
 limits and budgets are cost control, and OPA still decides access.
-
-A change to a project's limits goes live on the next Argo CD sync of
-`rate-limit`, which restarts the service with the new config. It does not go
-through OCP.
 
 ### Model selection for `auto`
 
@@ -448,8 +469,9 @@ minutes in OPA's cache. If Prometheus doesn't answer, nothing is ranked and
 Failed calls count toward the duration too, so a model Google is throttling
 (429 after retries) ranks as slow.
 
-The rankings are not in the policy bundle because OCP fails the whole bundle
-build when a data source is unreachable. Rankings there would block every
+The rankings are not in the policy bundle because a bundle builder that pulls
+them would fail the whole build when Prometheus is unreachable (OPA Control
+Plane, which built the bundles before, did). Rankings there would block every
 policy change, key revocations included, during a Prometheus outage. A
 separate bundle doesn't work either: OPA's readiness waits for every bundle,
 so a missing rankings bundle would make OPA unready and the gateway refuse
@@ -525,23 +547,27 @@ request. Its responses carry `x-vsr-selected-decision` and
 
 ### Changing a policy
 
-OPA loads two bundles, each built by OCP from its own directory:
+OPA loads two bundles, both signed with one key in Vault Transit that never
+leaves Vault:
 
-| Bundle | Directory | Roots (`.manifest`) | Changes when |
-|--------|-----------|---------------------|--------------|
-| `gateway-policy` | `policies/gateway` | `gateway`, `catalog`, `system` | the Rego, the data classes or the model catalog change |
-| `gateway-projects` | `policies/gateway-projects` | `projects`, `exceptions` | a project file or an exception changes |
+| Bundle | Built from | By | Roots (`.manifest`) | Changes when |
+|--------|------------|----|---------------------|--------------|
+| `gateway-policy` | `policies/gateway` in Git | the policy build (CronJob, `opa-policy`) | `gateway`, `catalog`, `system`, `portal` | the Rego, the data classes, the model catalog or the approval rules change |
+| `gateway-projects` | the project registry's records | its publisher (`project-registry`) | `projects`, `exceptions`, `agents` | an approved change is published |
 
 Each bundle activates on its own, so a project change swaps only
-`gateway-projects` and never touches the Rego. (Before the split there was one
-bundle, `gateway`; its object may still sit in the bucket, unused.) The roots must not overlap: OPA
+`gateway-projects` and never touches the Rego. The roots must not overlap: OPA
 refuses to activate two bundles that claim the same root, and
 `validate-gitops.sh` builds both and loads them together to catch that in CI.
-Bundles are not signed: OCP 0.10 cannot sign them, so whoever can write the
-`opa-bundles` bucket can change the policy.
+OPA verifies each bundle's signature (`keys` and `signing` in the opa-policy
+chart; the public key comes from Vault, `opa-bundle-signing`) and refuses one
+that doesn't verify, keeping the last good one. A bundle written to MinIO by
+anyone else, or changed there, is not loaded.
 
-1. Edit the Rego, the data, a project file or the catalog, regenerate with
-   `scripts/gen-projects.py` or `scripts/gen-catalog.py`, and run
+To change the policy:
+
+1. Edit the Rego, the data or the catalog, regenerate with
+   `scripts/gen-catalog.py`, and run
    `opa test policies/gateway policies/gateway-projects`. CI runs the
    generators' `--check`, `opa check`, `opa fmt`, `opa test`, the two-bundle
    load and `promtool` too (`scripts/validate-gitops.sh`).
@@ -550,14 +576,18 @@ Bundles are not signed: OCP 0.10 cannot sign them, so whoever can write the
    evaluates each logged request with the policy in your checkout and lists
    every request whose verdict would flip. It needs the cluster, so CI doesn't
    run it.
-3. Merge to `main`. OCP checks Git about every 30–60 seconds and publishes the
-   bundles whose directory changed. OPA checks MinIO every 10–30 seconds and
-   loads them. No Argo CD sync is involved.
-4. Check the bundles with `kubectl -n mini-platform port-forward deploy/opa
-   8181` and `curl localhost:8181/v1/data/system/bundles`, which lists each
-   loaded bundle and its roots. The manifests carry no revision (OCP 0.10 sets
-   none), so to see that a change is live, query the data or rule it changed,
-   e.g. `curl localhost:8181/v1/data/projects/<id>`.
+3. Merge to `main`. The policy build checks Git every minute; on a new commit
+   it runs `opa test` again, builds, signs and activates the bundle, with the
+   commit as its revision. A failing test publishes nothing. OPA checks MinIO
+   every 10–30 seconds and loads it. No Argo CD sync is involved.
+4. Check what OPA has loaded with `kubectl -n mini-platform port-forward
+   deploy/opa 8181` and `curl localhost:8181/v1/status`: each bundle's
+   `active_revision` is the commit (policy) or `projects-<n>` (data).
+
+Every build is kept under `opa-bundles/<bundle>/revisions/<revision>/`;
+`<bundle>/bundle.tar.gz` is the active one and `<bundle>/active.json` names it.
+A rollback activates an earlier revision (the registry's `/rollback/<revision>`
+for project data).
 
 OPA logs every decision to stdout, and Loki collects them
 (`policies/gateway/log_mask.rego`). The log keeps the project and key id, the

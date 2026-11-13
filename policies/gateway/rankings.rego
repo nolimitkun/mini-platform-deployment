@@ -3,10 +3,11 @@
 # metrics in Prometheus. Only models with at least min_samples requests in that
 # window are ranked.
 #
-# Asked at decision time rather than built into the bundle: OCP fails the whole
-# bundle build when a data source is unreachable, so rankings in the bundle
-# would block every policy change, key revocations included, while Prometheus
-# is down. Here a Prometheus outage only means no rankings: the request waits
+# Asked at decision time rather than built into the bundle: a builder that
+# pulls them fails the whole bundle build when Prometheus is unreachable (OPA
+# Control Plane, which built the bundles before, did), so rankings in the
+# bundle would block every policy change, key revocations included, while
+# Prometheus is down. Here a Prometheus outage only means no rankings: the request waits
 # at most `timeout`, nothing is ranked, and "fastest" falls back to cheapest.
 # Authorization never reads this.
 #
