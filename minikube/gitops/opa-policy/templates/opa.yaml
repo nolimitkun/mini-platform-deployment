@@ -38,6 +38,8 @@ spec:
             - --set-file=keys.{{ $v.signing.keyid }}.key=/keys/public_key
           env:
             - {name: AWS_REGION, value: {{ $v.minio.region | quote }}}
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
           envFrom:
             - secretRef:
                 name: {{ $v.minio.readerSecret }}
@@ -66,7 +68,7 @@ spec:
         - name: signing-key
           secret:
             secretName: {{ $v.signing.publicKeySecret }}
-            items: [{key: public_key, path: public_key}]
+            items: [{key: {{ $v.signing.publicKeyField }}, path: public_key}]
         - name: config
           configMap: {name: opa-config}
         - name: persist

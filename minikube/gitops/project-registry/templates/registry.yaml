@@ -5,6 +5,29 @@ kind: ServiceAccount
 metadata:
   name: {{ .Values.serviceAccount }}
 ---
+# Which OPA pods are ready (the opa Service's EndpointSlices): a change is
+# active once all of them report its revision.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: project-registry-opa-pods
+rules:
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: project-registry-opa-pods
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: project-registry-opa-pods
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:

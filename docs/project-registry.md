@@ -160,11 +160,18 @@ Who may propose a change at all is policy too, `data.portal.may_submit`
 ### "Active" comes from OPA
 
 - **OPA reports.** Every OPA runs the status plugin and reports the bundle
-  revisions it has loaded to the registry's `/opa/status`.
-- **Active means everywhere.** A change is `active` once every OPA on every
-  site reports a revision at or after the change's.
+  revisions it has loaded to the registry's `/opa/status`, with its pod name
+  as a label.
+- **Active means every ready OPA.** A change is `active` once every ready pod
+  behind the OPA Service (its EndpointSlices, which the registry may list) has
+  reported a revision at or after the change's. A replaced pod stops counting
+  at once. Without access to the Kubernetes API, the registry falls back to
+  every OPA that reported in the last 5 minutes. With several sites, it would
+  be every site's OPA.
+- **Checked without a report.** OPA reports only when something changes, so
+  the publisher's loop checks on every round too.
 - **Late changes alert.** A change that isn't active within a set time raises
-  an alert.
+  an alert (not built yet).
 
 ### The registry is off the request path
 
@@ -349,11 +356,14 @@ are signed again for the new key:
 1. Create the new version in Vault: `vault write -f transit/keys/opa-bundles/rotate`.
    The builders keep signing with the pinned version (`keyVersion`), so nothing
    changes yet.
-2. Publish the new version's public key, for example version 2:
-   `vault kv put mini-platform/opa-bundle-signing public_key="$(vault read -format=json transit/keys/opa-bundles | jq -r '.data.keys["2"].public_key')"`.
-   Running OPA pods read the key only at start, so they keep the old one.
+2. Publish the new version's public key in a field of its own, next to the old
+   one, for example version 2:
+   `vault kv patch mini-platform/opa-bundle-signing public_key_v2="$(vault read -format=json transit/keys/opa-bundles | jq -r '.data.keys["2"].public_key')"`.
+   Nothing reads it yet: an OPA pod that restarts now still gets version 1's
+   key from `public_key`.
 3. In one commit, set `signing.keyVersion: 2` and `signing.keyid: opa-bundles-v2` in
-   both `opa-policy` and `project-registry` values, and merge it.
+   both `opa-policy` and `project-registry` values, and
+   `signing.publicKeyField: public_key_v2` in `opa-policy`, and merge it.
 4. The rest is automatic:
    - **Builders:** the policy build and the publisher see that the active bundles
      are signed with another key and sign them again (the same commit, the same
@@ -364,9 +374,20 @@ are signed again for the new key:
      ones, so the rolling update has no gap.
    - **Publishing:** a change published while the rollout runs reaches the new
      pods only.
-5. When the rollout is done, `vault write transit/keys/opa-bundles/config
-   min_decryption_version=2` retires version 1 for good. Transit's sign
-   endpoint ignores it, which is why the version is pinned.
+5. When the rollout is done, retire the old version:
+   `vault write transit/keys/opa-bundles/config min_encryption_version=2 min_decryption_version=2`.
+   `min_encryption_version` is what stops a signature with version 1 (Transit
+   counts signing as encryption), `min_decryption_version` hides it from reads.
+   Version 1 still exists until `transit/keys/opa-bundles/trim`, which
+   deletes it for good. The old `public_key` field in KV can stay, since
+   nothing reads it.
+
+Done on the cluster on 2026-11-13, from version 1 to 2. A gateway call every
+second throughout got 101 of 101 answers. The new OPA pod refused the v1
+bundles until both builders had re-signed (about 50 seconds), then took over
+from the old pod. That run also found and fixed a flaw in activation: a
+change published right after an OPA rollout stayed `publishing`, because the
+replaced pod's last report still counted.
 
 ## Why OCP goes
 
