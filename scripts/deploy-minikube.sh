@@ -440,9 +440,18 @@ restart_pending_workload_pods() {
   done < "$RESTARTED_PENDING_PODS_FILE"
   sleep 30
 
+  # Never force a StatefulSet pod: force-deleting only drops the API object, so
+  # its replacement (same name, same volume) can start while the old container
+  # is still shutting down. Two PostgreSQL servers on one data directory left a
+  # fresh install's langfuse-postgresql unable to find its checkpoint. Those
+  # pods are left to terminate on their own.
   while IFS= read -r pod; do
     [[ -n "$pod" ]] || continue
     if [[ -n "$(kubectl -n "$NS" get pod "$pod" -o jsonpath='{.metadata.deletionTimestamp}' 2>/dev/null || true)" ]]; then
+      if [[ "$(kubectl -n "$NS" get pod "$pod" -o jsonpath='{.metadata.ownerReferences[0].kind}' 2>/dev/null || true)" == StatefulSet ]]; then
+        warn "StatefulSet pod still terminating after restart, left to finish: $pod"
+        continue
+      fi
       warn "Force-removing pod stuck terminating after restart: $pod"
       kubectl -n "$NS" delete pod "$pod" --force --grace-period=0 --wait=false >/dev/null
     fi
