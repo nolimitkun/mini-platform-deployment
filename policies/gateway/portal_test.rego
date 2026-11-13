@@ -54,3 +54,27 @@ test_every_change_has_an_approver if {
 		count(roles(kind, "delete", {"project": "p"}, null)) > 0
 	}
 }
+
+may(kind, op, groups, owner) := r if {
+	r := portal.may_submit with input as {
+		"change": {"kind": kind, "object_id": "p", "op": op, "before": null, "after": {}},
+		"requester": "bob", "groups": groups, "owner_group": owner,
+	}
+}
+
+test_owners_and_the_platform_team_may_propose_changes if {
+	may("project", "update", ["team-p"], "team-p")
+	may("agent", "update", ["team-p"], "team-p")
+	may("exception", "create", ["team-p"], "team-p")
+	may("project", "update", ["platform-admins"], "team-p")
+}
+
+test_others_may_not_propose_changes_to_a_project if {
+	not may("project", "update", ["team-q"], "team-p")
+	not may("project", "delete", ["security-reviewers", "cost-owners"], "team-p")
+	not may("project", "update", [], null)
+}
+
+test_anyone_may_ask_for_a_new_project if {
+	may("project", "create", [], "team-new")
+}

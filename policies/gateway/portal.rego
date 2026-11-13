@@ -114,3 +114,27 @@ required_approvals contains "security" if {
 	change.op == "update"
 	autonomy_rank[after.autonomy] > autonomy_rank[object.get(before, "autonomy", "read-only")]
 }
+
+# --- who may propose a change (approval, above, is a separate question) ---
+# The registry asks data.portal.may_submit with input.change, input.requester,
+# input.groups (the requester's Keycloak groups) and input.owner_group (the
+# project's owner group; for a new project, the one it asks for). Anything but
+# true refuses the change (403).
+default may_submit := false
+
+# Anyone signed in may ask for a new project: the platform team and security
+# approve it.
+may_submit if {
+	change.kind == "project"
+	change.op == "create"
+}
+
+# Otherwise the project's owners, for the project and its agents and exceptions,
+may_submit if {
+	input.owner_group
+	input.owner_group in input.groups
+}
+
+# and the platform team, for any project. Proposing is not approving: their
+# change still needs the approvals above, from someone else.
+may_submit if "platform-admins" in input.groups

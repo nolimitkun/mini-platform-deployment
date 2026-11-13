@@ -237,8 +237,9 @@ without it the list goes out whole: the list is cosmetic.
 
 ### Alerts generated with the limits
 
-`gen-projects.py` also writes Prometheus alert rules, so thresholds follow the
-budgets. The budget forecast takes the last 24 hours × 30 against 80% of the
+`gen-projects.py` also writes Prometheus alert rules. (Since the project
+registry, the forecast is one rule joining spend with the registry's
+`project_budget_usd`, not one rule per project.) The budget forecast takes the last 24 hours × 30 against 80% of the
 budget: Prometheus keeps 15 days, so the 30-day count isn't there. `429`s
 separate on the `reason` label: `RateLimit` is the project's own limit or
 budget, `Upstream` the provider's throttling.

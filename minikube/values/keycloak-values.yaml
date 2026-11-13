@@ -145,6 +145,11 @@ keycloakConfigCli:
           path: /security-reviewers
         - name: cost-owners
           path: /cost-owners
+        # Owners of the projects imported from projects/*.yaml (project
+        # registry), so a change the platform team proposes can be approved by
+        # an owner who isn't its author.
+        - name: project-owners
+          path: /project-owners
 
       # Keycloak emits no group claim by default. Argo CD's RBAC, Grafana's
       # role_attribute_path, Superset's AUTH_ROLES_MAPPING and oauth2-proxy's
@@ -388,6 +393,7 @@ keycloakConfigCli:
               temporary: false
           groups:
             - /platform-users
+            - /project-owners
         # Reviewers in the project registry, so a change can be approved by
         # someone other than its author (four eyes) in each approval role.
         - username: security-reviewer

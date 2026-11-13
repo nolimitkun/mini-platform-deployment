@@ -11,6 +11,7 @@
 - {name: VAULT_ROLE, value: {{ .Values.signing.vaultRole | quote }}}
 - {name: TRANSIT_KEY, value: {{ .Values.signing.transitKey | quote }}}
 - {name: SIGNING_KEYID, value: {{ .Values.signing.keyid | quote }}}
+- {name: SIGNING_KEY_VERSION, value: {{ .Values.signing.keyVersion | quote }}}
 - {name: WORKDIR, value: /work}
 {{- end -}}
 {{- define "registry.pod" -}}

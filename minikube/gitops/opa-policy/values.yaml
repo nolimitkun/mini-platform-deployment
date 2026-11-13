@@ -6,7 +6,7 @@
 # test publishes nothing, and OPA keeps the active bundle.
 # (nolimitkun/project-registry, registry/policybuild.py)
 policyBuild:
-  image: ghcr.io/nolimitkun/project-registry:sha-da15110a525490ac3a7ce11ac20f0edfc27b0847
+  image: ghcr.io/nolimitkun/project-registry:sha-b44837a313ee3d1463ea0df25f40ac2b310181af
   schedule: "* * * * *"
   # Public repo, no credentials. A branch name, not a commit: the build follows it.
   repo: https://github.com/nolimitkun/mini-platform-deployment.git
@@ -30,6 +30,11 @@ signing:
   vaultAddr: http://vault.mini-platform.svc.cluster.local:8200
   vaultRole: bundle-signer
   transitKey: opa-bundles
+  # The Transit key version that signs, and the key id OPA verifies with; the
+  # public key comes from publicKeySecret. All three change together, with the
+  # project registry's, in one commit (docs/project-registry.md "Rotating the
+  # signing key").
+  keyVersion: 1
   keyid: opa-bundles
   publicKeySecret: opa-bundle-signing
   serviceAccount: policy-builder

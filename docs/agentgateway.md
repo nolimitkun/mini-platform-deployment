@@ -178,8 +178,10 @@ curl -s http://agentgateway.test/google/tts/v1/text:synthesize \
 > change request, approved by policy, published within about a minute).
 > `projects/*.yaml` and `agents/*.yaml` were the import's source and are no
 > longer read by OPA. They still drive what isn't in the registry yet: the API
-> keys in Vault (`bootstrap-vault-secrets.sh`), the alert rules and the
-> agentregistry catalog. Below is the record format both use.
+> keys in Vault (`bootstrap-vault-secrets.sh`) and the agentregistry catalog;
+> `scripts/registry-export.py` brings them up to date from the registry
+> (["Keeping Git's copy current"](project-registry.md#keeping-gits-copy-current)).
+> Below is the record format both use.
 
 Every API key belongs to a **project**. Each project is one file,
 `projects/<id>.yaml`, checked against [`projects/schema.json`](../projects/schema.json):
@@ -665,8 +667,10 @@ cluster enforces NetworkPolicy, so any pod can reach it there.
   `agentgateway-proxy`. Langfuse gets the clients' own traces (kagent, Holmes,
   Open WebUI projects), not a per-call gateway project like LiteLLM's.
 - **Alerts.** Prometheus rules, generated with the rate-limit config by
-  `gen-projects.py` into `minikube/gitops/app-resources/alerts/`, so their
-  thresholds follow `projects/*.yaml`. They show in Grafana under Alerting;
+  `gen-projects.py` into `minikube/gitops/app-resources/alerts/`: three rules
+  whatever the number of projects. The budget forecast joins the spend with
+  `project_budget_usd`, which the project registry exports, so it uses each
+  project's current budget. They show in Grafana under Alerting;
   Alertmanager has no receivers yet, so nothing is sent anywhere.
 
   | Alert | Fires when |
