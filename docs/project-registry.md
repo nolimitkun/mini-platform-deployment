@@ -270,7 +270,22 @@ Designed, not built yet: `GET /projects?owner=me`,
 
 ### Using it
 
-The registry has no ingress yet. From a workstation with cluster access:
+**In a browser:** `http://registry.test/portal/`. Add `registry.test` to the
+`.test` hosts in `/etc/hosts` (README, "Reaching the ingress"). Log in with a
+Keycloak account of the realm. The portal shows:
+
+- projects, and the changes to each;
+- a form to propose a change (a JSON merge patch over the record) or to
+  request a new project;
+- every change request with its diff, its approvals and the replay report,
+  with approve, reject and withdraw;
+- the published bundles, with rollback for the platform team.
+
+It logs in with the authorization code flow and PKCE through the public client
+`project-registry`, and calls the API with that token.
+
+**From the command line**, the same API. Through the ingress at
+`http://registry.test`, or with a port-forward:
 
 ```bash
 kubectl -n mini-platform port-forward svc/project-registry 8080:8080
@@ -491,7 +506,8 @@ on the cluster, every publish so far changed nothing for other projects.
 
 - one OAuth client per project and the JWT path (decision "Callers authenticate
   with JWTs");
-- the portal page;
+- a portal page richer than the PoC's (one page: lists, a JSON merge patch
+  editor, approvals; a Backstage plugin later);
 - an automatic export to Git: `scripts/registry-export.py` is run by hand and
   its result reviewed as a PR, and API keys in Vault are still provisioned from
   the files;

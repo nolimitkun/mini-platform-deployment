@@ -308,6 +308,7 @@ applications:
   project-registry:
     chartPath: minikube/gitops/project-registry
     valuesFile: minikube/gitops/project-registry/values.yaml
+    resourcesFile: minikube/values/project-registry-resources.yaml
     releaseName: project-registry
     wave: "1"
   # agentregistry and its own database. After kagent's CRDs (wave -4), which

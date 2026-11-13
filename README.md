@@ -331,7 +331,7 @@ Once the tunnel assigns an external IP, map the local hostnames:
 export INGRESS_IP="$(kubectl -n ingress-nginx get service ingress-nginx-controller \
   -o jsonpath='{.status.loadBalancer.ingress[0].ip}')"
 printf '%s %s\n' "$INGRESS_IP" \
-  'argocd.test open-webui.test agentgateway.test agentgateway-admin.test agentregistry.test langfuse.test mlflow.test grafana.test jupyterhub.test superset.test minio.test keycloak.test kagent.test holmes.test' \
+  'argocd.test open-webui.test agentgateway.test agentgateway-admin.test agentregistry.test registry.test langfuse.test mlflow.test grafana.test jupyterhub.test superset.test minio.test keycloak.test kagent.test holmes.test' \
   | sudo tee -a /etc/hosts
 ```
 
@@ -575,6 +575,7 @@ service hostnames:
 | agentgateway API (`/v1`, `/mcp`, `/google/...`) | `http://agentgateway.test` |
 | agentgateway admin UI (admins) | `http://agentgateway-admin.test/ui/` |
 | agentregistry | `http://agentregistry.test` |
+| Project registry (portal at `/portal/`, and its API) | `http://registry.test` |
 | Langfuse | `http://langfuse.test` |
 | MLflow | `http://mlflow.test` |
 | Grafana | `http://grafana.test` |

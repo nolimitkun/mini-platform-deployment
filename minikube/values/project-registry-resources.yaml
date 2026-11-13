@@ -1,0 +1,9 @@
+routes:
+  # The portal (/portal/) and the API. Both check Keycloak tokens themselves
+  # (the portal logs in with the authorization code flow and PKCE), so no
+  # oauth2-proxy in front. /opa/status and /metrics refuse requests that come
+  # through here: they are for OPA and Prometheus inside the cluster.
+  - name: project-registry
+    host: registry.test
+    service: project-registry
+    port: 8080
