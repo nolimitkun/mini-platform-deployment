@@ -301,7 +301,9 @@ curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/changes/<id>
 ```
 
 The change is `active` within about a minute of its last approval. Every
-imported project's owner group is `platform-admins`.
+imported project's owner group is `project-owners` (`platform-user`), so a
+change `platform-admin` proposes is approved by an owner who isn't its author;
+`cost-owner` and `security-reviewer` hold the other two roles.
 
 ### Keeping Git's copy current
 
@@ -462,8 +464,8 @@ week of shadow running:
   normalized tables of the data model above. Rendering through
   `gen-projects.py` needs exactly that format.
 - **Owners are groups.** Each project has an owner group (`project_owner`). The
-  import gives every project `platform-admins`. Who may submit a change is not
-  restricted yet; who approves it is.
+  import gives every project `project-owners`. Who may submit is policy
+  (`portal.may_submit`), as is who approves.
 - **Callers still use API keys.** The OAuth clients (and the JWT-versus-API-key
   check below) come with the portal, in the next round.
 

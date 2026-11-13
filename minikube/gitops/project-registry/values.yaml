@@ -53,4 +53,6 @@ publishInterval: "30"
 # First load from projects/*.yaml (an Argo CD PostSync hook; does nothing once
 # the registry has records): every imported project's owner group.
 import:
-  ownerGroup: platform-admins
+  # project-owners (Keycloak): not platform-admins, so the platform team can
+  # propose changes and an owner who isn't its author approves them.
+  ownerGroup: project-owners
