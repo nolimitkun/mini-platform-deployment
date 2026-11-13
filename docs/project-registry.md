@@ -149,6 +149,14 @@ Two rules hold for every change:
 - **Four eyes:** nobody approves their own change.
 - **No bypass:** platform admins can't skip approval either.
 
+Who may propose a change at all is policy too, `data.portal.may_submit`
+(with the requester's groups and the project's owner group as input):
+
+- **A new project:** anyone signed in may request one. The platform team and
+  security approve it.
+- **Anything else:** the project's owner group, for the project and for its
+  agents and exceptions, and the platform team. Everyone else gets 403.
+
 ### "Active" comes from OPA
 
 - **OPA reports.** Every OPA runs the status plugin and reports the bundle
@@ -224,8 +232,10 @@ request for review instead of stopping on it.
 ## Budgets and reporting
 
 - **Budget alerts:** the registry exports `project_budget_usd{project}` on
-  `/metrics`. One alert rule joins it `on(project)` with spend, so the number
-  of rules no longer grows with projects.
+  `/metrics`, which Prometheus scrapes through the pod's annotations. One alert
+  rule, `GatewayProjectBudgetForecast`, joins it `on(project)` with the last
+  24 hours of spend, so the number of rules no longer grows with projects, and
+  a budget changed in the registry is the one the alert uses. Built.
 - **Usage pages** in the portal read Prometheus (spend, requests),
   agentgateway Analytics and Langfuse.
 - **The budget window** stays the rate-limit service's fixed 30-day window
@@ -247,14 +257,15 @@ GET    /changes/{id}                  the diff, approvals needed and given, repl
                                       report, state, bundle revision
 POST   /changes/{id}/approve|reject   (body: {"comment": ...})
 GET    /publications                  published revisions, newest first
+GET    /export                        every record, in the files' format (registry-export.py)
+GET    /metrics                       project_budget_usd, for Prometheus (cluster-internal)
 POST   /rollback/{revision}           platform team only
 POST   /opa/status                    OPA's status reports (cluster-internal)
 GET    /healthz
 ```
 
 Designed, not built yet: `GET /projects?owner=me`,
-`GET /projects/{id}/allowed-models`, `POST /projects/{id}/clients[/rotate|/revoke]`
-and `GET /metrics`.
+`GET /projects/{id}/allowed-models` and `POST /projects/{id}/clients[/rotate|/revoke]`.
 
 ### Using it
 
@@ -291,6 +302,53 @@ curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/changes/<id>
 
 The change is `active` within about a minute of its last approval. Every
 imported project's owner group is `platform-admins`.
+
+### Keeping Git's copy current
+
+`projects/*.yaml` and `agents/*.yaml` are the registry's mirror in Git. They
+are still read for what the registry doesn't do yet: the API key ids the Vault
+bootstrap creates keys for, the agentregistry catalog, and a recovery copy. After
+changes in the registry:
+
+```bash
+REGISTRY_TOKEN=$TOKEN python3 scripts/registry-export.py --url http://127.0.0.1:8080
+git diff --stat                        # review, then open a PR
+```
+
+The script rewrites only the files whose record changed (the others keep their
+comments), deletes the files of removed records, and runs `gen-projects.py`, so
+the generated files match. A new key id still needs the Vault bootstrap
+(`SEED_MISSING_ONLY=true`) to create its key, until callers move to OAuth
+clients.
+
+### Rotating the signing key
+
+OPA verifies each bundle with the one key its config names for it
+(`signing.keyid`), whatever key id the signature itself carries. So the
+builders and OPA move to a new key in a single change, and the active bundles
+are signed again for the new key:
+
+1. Create the new version in Vault: `vault write -f transit/keys/opa-bundles/rotate`.
+   The builders keep signing with the pinned version (`keyVersion`), so nothing
+   changes yet.
+2. Publish the new version's public key, for example version 2:
+   `vault kv put mini-platform/opa-bundle-signing public_key="$(vault read -format=json transit/keys/opa-bundles | jq -r '.data.keys["2"].public_key')"`.
+   Running OPA pods read the key only at start, so they keep the old one.
+3. In one commit, set `signing.keyVersion: 2` and `signing.keyid: opa-bundles-v2` in
+   both `opa-policy` and `project-registry` values, and merge it.
+4. The rest is automatic:
+   - **Builders:** the policy build and the publisher see that the active bundles
+     are signed with another key and sign them again (the same commit, the same
+     records, in a new data revision).
+   - **New OPA pods** start with the new key and become ready once the re-signed
+     bundles are there.
+   - **Old OPA pods** keep the bundles they have loaded and refuse the re-signed
+     ones, so the rolling update has no gap.
+   - **Publishing:** a change published while the rollout runs reaches the new
+     pods only.
+5. When the rollout is done, `vault write transit/keys/opa-bundles/config
+   min_decryption_version=2` retires version 1 for good. Transit's sign
+   endpoint ignores it, which is why the version is pinned.
 
 ## Why OCP goes
 
@@ -431,15 +489,16 @@ on the cluster, every publish so far changed nothing for other projects.
 - one OAuth client per project and the JWT path (decision "Callers authenticate
   with JWTs");
 - the portal page;
-- `project_budget_usd` on `/metrics` and the one join alert rule;
-- the daily export of the registry to `projects/` in Git (until then, Git keeps
-  the import's snapshot, and API keys in Vault are still provisioned from it);
+- an automatic export to Git: `scripts/registry-export.py` is run by hand and
+  its result reviewed as a PR, and API keys in Vault are still provisioned from
+  the files;
 - copies of the bundles to other sites;
 - the model choices as the intersection of the catalog and the model
   registry's `prod` versions.
 
-A key rotation in Transit needs a new key id in OPA's config: the public key
-OPA has is version 1's.
+Built since the first round: who may submit is policy (`portal.may_submit`),
+`project_budget_usd` and the one budget alert rule, the export to Git, and key
+rotation (pinned key versions, active bundles re-signed for a new key).
 
 ## Spike: limits set by OPA
 

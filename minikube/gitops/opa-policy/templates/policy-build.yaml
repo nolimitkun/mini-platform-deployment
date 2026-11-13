@@ -49,6 +49,7 @@ spec:
                 - {name: VAULT_ROLE, value: {{ $v.signing.vaultRole | quote }}}
                 - {name: TRANSIT_KEY, value: {{ $v.signing.transitKey | quote }}}
                 - {name: SIGNING_KEYID, value: {{ $v.signing.keyid | quote }}}
+                - {name: SIGNING_KEY_VERSION, value: {{ $v.signing.keyVersion | quote }}}
               envFrom:
                 - secretRef:
                     name: {{ $v.minio.writerSecret }}

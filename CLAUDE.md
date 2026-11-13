@@ -116,8 +116,11 @@ current). API keys belong to projects (data class, placement, allowed models, ke
 MCP tools). The project registry is where projects, agents and exceptions change now;
 `projects/*.yaml` and `agents/*.yaml` are the snapshot it imported, in the same format,
 and still the source of what the registry doesn't cover yet: the API keys the Vault
-bootstrap creates (it reads the key ids from them), the per-project alert rules and the
-agentregistry catalog. `scripts/gen-projects.py` validates that format against
+bootstrap creates (it reads the key ids from them) and the agentregistry catalog;
+`scripts/registry-export.py` writes the registry's records back to them. The budget
+alert is one rule joining spend with the registry's `project_budget_usd`; who may
+submit and who must approve a change are both Rego (`portal.may_submit`,
+`portal.required_approvals`). `scripts/gen-projects.py` validates that format against
 `projects/schema.json` and renders `data.projects` (one file per project under
 `policies/gateway-projects`); the registry's publisher runs the same script on its
 records, so the two can't disagree on the rules. Agents
