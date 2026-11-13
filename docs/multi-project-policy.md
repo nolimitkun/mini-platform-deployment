@@ -368,4 +368,6 @@ build.** Bundle roots follow the layout: a top-level `data.json` makes the roots
 - **Time to first token** needs streaming traffic before `fastest` can use it.
 - **A key service:** keys are created by the bootstrap script. Self-service key
   issue and rotation for 200 projects needs a small service or portal that
-  writes to Git and Vault.
+  writes to Git and Vault. The next step, a project registry with OAuth
+  clients instead of keys and without OCP, is designed in
+  [project-registry.md](project-registry.md).
