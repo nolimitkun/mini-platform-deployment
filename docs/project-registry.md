@@ -160,11 +160,18 @@ Who may propose a change at all is policy too, `data.portal.may_submit`
 ### "Active" comes from OPA
 
 - **OPA reports.** Every OPA runs the status plugin and reports the bundle
-  revisions it has loaded to the registry's `/opa/status`.
-- **Active means everywhere.** A change is `active` once every OPA on every
-  site reports a revision at or after the change's.
+  revisions it has loaded to the registry's `/opa/status`, with its pod name
+  as a label.
+- **Active means every ready OPA.** A change is `active` once every ready pod
+  behind the OPA Service (its EndpointSlices, which the registry may list) has
+  reported a revision at or after the change's. A replaced pod stops counting
+  at once. Without access to the Kubernetes API, the registry falls back to
+  every OPA that reported in the last 5 minutes. With several sites, it would
+  be every site's OPA.
+- **Checked without a report.** OPA reports only when something changes, so
+  the publisher's loop checks on every round too.
 - **Late changes alert.** A change that isn't active within a set time raises
-  an alert.
+  an alert (not built yet).
 
 ### The registry is off the request path
 

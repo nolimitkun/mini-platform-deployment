@@ -35,9 +35,12 @@ data:
           max_delay_seconds: 30
       {{- end }}
     # The bundle revisions this OPA has loaded, for the registry: a change is
-    # active once every OPA reports its revision.
+    # active once every ready OPA pod reports its revision. The pod name lets
+    # the registry match reports to the pods behind the opa Service.
     status:
       service: registry
+    labels:
+      pod: ${POD_NAME}
     # Bounded cache for http.send answers: the model rankings
     # (policies/gateway/rankings.rego) are fetched from Prometheus at most
     # every couple of minutes per replica.
