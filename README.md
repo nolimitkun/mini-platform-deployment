@@ -42,8 +42,9 @@ Open WebUI ──▶ agentgateway ──▶ KServe InferencePool (EPP) ──▶
 ```
 
 Open WebUI, kagent and HolmesGPT each call **agentgateway** with an API key of
-their own project (`projects/*.yaml`) or, for a registered agent, of the agent
-(`agents/*.yaml`, which narrows its project's models and tools). It serves every model on one OpenAI-compatible endpoint (`qwen3.6-27b`:
+their own project or, for a registered agent, of the agent (which narrows its
+project's models and tools). Projects, agents and exceptions live in the
+**project registry** (imported from `projects/*.yaml` and `agents/*.yaml`). It serves every model on one OpenAI-compatible endpoint (`qwen3.6-27b`:
 `unsloth/Qwen3.6-27B-NVFP4` as a KServe release that the model onboarding
 pipeline tuned, evaluated and deployed, its weights streamed from MinIO; see
 "Self-hosted models" in `docs/agentgateway.md`; the Gemini models
@@ -53,7 +54,7 @@ whose policy (the Rego in `policies/gateway`: data class per project, placement
 per model, allowed tools, the model behind `auto`) and per-project data come in
 two signed bundles: a policy build makes one from Git, the **project registry**'s
 publisher the other ([docs/project-registry.md](docs/project-registry.md)), and
-OPA verifies both. Each project's limits travel with OPA's decision. A rate-limit service enforces each project's limits and budget. **agentregistry** is the
+OPA verifies both. Each project's limits travel with OPA's decision, and a rate-limit service counts against them. **agentregistry** is the
 catalog of MCP servers and the registered agents. See [docs/agentgateway.md](docs/agentgateway.md).
 
 Supporting subsystems:
@@ -457,6 +458,12 @@ vault audit enable file file_path=/vault/audit/audit.log
 and writes them under `mini-platform/`. It also writes the `DEEPSEEK_API_KEY` to `mini-platform/agentgateway-deepseek` for the hosted
 model kagent and Holmes run on. It stores the two Holmes read-only integration
 credentials at `mini-platform/holmes-github` and `mini-platform/holmes-argocd`.
+For the project registry it writes its database credentials
+(`project-registry-postgresql`, `project-registry-db`) and the passwords of the two
+reviewer accounts (`keycloak-registry-users`). The deploy script creates the bundle
+signing key in Vault Transit (`transit/keys/opa-bundles`, not exportable), a role that
+may only sign with it (`bundle-signer`), and publishes its public key at
+`mini-platform/opa-bundle-signing` for OPA.
 The gateway's API keys are one per key id listed in `projects/*.yaml`:
 `mini-platform/agentgateway-api-keys` is what the gateway reads, `mini-platform/agentgateway-client-keys` holds the raw
 keys, and each client gets a mirror under the env name it reads

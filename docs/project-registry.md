@@ -231,23 +231,72 @@ request for review instead of stopping on it.
 - **The budget window** stays the rate-limit service's fixed 30-day window
   (`budget.usd_per_30_days`), now sent as an override with unit `month`.
 
-## API (excerpt)
+## API
+
+Built in the proof of concept. `{collection}` is `projects`, `agents` or
+`exceptions`; every edit creates a change request, and the record changes only
+once it is published.
 
 ```
-GET  /projects?owner=me               POST  /projects                 (new: a change)
-GET  /projects/{id}                   PATCH /projects/{id}            (a change)
-GET  /projects/{id}/allowed-models    POST  /projects/{id}/clients[/rotate|/revoke]
-GET  /changes/{id}                    (diff, approvals needed, replay report, state)
-POST /changes/{id}/approve|reject     POST  /rollback/{revision}
-POST /opa/status                      (OPA status reports)
-GET  /metrics
+GET    /{collection}                  GET    /{collection}/{id}
+POST   /{collection}/{id}             create  (body: {"spec": {...}}; a project also
+                                               needs "owner_group")
+PATCH  /{collection}/{id}             update  (body: {"spec": <JSON merge patch>})
+DELETE /{collection}/{id}             delete
+GET    /changes/{id}                  the diff, approvals needed and given, replay
+                                      report, state, bundle revision
+POST   /changes/{id}/approve|reject   (body: {"comment": ...})
+GET    /publications                  published revisions, newest first
+POST   /rollback/{revision}           platform team only
+POST   /opa/status                    OPA's status reports (cluster-internal)
+GET    /healthz
 ```
+
+Designed, not built yet: `GET /projects?owner=me`,
+`GET /projects/{id}/allowed-models`, `POST /projects/{id}/clients[/rotate|/revoke]`
+and `GET /metrics`.
+
+### Using it
+
+The registry has no ingress yet. From a workstation with cluster access:
+
+```bash
+kubectl -n mini-platform port-forward svc/project-registry 8080:8080
+kubectl -n mini-platform port-forward svc/keycloak 8090:80
+```
+
+Log in as a Keycloak user of the realm, through the registry's client:
+
+```bash
+TOKEN=$(curl -s -H 'Host: keycloak.test' \
+  -d grant_type=password -d client_id=project-registry -d username=platform-user \
+  --data-urlencode "password=$PASSWORD" \
+  http://127.0.0.1:8090/realms/mini-platform/protocol/openid-connect/token | jq -r .access_token)
+```
+
+The `Host` header makes the token's issuer `http://keycloak.test/...`, which the
+registry checks. The passwords are in Vault: `platform-admin` and `platform-user`
+in `mini-platform/keycloak-sso`, `security-reviewer` and `cost-owner` in
+`mini-platform/keycloak-registry-users`.
+
+Lower a project's request limit, then let someone else approve it:
+
+```bash
+curl -s -X PATCH -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"spec": {"limits": {"requests_per_minute": 30}}}' http://127.0.0.1:8080/projects/admin
+curl -s -X POST -H "Authorization: Bearer $OWNER_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"comment": "ok"}' http://127.0.0.1:8080/changes/<id>/approve
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/changes/<id>
+```
+
+The change is `active` within about a minute of its last approval. Every
+imported project's owner group is `platform-admins`.
 
 ## Why OCP goes
 
-Today OCP builds both bundles from Git and uploads them to MinIO. In phase 2:
+Before phase 2, OCP built both bundles from Git and uploaded them to MinIO. In phase 2:
 
-| OCP does today | Phase 2 | Why not OCP |
+| OCP did | Phase 2 | Why not OCP |
 |----------------|---------|-------------|
 | Builds bundles from Git | CI builds `gateway-policy`; the publisher builds `gateway-projects` from Postgres | project data no longer comes from Git |
 | Uploads to the object store | CI and the publisher upload | one upload needs no service |
@@ -290,6 +339,17 @@ Distributing bundles through an OCI registry later is `opa build` plus
    compare the counts, then cut the config down to the default entry.
 6. **JWTs.** New projects get only an OAuth client. Existing API keys get an
    end date.
+
+**In the proof of concept**, steps 1 to 5 were done together, without the
+week of shadow running:
+
+- The import compared its render with Git once, byte for byte. It matched, so
+  it published.
+- The limits moved to OPA one deployment after the registry, so OPA already
+  returned them when the gateway started reading them.
+- `projects/` is not read-only yet and nothing exports to it. Since the
+  import, it is a stale snapshot for anything the registry changes.
+- Step 6 is the next round.
 
 ## Proof of concept
 

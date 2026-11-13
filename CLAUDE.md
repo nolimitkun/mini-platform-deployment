@@ -112,11 +112,15 @@ removed. Each project's rate limits travel with OPA's allow decision (dynamic me
 from Loki against a change. Models and Google APIs are declared
 once in `catalog/models.yaml`; `scripts/gen-catalog.py` generates the gateway chart's
 `files/catalog.json` and the policy's `catalog/data.json` from it (CI checks they are
-current). API keys belong to projects, one file each in `projects/` (data class,
-placement, allowed models, key ids, MCP tools); `scripts/gen-projects.py` validates them
-against `projects/schema.json` and generates the policy's `data.projects` (one file per
-project under `policies/gateway-projects`), the rate-limit config and the per-project
-alert rules, and the Vault bootstrap reads the key ids from it. Agents
+current). API keys belong to projects (data class, placement, allowed models, key ids,
+MCP tools). The project registry is where projects, agents and exceptions change now;
+`projects/*.yaml` and `agents/*.yaml` are the snapshot it imported, in the same format,
+and still the source of what the registry doesn't cover yet: the API keys the Vault
+bootstrap creates (it reads the key ids from them), the per-project alert rules and the
+agentregistry catalog. `scripts/gen-projects.py` validates that format against
+`projects/schema.json` and renders `data.projects` (one file per project under
+`policies/gateway-projects`); the registry's publisher runs the same script on its
+records, so the two can't disagree on the rules. Agents
 (`agents/*.yaml`) belong to a project and narrow it: own keys, models, MCP tools,
 owner, autonomy; gen-projects.py adds them to the policy data (`data.agents`,
 each project's `agent_keys`) and to agentregistry, and checks a kagent agent is
@@ -310,11 +314,11 @@ Each entry maps a `chartPath` (under `charts/` in the charts repo, or
 | --- | --- |
 | `-5` | Argo CD |
 | `-4` | Vault, VSO, kagent CRDs |
-| `-4` (also) | agentgateway CRDs |
-| `-3` | Stateful deps (postgres, redis, qdrant, spark-operator) |
-| `-2` | Keycloak, Langfuse, MLflow, Trino |
-| `-1` → `0` | MinIO, Prometheus, dcgm-exporter, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset, the agentgateway controller, OPA and the policy build (`opa-policy`), the PostgreSQL of agentregistry and of the project registry |
-| `1` → `2` | agentgateway's Gateway/models/policies (`agentgateway-config`), the project registry and agentregistry, then Open WebUI, kagent, HolmesGPT, oauth2-proxy and the agentregistry catalog |
+| `-4` (also) | agentgateway CRDs, Gateway API CRDs, cert-manager, KServe's CRDs |
+| `-3` | Stateful deps (postgres, redis, qdrant, spark-operator), LWS, KServe's controller (`kserve-llmisvc-resources`) |
+| `-2` | Keycloak, Langfuse, MLflow, Trino, KServe's presets (`kserve-runtime-configs`) |
+| `-1` → `0` | MinIO, Prometheus, dcgm-exporter, Loki, Tempo, Langfuse's project jobs, then Grafana, Alloy, JupyterHub, Superset, the agentgateway controller, OPA and the policy build (`opa-policy`), the model serving namespaces (`model-serving`), the PostgreSQL of agentregistry and of the project registry |
+| `1` → `2` | agentgateway's Gateway/models/policies (`agentgateway-config`), the rate-limit service, the semantic router, the project registry and agentregistry, then Open WebUI, kagent, HolmesGPT, oauth2-proxy and the agentregistry catalog |
 | `3` | Open WebUI Holmes Pipe, after Holmes and its API-key mapping are healthy |
 
 All generated Applications use `automated` sync with `prune: true`,

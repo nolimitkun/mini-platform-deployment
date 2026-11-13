@@ -25,7 +25,7 @@ utilization, weights from the same HF-cache PVC):
 
 ## Method
 
-`vllm bench serve` from an in-cluster pod ([tools/vllm-bench.yaml](../../tools/vllm-bench.yaml)),
+`vllm bench serve` from an in-cluster pod (`tools/vllm-bench.yaml`, removed since; in Git history),
 ShareGPT V3 dataset, **chat-completions** endpoint (the path LiteLLM/Open WebUI
 use), closed loop at fixed concurrency, `--seed 42` so all three paths receive
 the **same sampled prompts** per concurrency level. Warmup run discarded per

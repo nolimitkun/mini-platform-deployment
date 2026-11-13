@@ -90,17 +90,17 @@
         {
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "count by(endpoint) (vllm:healthy_pods_total)",
+          "expr": "count(vllm:num_requests_running{job=\"kserve-vllm\"})",
           "format": "time_series",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
-          "legendFormat": "vLLM instances",
+          "legendFormat": "vLLM pods",
           "range": true,
           "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "Available vLLM instances",
+      "title": "vLLM pods",
       "type": "stat"
     },
     {
@@ -158,13 +158,13 @@
       "targets": [
         {
           "editorMode": "builder",
-          "expr": "avg(vllm:e2e_request_latency_seconds_sum) / avg(vllm:e2e_request_latency_seconds_count)",
-          "legendFormat": "Avg Latency",
+          "expr": "sum(rate(vllm:e2e_request_latency_seconds_sum{job=\"kserve-vllm\"}[5m])) / sum(rate(vllm:e2e_request_latency_seconds_count{job=\"kserve-vllm\"}[5m]))",
+          "legendFormat": "Avg latency",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Average Latency",
+      "title": "Average latency (5m)",
       "type": "stat"
     },
     {
@@ -228,7 +228,7 @@
       "targets": [
         {
           "editorMode": "builder",
-          "expr": "sum by(le) (vllm:e2e_request_latency_seconds_bucket)",
+          "expr": "sum by(le) (vllm:e2e_request_latency_seconds_bucket{job=\"kserve-vllm\"})",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,
@@ -305,13 +305,13 @@
       "targets": [
         {
           "editorMode": "builder",
-          "expr": "vllm:current_qps",
-          "legendFormat": "Current QPS",
+          "expr": "sum(rate(vllm:request_success_total{job=\"kserve-vllm\"}[5m]))",
+          "legendFormat": "req/s",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Current QPS",
+      "title": "Requests per second (5m)",
       "type": "stat"
     },
     {
@@ -369,13 +369,13 @@
       "targets": [
         {
           "editorMode": "builder",
-          "expr": "avg(vllm:inter_token_latency_seconds_sum) / avg(vllm:inter_token_latency_seconds_count)",
+          "expr": "sum(rate(vllm:inter_token_latency_seconds_sum{job=\"kserve-vllm\"}[5m])) / sum(rate(vllm:inter_token_latency_seconds_count{job=\"kserve-vllm\"}[5m]))",
           "legendFormat": "Avg ITL",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Average ITL",
+      "title": "Average ITL (5m)",
       "type": "stat"
     },
     {
@@ -439,9 +439,9 @@
       "targets": [
         {
           "editorMode": "builder",
-          "expr": "sum by(le) (vllm:time_to_first_token_seconds_bucket)",
+          "expr": "sum by(le) (vllm:time_to_first_token_seconds_bucket{job=\"kserve-vllm\"})",
           "format": "heatmap",
-          "legendFormat": "__auto",
+          "legendFormat": "{{le}}",
           "range": true,
           "refId": "A"
         }
@@ -545,8 +545,8 @@
       "targets": [
         {
           "editorMode": "builder",
-          "expr": "vllm:num_requests_running",
-          "legendFormat": "{{instance}}",
+          "expr": "vllm:num_requests_running{job=\"kserve-vllm\"}",
+          "legendFormat": "{{namespace}}/{{pod}}",
           "range": true,
           "refId": "A"
         }
@@ -637,8 +637,8 @@
       "targets": [
         {
           "editorMode": "builder",
-          "expr": "vllm:num_requests_waiting",
-          "legendFormat": "{{instance}}",
+          "expr": "vllm:num_requests_waiting{job=\"kserve-vllm\"}",
+          "legendFormat": "{{namespace}}/{{pod}}",
           "range": true,
           "refId": "A"
         }
@@ -729,8 +729,8 @@
       "targets": [
         {
           "editorMode": "builder",
-          "expr": "vllm:kv_cache_usage_perc",
-          "legendFormat": "{{instance}}",
+          "expr": "vllm:kv_cache_usage_perc{job=\"kserve-vllm\"}",
+          "legendFormat": "{{namespace}}/{{pod}}",
           "range": true,
           "refId": "A"
         }
@@ -822,16 +822,16 @@
         {
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "vllm:gpu_prefix_cache_hits_total / vllm:gpu_prefix_cache_queries_total",
+          "expr": "rate(vllm:prefix_cache_hits_total{job=\"kserve-vllm\"}[5m]) / rate(vllm:prefix_cache_queries_total{job=\"kserve-vllm\"}[5m])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
-          "legendFormat": "{{instance}}",
+          "legendFormat": "{{namespace}}/{{pod}}",
           "range": true,
           "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "GPU KV Cache Hit Rate",
+      "title": "Prefix cache hit rate (5m)",
       "type": "timeseries"
     },
     {
@@ -889,13 +889,13 @@
       "targets": [
         {
           "editorMode": "builder",
-          "expr": "vllm:num_requests_swapped",
-          "legendFormat": "Swapped Requests",
+          "expr": "sum(increase(vllm:num_preemptions_total{job=\"kserve-vllm\"}[5m]))",
+          "legendFormat": "Preemptions",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Number of Swapped Requests",
+      "title": "Preemptions (5m)",
       "type": "stat"
     },
     {
@@ -908,7 +908,7 @@
       },
       "id": 103,
       "panels": [],
-      "title": "Current Resource Usage",
+      "title": "vLLM pod resources",
       "type": "row"
     },
     {
@@ -995,16 +995,16 @@
         {
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "vllm:kv_cache_usage_perc",
+          "expr": "vllm:kv_cache_usage_perc{job=\"kserve-vllm\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
-          "legendFormat": "GPU Usage",
+          "legendFormat": "{{namespace}}/{{pod}}",
           "range": true,
           "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "GPU Cache Usage (%)",
+      "title": "GPU KV cache usage (%)",
       "type": "timeseries"
     },
     {
@@ -1062,7 +1062,8 @@
                 "value": 80
               }
             ]
-          }
+          },
+          "unit": "short"
         },
         "overrides": []
       },
@@ -1091,16 +1092,16 @@
         {
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "router_cpu_usage_percent",
+          "expr": "sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{namespace=~\"model-prod|model-hprd\"}[5m])) + on (namespace, pod) group_left() max by (namespace, pod) (vllm:num_requests_running{job=\"kserve-vllm\"} * 0)",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
-          "legendFormat": "CPU Usage",
+          "legendFormat": "{{namespace}}/{{pod}}",
           "range": true,
           "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "CPU Usage (%)",
+      "title": "CPU of the vLLM pods (cores)",
       "type": "timeseries"
     },
     {
@@ -1158,7 +1159,8 @@
                 "value": 80
               }
             ]
-          }
+          },
+          "unit": "bytes"
         },
         "overrides": []
       },
@@ -1187,16 +1189,16 @@
         {
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "router_memory_usage_percent",
+          "expr": "max by (namespace, pod) (container_memory_working_set_bytes{namespace=~\"model-prod|model-hprd\"}) + on (namespace, pod) group_left() max by (namespace, pod) (vllm:num_requests_running{job=\"kserve-vllm\"} * 0)",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
-          "legendFormat": "Memory Usage",
+          "legendFormat": "{{namespace}}/{{pod}}",
           "range": true,
           "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "Memory Usage (%)",
+      "title": "Memory of the vLLM pods",
       "type": "timeseries"
     },
     {
@@ -1254,7 +1256,8 @@
                 "value": 80
               }
             ]
-          }
+          },
+          "unit": "decmbytes"
         },
         "overrides": []
       },
@@ -1283,16 +1286,16 @@
         {
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "router_disk_usage_percent",
+          "expr": "DCGM_FI_DEV_FB_USED{namespace=~\"model-prod|model-hprd\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
-          "legendFormat": "Disk Usage",
+          "legendFormat": "{{namespace}}/{{pod}}",
           "range": true,
           "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "Disk Usage (%)",
+      "title": "GPU memory used (DCGM)",
       "type": "timeseries"
     }
   ],
@@ -1309,7 +1312,8 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "vLLM Dashboard",
+  "title": "vLLM (KServe releases)",
   "uid": "750918234",
-  "version": 8
+  "version": 8,
+  "description": "vLLM engine metrics of the KServe releases (Prometheus job kserve-vllm, model-prod and model-hprd), with the pods' CPU, memory and GPU memory."
 }
