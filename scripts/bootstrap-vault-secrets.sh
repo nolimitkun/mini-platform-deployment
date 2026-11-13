@@ -3,7 +3,6 @@ set -euo pipefail
 
 : "${VAULT_ADDR:?Set VAULT_ADDR to the initialized Vault server address.}"
 : "${VAULT_TOKEN:?Set VAULT_TOKEN to a token allowed to write mini-platform/ secrets.}"
-HF_TOKEN="${HF_TOKEN:-}"
 HOLMES_GITHUB_TOKEN="${HOLMES_GITHUB_TOKEN:-}"
 HOLMES_ARGOCD_AUTH_TOKEN="${HOLMES_ARGOCD_AUTH_TOKEN:-}"
 
@@ -100,14 +99,6 @@ kv_put mini-platform/postgresql-credentials \
   password="$(rand_hex)" \
   metrics-password="$(rand_b64)"
 kv_put mini-platform/redis-credentials redis-password="$REDIS_PASSWORD"
-
-# Hugging Face token for pulling the vLLM model weights and tokenizer. Require it
-# only when this secret is actually written (fresh install or rotation), not on a
-# seed-missing pass where it already exists.
-if [[ "$SEED_MISSING_ONLY" != true ]] || ! vault_cli kv get mini-platform/vllm-hf-token >/dev/null 2>&1; then
-  : "${HF_TOKEN:?Set HF_TOKEN to a Hugging Face token for pulling the vLLM model weights and tokenizer.}"
-fi
-kv_put mini-platform/vllm-hf-token HF_TOKEN="$HF_TOKEN"
 
 kv_put mini-platform/langfuse-app-secrets \
   salt="$(rand_b64)" \
@@ -299,7 +290,7 @@ kv_put mini-platform/holmes-grafana \
 
 # External, read-only credentials for Holmes' GitHub MCP and Argo CD toolsets.
 # Require each only when its Vault path will actually be written, matching the
-# HF/DeepSeek upgrade behavior above. Existing tokens survive seed-missing
+# DeepSeek upgrade behavior above. Existing tokens survive seed-missing
 # upgrades; --rotate-secrets deliberately demands replacements.
 if [[ "$SEED_MISSING_ONLY" != true ]] || ! vault_cli kv get mini-platform/holmes-github >/dev/null 2>&1; then
   : "${HOLMES_GITHUB_TOKEN:?Set HOLMES_GITHUB_TOKEN to a read-only GitHub PAT for Holmes MCP.}"
@@ -395,8 +386,8 @@ kv_put mini-platform/minio-model-serving \
 
 # DeepSeek, the hosted model kagent's agents and Holmes use through the
 # gateway, which sends this value as the Authorization header (with Bearer
-# added). Required only when this secret is actually written, matching how
-# HF_TOKEN is handled above.
+# added). Required only when this secret is actually written (fresh install or
+# rotation), not on a seed-missing pass where it already exists.
 if [[ "$SEED_MISSING_ONLY" != true ]] || ! vault_cli kv get mini-platform/agentgateway-deepseek >/dev/null 2>&1; then
   : "${DEEPSEEK_API_KEY:?Set DEEPSEEK_API_KEY to a DeepSeek API key for the deepseek-v4-pro model on the gateway.}"
 fi

@@ -8,8 +8,8 @@
 # /<namespace>/<name>/v1/..., which only projects with `deployments: true`
 # may use (policies/gateway).
 #
-# KServe itself (and LWS, cert-manager) is installed by the pipeline repo's
-# local/infra/kserve/install.sh for now, not by this chart.
+# KServe itself (with LWS, cert-manager and the Gateway API CRDs) is a set of
+# platform applications of its own (mini-platform/values.yaml), not this chart.
 
 # Where the pipeline runs (Argo Workflows) and where the models it deploys run.
 onboardingNamespace: model-onboarding

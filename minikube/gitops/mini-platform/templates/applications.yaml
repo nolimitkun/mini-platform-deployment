@@ -6,7 +6,7 @@
 {{- /*
   enabled: false skips the Application entirely; the app-of-apps then prunes it
   (and its workloads) from the cluster. Used for components that cannot run
-  alongside their alternative, e.g. llm-d vs production-stack on one GPU.
+  alongside their alternative.
   Note: sprig's `default` treats false as empty, so test the key explicitly.
 */}}
 {{- if or (not (hasKey $app "enabled")) $app.enabled }}
@@ -73,6 +73,20 @@ spec:
     automated:
       prune: true
       selfHeal: true
+{{- /*
+  retry: true for an application whose first sync calls a webhook that an
+  earlier wave is still bringing up (waves only order creation; Argo CD does
+  not wait on a child Application's health). Without it a failed automated
+  sync is not attempted again until the next commit.
+*/}}
+{{- if $app.retry }}
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m
+{{- end }}
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true

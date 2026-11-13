@@ -26,7 +26,6 @@ CHARTS_REVISION="${CHARTS_REVISION:-main}"
 DEPLOY_REPO_URL="${DEPLOY_REPO_URL:-https://github.com/nolimitkun/mini-platform-deployment.git}"
 DEPLOY_REVISION="${DEPLOY_REVISION:-main}"
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-$HOME/.vault-mini-platform-init.json}"
-HF_TOKEN_FILE="${HF_TOKEN_FILE:-$HOME/.cache/huggingface/token}"
 DEEPSEEK_KEY_FILE="${DEEPSEEK_KEY_FILE:-$HOME/.deepseek-key}"
 # Private Service Connect IP of the mini-cloud VPN hub. When set, cluster DNS
 # sends the Google API names the gateway's Google models need over the tunnel
@@ -80,14 +79,12 @@ Environment:
                           Raise it for a --reset run: that empties Minikube's
                           image store, and pulling the whole platform back over
                           a home connection takes well over the default.
-  HF_TOKEN                Hugging Face token for the vLLM model pull. Falls back
-                          to ~/.cache/huggingface/token (HF_TOKEN_FILE).
   DEEPSEEK_API_KEY        DeepSeek key for the hosted model kagent's agents run
                           on. Falls back to ~/.deepseek-key (DEEPSEEK_KEY_FILE).
   HOLMES_GITHUB_TOKEN     Read-only GitHub PAT for Holmes' MCP server.
   HOLMES_ARGOCD_AUTH_TOKEN
                           API token for the read-only Argo CD `holmes` account.
-                          All four are required only when their Vault secret is
+                          All three are required only when their Vault secret is
                           actually written: a fresh install, a --rotate-secrets
                           run, or the first upgrade after the secret was added.
 
@@ -683,19 +680,8 @@ fi
 
 cd "$ROOT"
 
-# Auto-load a Hugging Face token from the user's cache when one is not already
-# provided. The Vault seed (bootstrap-vault-secrets.sh) requires HF_TOKEN to
-# store the vLLM model-pull credential; without it a fresh deploy aborts partway
-# through seeding, which leaves Argo CD half-synced (applications wait on
-# Vault secrets that were never written). Set HF_TOKEN explicitly to override.
-if [[ -z "${HF_TOKEN:-}" && -s "$HF_TOKEN_FILE" ]]; then
-  HF_TOKEN="$(tr -d '\r\n' < "$HF_TOKEN_FILE")"
-  export HF_TOKEN
-  log "Loaded HF_TOKEN from $HF_TOKEN_FILE"
-fi
-
-# Same treatment for the DeepSeek key backing the model kagent's agents run on.
-# The Vault seed requires it on a fresh install and on the first upgrade after
+# Auto-load the DeepSeek key backing the model kagent's agents run on when one
+# is not already provided. The Vault seed requires it on a fresh install and on the first upgrade after
 # kagent was added, and it is demanded well after the cluster and Vault are up
 # -- so without this a deploy aborts midway, leaving Argo CD half-synced.
 if [[ -z "${DEEPSEEK_API_KEY:-}" && -s "$DEEPSEEK_KEY_FILE" ]]; then

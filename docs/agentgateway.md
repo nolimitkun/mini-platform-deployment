@@ -104,6 +104,11 @@ model onboarding pipeline (`model-onboarding-pipeline`) creates. The platform's
   (`model-serving-key`);
 - an `AgentgatewayPolicy` that sends the vLLM key on the routes KServe creates.
 
+KServe itself is platform GitOps as well, cluster-wide: the Gateway API CRDs,
+cert-manager, LWS and KServe's LLMInferenceService controller with its
+`LLMInferenceServiceConfig` presets (`kserve-*` apps in
+`minikube/gitops/mini-platform/values.yaml`). It deploys no model on its own.
+
 There is one gateway: KServe attaches each service's HTTPRoute
 (`/<namespace>/<name>/v1/...`) to `agentgateway-proxy`, whose listener admits
 routes from the serving namespaces. The InferencePool's endpoint picker (EPP)

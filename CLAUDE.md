@@ -131,9 +131,13 @@ directly. Weights live in MinIO bucket `models` (object-locked). A
 Gateway-wide AgentgatewayPolicy must never read `response.body`: agentgateway
 then buffers every response, streaming included.
 
-The production-stack `vllm` app and the **llm-d serving path**
-(`llm-d-scheduler` + `llm-d-modelserver`) are behind `enabled: false`; the single
-GPU holds one inference path at a time.
+KServe itself is platform GitOps too: `gateway-api-crds`, `cert-manager`,
+`kserve-llmisvc-crd` (wave -4), `lws`, `kserve-llmisvc-resources` (-3) and
+`kserve-runtime-configs` (-2), versions as KServe v0.21.0's own installer. The
+vendored KServe charts carry v0.21.0-rc1 names (the release published no
+others); `kserve.version: v0.21.0` picks the release images. The two apps that
+call an earlier wave's webhook set `retry: true`, since waves only order
+creation.
 
 Supporting subsystems: Vault + VSO (secrets), Ingress NGINX (`.test`
 hostnames), MLflow (experiments), Qdrant
@@ -403,7 +407,7 @@ Consult it before changing deploy/bootstrap behavior.
   Vault uses manual single-key unseal, and Trino/Prometheus/databases/vLLM are
   cluster-internal with no auth. Don't assume hardening that isn't there.
 - `tools/` holds what is applied by hand, outside the GitOps reconciliation:
-  optional utility workloads (`net-tools.yaml`, `vllm-bench.yaml`) and
+  an optional utility workload (`net-tools.yaml`) and
   `99-rootless-k8s-netlink.conf`, a host sysctl drop-in that
   `scripts/deploy-minikube.sh` refuses to deploy without under rootless Docker
   on Linux. Rootless Docker cannot raise a netlink send buffer from inside the

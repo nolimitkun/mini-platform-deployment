@@ -1,0 +1,3 @@
+# LeaderWorkerSet, chart defaults: the controller manages its webhook
+# certificate itself (enableCertManager: false).
+{}

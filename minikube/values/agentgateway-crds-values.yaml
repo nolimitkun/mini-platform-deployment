@@ -1,5 +1,5 @@
 # agentgateway's own CRDs (AgentgatewayModel, -Backend, -Policy, -Parameters),
 # in a release of their own ahead of every workload wave. The Gateway API CRDs
-# it builds on are not in this chart; Envoy Gateway already installed the
-# standard channel on this cluster.
+# it builds on are not in this chart: the gateway-api-crds application installs
+# them, in the same wave.
 {}

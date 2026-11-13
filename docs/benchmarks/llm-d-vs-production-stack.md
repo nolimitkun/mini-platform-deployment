@@ -1,5 +1,11 @@
 # llm-d vs vLLM production-stack — single-GPU router benchmark
 
+> **Historical.** Both serving paths measured here have since been removed:
+> self-hosted models are KServe LLMInferenceServices now (llm-d scheduler and
+> InferencePool, deployed by the model onboarding pipeline). The apps, values
+> and `tools/vllm-bench.yaml` this page refers to are in Git history, before
+> the change that brought KServe into the platform's GitOps.
+
 **Date:** 2026-06-09 · **Cluster:** minikube `mini-platform`, k8s v1.28.0, 1 node
 · **GPU:** 1× NVIDIA RTX 5090 (32GB) · **Model:** `unsloth/Qwen3.6-27B-NVFP4`
 (served as `qwen3.6-27b`) · **Engine:** vLLM 0.22.1 (`vllm/vllm-openai:latest`,

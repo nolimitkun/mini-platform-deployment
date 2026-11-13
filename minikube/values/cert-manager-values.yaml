@@ -1,0 +1,6 @@
+# cert-manager issues the serving certificate of KServe's webhooks
+# (kserve-llmisvc-resources: a self-signed Issuer and a Certificate). Its CRDs
+# come with the chart and stay on uninstall (crds.keep, the default), so
+# removing the release never deletes every Certificate in the cluster.
+crds:
+  enabled: true

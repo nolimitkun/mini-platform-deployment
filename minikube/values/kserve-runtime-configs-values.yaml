@@ -1,0 +1,8 @@
+# Only the LLMInferenceServiceConfig presets: this platform serves no
+# predictive InferenceServices, so no ClusterServingRuntimes.
+kserve:
+  version: v0.21.0
+  servingruntime:
+    enabled: false
+  llmisvcConfigs:
+    enabled: true

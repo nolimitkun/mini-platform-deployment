@@ -13,9 +13,13 @@ destination:
   server: https://kubernetes.default.svc
   namespace: mini-platform
 # Namespaces besides the two above that applications may deploy into: the
-# model onboarding pipeline's and the KServe serving namespaces, which the
+# model serving stack's own (cert-manager, LWS, KServe), and the model
+# onboarding pipeline's and the KServe serving namespaces, which the
 # model-serving application creates and fills (minikube/gitops/model-serving).
 extraNamespaces:
+  - cert-manager
+  - lws-system
+  - kserve
   - model-onboarding
   - model-hprd
   - model-prod
@@ -135,34 +139,64 @@ applications:
     chartPath: charts/trino
     valuesFile: minikube/values/trino-values.yaml
     wave: "-2"
-  # The production-stack vLLM, retired: self-hosted models are KServe
-  # releases of the model onboarding pipeline now (catalog provider KServe,
-  # docs/agentgateway.md "Self-hosted models"). Kept for a rollback: enable it
-  # and point the catalog's qwen3.6-27b back at vllm-router-service; the
-  # node's single GPU holds one of the two at a time.
-  vllm:
-    enabled: false
-    chartPath: charts/vllm-stack
-    valuesFile: minikube/values/vllm-values.yaml
-    resourcesFile: minikube/values/vllm-resources.yaml
+  # The model serving stack: KServe's LLMInferenceService controller and what it
+  # needs, all cluster-wide. The model onboarding pipeline deploys the models
+  # themselves (LLMInferenceServices in the namespaces of model-serving below);
+  # their routes attach to agentgateway, which picks the pod through each
+  # release's InferencePool and llm-d endpoint picker (docs/agentgateway.md
+  # "Self-hosted models"). Versions as KServe v0.21.0's own installer
+  # (hack/setup/quick-install), minus its gateway: the platform has one.
+  #
+  # Waves only order creation here (Argo CD does not wait on a child
+  # Application's health), so the two apps that call a webhook of an earlier
+  # one, cert-manager's and then KServe's, retry until it answers.
+  #
+  # Gateway API (standard channel): the types agentgateway's Gateway and
+  # routes, and every KServe route, are instances of.
+  gateway-api-crds:
+    chartPath: minikube/gitops/gateway-api-crds
+    valuesFile: minikube/gitops/gateway-api-crds/values.yaml
+    releaseName: gateway-api-crds
+    wave: "-4"
+  cert-manager:
+    chartPath: charts/cert-manager
+    valuesFile: minikube/values/cert-manager-values.yaml
+    releaseName: cert-manager
+    namespace: cert-manager
+    wave: "-4"
+  kserve-llmisvc-crd:
+    chartPath: charts/kserve-llmisvc-crd
+    valuesFile: minikube/values/kserve-llmisvc-crd-values.yaml
+    releaseName: kserve-llmisvc-crd
+    namespace: kserve
+    wave: "-4"
+  # LeaderWorkerSet: multi-node LLMInferenceServices (one leader and its
+  # workers per replica).
+  lws:
+    chartPath: charts/lws
+    valuesFile: minikube/values/lws-values.yaml
+    releaseName: lws
+    namespace: lws-system
+    wave: "-3"
+  # The controller and its webhooks, behind a cert-manager certificate, plus
+  # the Gateway API Inference Extension and llm-d CRDs (InferencePool,
+  # InferenceObjective, InferenceModelRewrite).
+  kserve-llmisvc-resources:
+    chartPath: charts/kserve-llmisvc-resources
+    valuesFile: minikube/values/kserve-llmisvc-resources-values.yaml
+    releaseName: kserve-llmisvc-resources
+    namespace: kserve
+    wave: "-3"
+    retry: true
+  # The LLMInferenceServiceConfig presets every release starts from (router,
+  # scheduler, vLLM template), which go through KServe's validating webhook.
+  kserve-runtime-configs:
+    chartPath: charts/kserve-runtime-configs
+    valuesFile: minikube/values/kserve-runtime-configs-values.yaml
+    releaseName: kserve-runtime-configs
+    namespace: kserve
     wave: "-2"
-  # Alternative inference path: llm-d (GAIE standalone scheduler + vLLM decode
-  # pods). Disabled by default — the node's single GPU holds one inference
-  # path at a time (today the KServe releases). To switch paths, set
-  # enabled: true here AND servingEngineSpec.modelSpec[0].replicaCount: 0 in
-  # minikube/values/vllm-values.yaml (or the reverse), then commit and push.
-  llm-d-modelserver:
-    enabled: false
-    chartPath: minikube/gitops/llm-d-modelserver
-    valuesFile: minikube/gitops/llm-d-modelserver/values.yaml
-    releaseName: llm-d-modelserver
-    wave: "-2"
-  llm-d-scheduler:
-    enabled: false
-    chartPath: charts/llm-d-scheduler
-    valuesFile: minikube/values/llm-d-scheduler-values.yaml
-    releaseName: llm-d
-    wave: "-1"
+    retry: true
   prometheus:
     chartPath: charts/prometheus
     valuesFile: minikube/values/prometheus-values.yaml
