@@ -1,0 +1,5 @@
+# The LLMInferenceService controller. KServe v0.21.0 published its charts only
+# under v0.21.0-rc1 names, so the vendored charts carry that version while the
+# images are the v0.21.0 release (KServe's own installer does the same).
+kserve:
+  version: v0.21.0

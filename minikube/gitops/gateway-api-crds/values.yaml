@@ -1,0 +1,3 @@
+# Nothing to set: templates/standard-install.yaml is the upstream release asset
+# of Gateway API v1.5.1, unmodified. To upgrade, replace it with the new
+# release's standard-install.yaml and bump Chart.yaml.

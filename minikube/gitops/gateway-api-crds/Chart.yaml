@@ -1,0 +1,10 @@
+apiVersion: v2
+name: gateway-api-crds
+description: >-
+  Gateway API v1.5.1 standard channel, the upstream release asset
+  standard-install.yaml committed verbatim under templates/ (Gateway API ships
+  no Helm chart). agentgateway's Gateway and routes and every KServe
+  LLMInferenceService route are instances of these types.
+type: application
+version: 1.5.1
+appVersion: v1.5.1

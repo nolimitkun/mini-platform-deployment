@@ -151,9 +151,9 @@ All commands run from the repository root.
 - A local checkout of the charts repo as a sibling directory (`../mini-platform`)
   for the automated script's Argo CD bootstrap; override with `--charts-dir`.
 - A default `StorageClass` for platform PVCs, including Vault.
-- An NVIDIA-capable node and device plugin for the default vLLM values. Edit
-  [`minikube/values/vllm-values.yaml`](minikube/values/vllm-values.yaml) for
-  CPU-only testing.
+- An NVIDIA-capable node and device plugin for the self-hosted models (KServe
+  releases of the model onboarding pipeline). Without one, they stay
+  unschedulable and the rest of the platform runs.
 
 ### Recommended: Automated Minikube Deployment
 
@@ -161,10 +161,9 @@ On a GPU-enabled Minikube host, with both repos pushed somewhere Argo CD can
 reach:
 
 ```bash
-# Four external credentials are seeded into Vault during the run. They are
+# Three external credentials are seeded into Vault during the run. They are
 # demanded well after the cluster and Vault are already up, so a missing one
 # aborts the deploy midway rather than at the start.
-export HF_TOKEN='hf_xxxxxxxxxxxxxxxxxxxx'        # vLLM model pull
 export DEEPSEEK_API_KEY='sk-xxxxxxxxxxxxxxxxxxxx' # model kagent's agents run on
 export HOLMES_GITHUB_TOKEN='github_pat_xxxxxxxxx' # read-only GitHub MCP access
 export HOLMES_ARGOCD_AUTH_TOKEN='eyJhbGciOi...'    # Argo CD holmes account
@@ -174,9 +173,8 @@ export HOLMES_ARGOCD_AUTH_TOKEN='eyJhbGciOi...'    # Argo CD holmes account
   --deploy-repo-url https://github.com/<owner>/mini-platform-deployment.git --deploy-revision main
 ```
 
-The script picks the model credentials up from disk when they are not exported —
-`~/.cache/huggingface/token` and `~/.deepseek-key` respectively — so the exports
-are only needed the first time. The two Holmes integration tokens have no disk
+The script picks the DeepSeek key up from `~/.deepseek-key` when it is not
+exported, so that export is only needed the first time. The two Holmes integration tokens have no disk
 fallback. None is required on a re-run once its Vault secret exists; see the
 script's `--help` for the exact rule.
 
@@ -419,10 +417,6 @@ then seed credentials:
 ```bash
 export VAULT_ADDR=http://127.0.0.1:8200
 export VAULT_TOKEN='<initial-root-token-from-init-output>'
-# Hugging Face token used by vLLM to pull the model weights and the base
-# tokenizer (Qwen/Qwen3.6-27B). Accept any gated-model licenses at
-# huggingface.co with this account first, or the vLLM pull will 401.
-export HF_TOKEN='hf_xxxxxxxxxxxxxxxxxxxx'
 # DeepSeek key for the hosted `deepseek-v4-pro` model agentgateway serves. kagent's
 # agents and HolmesGPT run on it; nothing else on the platform requires it.
 export DEEPSEEK_API_KEY='sk-xxxxxxxxxxxxxxxxxxxx'
@@ -458,9 +452,7 @@ vault audit enable file file_path=/vault/audit/audit.log
 ```
 
 `bootstrap-vault-secrets.sh` generates random credentials for every component
-and writes them under `mini-platform/`. It also writes the `HF_TOKEN` you export
-to `mini-platform/vllm-hf-token`, which vLLM uses to pull the model weights, and
-the `DEEPSEEK_API_KEY` to `mini-platform/agentgateway-deepseek` for the hosted
+and writes them under `mini-platform/`. It also writes the `DEEPSEEK_API_KEY` to `mini-platform/agentgateway-deepseek` for the hosted
 model kagent and Holmes run on. It stores the two Holmes read-only integration
 credentials at `mini-platform/holmes-github` and `mini-platform/holmes-argocd`.
 The gateway's API keys are one per key id listed in `projects/*.yaml`:
@@ -517,9 +509,12 @@ shared `minikube/gitops/app-resources` chart rendered against a sibling
 | `mini-platform-langfuse-kagent-project` | `minikube/gitops/langfuse-project` | `minikube/gitops/langfuse-project/kagent-values.yaml` |
 | `mini-platform-mlflow` | `charts/mlflow` | `minikube/values/mlflow-values.yaml` |
 | `mini-platform-trino` | `charts/trino` | `minikube/values/trino-values.yaml` |
-| `mini-platform-vllm`† | `charts/vllm-stack` | `minikube/values/vllm-values.yaml` |
-| `mini-platform-llm-d-modelserver`† | `minikube/gitops/llm-d-modelserver` | `minikube/gitops/llm-d-modelserver/values.yaml` |
-| `mini-platform-llm-d-scheduler`† | `charts/llm-d-scheduler` | `minikube/values/llm-d-scheduler-values.yaml` |
+| `mini-platform-gateway-api-crds` | `minikube/gitops/gateway-api-crds` | `minikube/gitops/gateway-api-crds/values.yaml` |
+| `mini-platform-cert-manager` | `charts/cert-manager` | `minikube/values/cert-manager-values.yaml` |
+| `mini-platform-kserve-llmisvc-crd` | `charts/kserve-llmisvc-crd` | `minikube/values/kserve-llmisvc-crd-values.yaml` |
+| `mini-platform-lws` | `charts/lws` | `minikube/values/lws-values.yaml` |
+| `mini-platform-kserve-llmisvc-resources` | `charts/kserve-llmisvc-resources` | `minikube/values/kserve-llmisvc-resources-values.yaml` |
+| `mini-platform-kserve-runtime-configs` | `charts/kserve-runtime-configs` | `minikube/values/kserve-runtime-configs-values.yaml` |
 | `mini-platform-prometheus` | `charts/prometheus` | `minikube/values/prometheus-values.yaml` |
 | `mini-platform-loki` | `charts/loki` | `minikube/values/loki-values.yaml` |
 | `mini-platform-tempo` | `charts/tempo` | `minikube/values/tempo-values.yaml` |
@@ -533,6 +528,7 @@ shared `minikube/gitops/app-resources` chart rendered against a sibling
 | `mini-platform-opa-policy` | `minikube/gitops/opa-policy` | `minikube/gitops/opa-policy/values.yaml` |
 | `mini-platform-semantic-router` | `charts/semantic-router` | `minikube/values/semantic-router-values.yaml` |
 | `mini-platform-rate-limit` | `minikube/gitops/rate-limit` | `minikube/gitops/rate-limit/values.yaml` |
+| `mini-platform-model-serving` | `minikube/gitops/model-serving` | `minikube/gitops/model-serving/values.yaml` |
 | `mini-platform-agentregistry-postgresql` | `charts/postgresql` | `minikube/values/agentregistry-postgresql-values.yaml` |
 | `mini-platform-agentregistry` | `charts/agentregistry` | `minikube/values/agentregistry-values.yaml` |
 | `mini-platform-agentregistry-catalog` | `minikube/gitops/agentregistry-catalog` | `minikube/gitops/agentregistry-catalog/values.yaml` |
@@ -544,12 +540,10 @@ shared `minikube/gitops/app-resources` chart rendered against a sibling
 | `mini-platform-dcgm-exporter` | `charts/dcgm-exporter` | `minikube/values/dcgm-exporter-values.yaml` |
 | `mini-platform-oauth2-proxy` | `charts/oauth2-proxy` | `minikube/values/oauth2-proxy-values.yaml` |
 
-† **llm-d serving path** (disabled by default), and the **production-stack
-`vllm` app** (disabled: retired for the KServe releases, kept for a rollback).
-The node's single GPU holds one inference path at a time: enabling either means
-scaling the KServe release in `model-prod` to 0 and pointing the catalog's
-`qwen3.6-27b` back at its service. The llm-d client
-entrypoint is `llm-d-epp.mini-platform.svc` port 80.
+The model serving stack (Gateway API CRDs, cert-manager, LWS and KServe's
+LLMInferenceService controller) is cluster-wide and deploys no model itself:
+the model onboarding pipeline creates the LLMInferenceServices in `model-hprd`
+and `model-prod`, the namespaces `mini-platform-model-serving` provides.
 
 ## Accessing Services
 
