@@ -30,8 +30,9 @@ signing:
   keyid: opa-bundles-v2
 serviceAccount: project-registry
 
-# Approval rules: data.portal.required_approvals on the gateway's OPA (its
-# policy bundle carries policies/gateway/portal.rego).
+# Who may propose a change and who must approve it: data.portal.may_submit and
+# data.portal.required_approvals on the gateway's OPA (its policy bundle
+# carries policies/gateway/portal.rego).
 opaUrl: http://opa.mini-platform.svc.cluster.local:8181
 
 # People log in to Keycloak; the registry checks their access tokens (signed by

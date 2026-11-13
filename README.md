@@ -460,7 +460,8 @@ model kagent and Holmes run on. It stores the two Holmes read-only integration
 credentials at `mini-platform/holmes-github` and `mini-platform/holmes-argocd`.
 For the project registry it writes its database credentials
 (`project-registry-postgresql`, `project-registry-db`) and the passwords of the two
-reviewer accounts (`keycloak-registry-users`). The deploy script creates the bundle
+reviewer accounts (`keycloak-registry-users`), and an empty `registry-git`, where
+a person stores the GitHub token of the registry's daily export to Git. The deploy script creates the bundle
 signing key in Vault Transit (`transit/keys/opa-bundles`, not exportable), a role that
 may only sign with it (`bundle-signer`), and publishes its public key at
 `mini-platform/opa-bundle-signing` for OPA.

@@ -117,7 +117,10 @@ MCP tools). The project registry is where projects, agents and exceptions change
 `projects/*.yaml` and `agents/*.yaml` are the snapshot it imported, in the same format,
 and still the source of what the registry doesn't cover yet: the API keys the Vault
 bootstrap creates (it reads the key ids from them) and the agentregistry catalog;
-`scripts/registry-export.py` writes the registry's records back to them. The budget
+`scripts/registry-export.py` writes the registry's records back to them (by hand,
+or daily by the CronJob `project-registry-git-export`, which opens one PR on the
+`registry-export` branch with the token in Vault `registry-git`). The registry's
+portal is `registry.test/portal/` (Keycloak login with PKCE). The budget
 alert is one rule joining spend with the registry's `project_budget_usd`; who may
 submit and who must approve a change are both Rego (`portal.may_submit`,
 `portal.required_approvals`). `scripts/gen-projects.py` validates that format against
