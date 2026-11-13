@@ -2,6 +2,7 @@
 """Write the project registry's records back to projects/ and agents/ in this repo.
 
     REGISTRY_TOKEN=... python3 scripts/registry-export.py [--url http://127.0.0.1:8080]
+    python3 scripts/registry-export.py --from-file export.json
 
 Since the registry imported them, projects, agents and exceptions change in the
 registry (docs/project-registry.md), and OPA gets them from its publisher. These
@@ -10,7 +11,9 @@ the API keys bootstrap-vault-secrets.sh creates (key ids), the agentregistry
 catalog, a disaster recovery copy. Run this, review the diff, open a PR.
 
 Reads GET /export (a Keycloak token for the registry's client, as for any API
-call; see "Using it" in the doc). A file is rewritten only if its record changed,
+call; see "Using it" in the doc), or the same JSON from a file: the registry's
+daily export job (project-registry chart) runs this script that way and opens
+the PR itself. A file is rewritten only if its record changed,
 so unchanged files keep their comments; a file whose record is gone is deleted.
 Then runs gen-projects.py, so policies/gateway-projects and the other generated
 files match the export (CI checks them).
@@ -60,11 +63,15 @@ def write_records(kind, folder, records):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--url", default="http://127.0.0.1:8080", help="the registry API (kubectl port-forward)")
+    p.add_argument("--from-file", type=Path, help="an /export response saved as JSON, instead of calling the API")
     a = p.parse_args()
-    token = os.environ.get("REGISTRY_TOKEN") or sys.exit("set REGISTRY_TOKEN to a Keycloak access token")
-    req = urllib.request.Request(a.url.rstrip("/") + "/export", headers={"Authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        export = json.load(r)
+    if a.from_file:
+        export = json.loads(a.from_file.read_text())
+    else:
+        token = os.environ.get("REGISTRY_TOKEN") or sys.exit("set REGISTRY_TOKEN to a Keycloak access token")
+        req = urllib.request.Request(a.url.rstrip("/") + "/export", headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            export = json.load(r)
     changed = write_records("project", ROOT / "projects", export["project"])
     changed += write_records("agent", ROOT / "agents", export["agent"])
     exc_path = ROOT / "projects" / "_exceptions.yaml"

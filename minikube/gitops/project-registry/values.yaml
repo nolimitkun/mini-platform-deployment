@@ -1,6 +1,6 @@
 # The registry API, the publisher and the one-off import, all one image
 # (github.com/nolimitkun/project-registry). Design: docs/project-registry.md.
-image: ghcr.io/nolimitkun/project-registry:sha-af0b245aaa307146654782aff71c493b118bf424
+image: ghcr.io/nolimitkun/project-registry:sha-90306e0078470a26f9942163255ae5c935879592
 
 # DATABASE_URL, from Vault (project-registry-db), for project-registry-postgresql.
 databaseSecret: project-registry-db
@@ -49,6 +49,18 @@ replay:
   limit: "2000"
 # Approved changes are batched: at most one publish this often (seconds).
 publishInterval: "30"
+
+# The daily export to Git: the registry's records written to projects/ and
+# agents/ by this repo's scripts/registry-export.py, as a pull request on the
+# `registry-export` branch (one PR at a time, never merged by itself). Its token
+# is in Vault (registry-git, GITHUB_TOKEN): a fine-grained token for this repo
+# only, Contents and Pull requests read and write. Empty: the job does nothing.
+gitExport:
+  schedule: "0 3 * * *"
+  repoSlug: nolimitkun/mini-platform-deployment
+  base: main
+  branch: registry-export
+  secret: registry-git
 
 # First load from projects/*.yaml (an Argo CD PostSync hook; does nothing once
 # the registry has records): every imported project's owner group.
