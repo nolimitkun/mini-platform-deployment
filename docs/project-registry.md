@@ -374,9 +374,20 @@ are signed again for the new key:
      ones, so the rolling update has no gap.
    - **Publishing:** a change published while the rollout runs reaches the new
      pods only.
-5. When the rollout is done, `vault write transit/keys/opa-bundles/config
-   min_decryption_version=2` retires version 1 for good. Transit's sign
-   endpoint ignores it, which is why the version is pinned.
+5. When the rollout is done, retire the old version:
+   `vault write transit/keys/opa-bundles/config min_encryption_version=2 min_decryption_version=2`.
+   `min_encryption_version` is what stops a signature with version 1 (Transit
+   counts signing as encryption), `min_decryption_version` hides it from reads.
+   Version 1 still exists until `transit/keys/opa-bundles/trim`, which
+   deletes it for good. The old `public_key` field in KV can stay, since
+   nothing reads it.
+
+Done on the cluster on 2026-11-13, from version 1 to 2. A gateway call every
+second throughout got 101 of 101 answers. The new OPA pod refused the v1
+bundles until both builders had re-signed (about 50 seconds), then took over
+from the old pod. That run also found and fixed a flaw in activation: a
+change published right after an OPA rollout stayed `publishing`, because the
+replaced pod's last report still counted.
 
 ## Why OCP goes
 
