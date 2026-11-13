@@ -1,0 +1,8 @@
+apiVersion: v2
+name: project-registry
+description: >-
+  The project registry (nolimitkun/project-registry): projects, agents and
+  exceptions in Postgres, edited as change requests with policy-decided
+  approvals, and published as the signed gateway-projects bundle OPA loads.
+type: application
+version: 0.1.0

@@ -1,0 +1,101 @@
+# Signs bundles with Vault Transit as this service account (Vault role
+# bundle-signer, sign only).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.serviceAccount }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: project-registry
+  labels: {app.kubernetes.io/name: project-registry}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: project-registry}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: project-registry}
+    spec:
+      {{- include "registry.pod" . | nindent 6 }}
+      containers:
+        - name: api
+          {{- include "registry.container" . | nindent 10 }}
+          command: [uvicorn, registry.api:app, --host, 0.0.0.0, --port, "8080"]
+          env:
+            {{- include "registry.env" . | nindent 12 }}
+            - {name: OPA_URL, value: {{ .Values.opaUrl | quote }}}
+            - {name: KEYCLOAK_JWKS_URL, value: {{ .Values.keycloak.jwksUrl | quote }}}
+            - {name: KEYCLOAK_ISSUER, value: {{ .Values.keycloak.issuer | quote }}}
+            - {name: KEYCLOAK_CLIENT_ID, value: {{ .Values.keycloak.clientId | quote }}}
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 512Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: project-registry
+  labels: {app.kubernetes.io/name: project-registry}
+spec:
+  selector: {app.kubernetes.io/name: project-registry}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+# One publisher: publishes are serialized (bundle revisions are a sequence).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: project-registry-publisher
+  labels: {app.kubernetes.io/name: project-registry-publisher}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/name: project-registry-publisher}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: project-registry-publisher}
+    spec:
+      {{- include "registry.pod" . | nindent 6 }}
+      containers:
+        - name: publisher
+          {{- include "registry.container" . | nindent 10 }}
+          command: [python, -m, registry.publisher]
+          env:
+            {{- include "registry.env" . | nindent 12 }}
+            - {name: LOKI_URL, value: {{ .Values.replay.lokiUrl | quote }}}
+            - {name: REPLAY_SINCE, value: {{ .Values.replay.since | quote }}}
+            - {name: REPLAY_LIMIT, value: {{ .Values.replay.limit | quote }}}
+            - {name: MIN_INTERVAL, value: {{ .Values.publishInterval | quote }}}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 1Gi}
+---
+# First load from projects/*.yaml, then the first signed gateway-projects
+# bundle, if the render matches Git byte for byte. Does nothing once the
+# registry has records, so it can run on every sync.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: project-registry-import
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      {{- include "registry.pod" . | nindent 6 }}
+      containers:
+        - name: import
+          {{- include "registry.container" . | nindent 10 }}
+          command: [python, -m, registry.importer, --owner-group, {{ .Values.import.ownerGroup | quote }}]
+          env:
+            {{- include "registry.env" . | nindent 12 }}

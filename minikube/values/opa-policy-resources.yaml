@@ -1,0 +1,5 @@
+vaultSecrets:
+  # public_key: the PEM of the Transit key that signs both bundles. OPA
+  # verifies every bundle with it (opa-policy opa.yaml --set-file). Public, but
+  # from Vault so it always matches the key that signs.
+  - opa-bundle-signing

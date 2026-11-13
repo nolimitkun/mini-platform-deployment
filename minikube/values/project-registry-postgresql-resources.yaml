@@ -1,0 +1,6 @@
+vaultSecrets:
+  # postgres-password and password, read by the PostgreSQL chart.
+  - project-registry-postgresql
+  # DATABASE_URL, the same password in a URL, for the registry. Declared here,
+  # the earlier wave, so it exists before the registry starts.
+  - project-registry-db

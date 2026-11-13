@@ -1,0 +1,23 @@
+# The project registry's own database: projects, change requests, approvals and
+# the audit log (docs/project-registry.md "Data model").
+fullnameOverride: project-registry-postgresql
+
+auth:
+  username: registry
+  database: registry
+  existingSecret: project-registry-postgresql
+  secretKeys:
+    adminPasswordKey: postgres-password
+    userPasswordKey: password
+
+architecture: standalone
+
+primary:
+  persistence:
+    size: 2Gi
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 512Mi}
+
+volumePermissions:
+  enabled: true

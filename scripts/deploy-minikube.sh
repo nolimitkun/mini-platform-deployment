@@ -1036,6 +1036,32 @@ vault_exec write auth/kubernetes/role/mini-platform \
   audience=vault \
   policies=mini-platform-read \
   ttl=1h >/dev/null
+# Bundle signing (docs/project-registry.md "Two signed bundles, no OCP"): an RSA
+# key in Transit, never exported. The policy build and the project registry may
+# only sign with it (role bundle-signer); OPA verifies with its public key,
+# published to KV for VSO (opa-policy-resources.yaml).
+if ! vault_exec secrets list -format=json | jq -e 'has("transit/")' >/dev/null; then
+  vault_exec secrets enable transit >/dev/null
+fi
+if ! vault_exec read transit/keys/opa-bundles >/dev/null 2>&1; then
+  vault_exec write -f transit/keys/opa-bundles type=rsa-2048 exportable=false >/dev/null
+fi
+kubectl -n "$NS" exec -i vault-0 -- env \
+  VAULT_ADDR=http://127.0.0.1:8200 \
+  VAULT_TOKEN="$VAULT_TOKEN" \
+  vault policy write bundle-signer - >/dev/null <<'EOF'
+path "transit/sign/opa-bundles" {
+  capabilities = ["update"]
+}
+EOF
+vault_exec write auth/kubernetes/role/bundle-signer \
+  bound_service_account_names=policy-builder,project-registry \
+  bound_service_account_namespaces="$NS" \
+  policies=bundle-signer \
+  ttl=15m >/dev/null
+# Only key version 1 is published: a rotation is a new key id in OPA's config.
+signing_public_key="$(vault_exec read -format=json transit/keys/opa-bundles | jq -r '.data.keys["1"].public_key')"
+vault_exec kv put mini-platform/opa-bundle-signing public_key="$signing_public_key" >/dev/null
 if ! vault_exec audit list -format=json | jq -e 'has("file/")' >/dev/null; then
   vault_exec audit enable file file_path=/vault/audit/audit.log >/dev/null
 fi

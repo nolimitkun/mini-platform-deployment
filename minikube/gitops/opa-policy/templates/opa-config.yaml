@@ -11,19 +11,33 @@ data:
         credentials:
           s3_signing:
             environment_credentials: {}
-    # One entry per OCP bundle. Their .manifest roots are disjoint, so each
-    # one activates on its own: a project change swaps only gateway-projects.
+      registry:
+        url: {{ $v.opa.statusUrl }}
+    # The bundles' signing key (Vault Transit, policy build and project registry).
+    # The public key itself is set from a file at start (opa.yaml --set-file).
+    keys:
+      {{ $v.signing.keyid }}:
+        algorithm: RS256
+    # Two bundles with disjoint roots (each one's .manifest), so each activates
+    # on its own: a project change swaps only gateway-projects. OPA refuses a
+    # bundle whose signature doesn't verify and keeps the last good one.
     bundles:
-      {{- range $v.opa.bundles }}
+      {{- range list $v.bundles.policy $v.bundles.projects }}
       {{ . }}:
         service: minio
         resource: {{ . }}/bundle.tar.gz
+        signing:
+          keyid: {{ $v.signing.keyid }}
         # Keep serving the last good bundle across restarts and MinIO outages.
         persist: true
         polling:
           min_delay_seconds: 10
           max_delay_seconds: 30
       {{- end }}
+    # The bundle revisions this OPA has loaded, for the registry: a change is
+    # active once every OPA reports its revision.
+    status:
+      service: registry
     # Bounded cache for http.send answers: the model rankings
     # (policies/gateway/rankings.rego) are fetched from Prometheus at most
     # every couple of minutes per replica.

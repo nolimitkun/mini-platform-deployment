@@ -107,7 +107,7 @@ test_reason if {
 }
 
 test_decision_shape if {
-	authz.decision == {"allowed": true} with input as chat("open-webui", "qwen3.6-27b")
+	authz.decision == {"allowed": true, "dynamic_metadata": open_webui_limits} with input as chat("open-webui", "qwen3.6-27b")
 	d := authz.decision with input as chat("open-webui", "deepseek-v4-pro")
 	d.allowed == false
 	d.http_status == 403
@@ -210,7 +210,7 @@ test_models_listing_empty_without_models if {
 }
 
 test_only_models_listing_gets_the_header if {
-	authz.decision == {"allowed": true} with input as chat("open-webui", "qwen3.6-27b")
+	authz.decision == {"allowed": true, "dynamic_metadata": open_webui_limits} with input as chat("open-webui", "qwen3.6-27b")
 
 	# A revoked key is refused, without a model list.
 	d := authz.decision with input as req("open-webui", "/v1/models", {})
@@ -345,4 +345,21 @@ test_deployments_never_for_agent_keys if {
 test_kserve_release_is_an_onprem_model if {
 	authz.allow with input as chat("open-webui", "qwen2.5-1.5b")
 		with data.catalog.models["qwen2.5-1.5b"] as {"placement": "onprem", "provider": "KServe", "price": {"input": 0, "output": 0}}
+}
+
+open_webui_limits := {"requests_per_minute": 120, "tokens_per_minute": 4000000000, "budget_micro_usd": 50000000}
+
+# Limits travel with the allow decision; absent ones are sent as unlimited.
+test_limits_in_the_allow_decision if {
+	d := authz.decision with input as chat("open-webui", "qwen3.6-27b")
+		with data.projects["open-webui"].limits as {"requests_per_minute": 7}
+		with data.projects["open-webui"].budget as {"usd_per_30_days": 2.5}
+	d.dynamic_metadata == {"requests_per_minute": 7, "tokens_per_minute": 4000000000, "budget_micro_usd": 2500000}
+	n := authz.decision with input as chat("open-webui", "qwen3.6-27b")
+		with data.projects["open-webui"] as object.remove(data.projects["open-webui"], ["limits", "budget"])
+	n.dynamic_metadata == {"requests_per_minute": 4000000000, "tokens_per_minute": 4000000000, "budget_micro_usd": 4000000000}
+
+	# a refused request carries none
+	r := authz.decision with input as chat("open-webui", "deepseek-v4-pro")
+	not r.dynamic_metadata
 }

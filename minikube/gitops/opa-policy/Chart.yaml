@@ -1,5 +1,8 @@
 apiVersion: v2
 name: opa-policy
-description: OPA Control Plane (OCP), which builds policy bundles from Git into MinIO, and the OPA-Envoy authorizer agentgateway asks.
+description: >-
+  The OPA-Envoy authorizer agentgateway asks, and the policy build: a CronJob
+  that tests, builds and signs the Rego bundle from Git (it replaced OPA
+  Control Plane). OPA verifies the signature of every bundle it loads.
 type: application
-version: 0.1.0
+version: 0.2.0

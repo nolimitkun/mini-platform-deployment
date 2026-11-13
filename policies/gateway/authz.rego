@@ -1,6 +1,7 @@
 # Gateway authorization for agentgateway, evaluated by OPA through Envoy's
-# ext_authz protocol. OCP builds this directory into a bundle and publishes it
-# to MinIO, where the OPA next to the gateway picks it up (opa-policy chart).
+# ext_authz protocol. The policy build (opa-policy chart, a CronJob) tests this
+# directory, builds it into a signed bundle and publishes it to MinIO, where the
+# OPA next to the gateway picks it up and verifies its signature.
 #
 # Every API key belongs to a project (projects/*.yaml, generated into
 # data.projects by scripts/gen-projects.py). A project has a data class, which
@@ -203,10 +204,34 @@ listed_models := scope_models | virtual_models if {
 # What OPA-Envoy returns to agentgateway: allow, or a 403 with the reason.
 # Headers on an allowed decision are set on the request, replacing any the
 # client sent.
-decision := {"allowed": true, "headers": {listed_models_header: concat(",", sort(listed_models))}} if {
+decision := {
+	"allowed": true,
+	"headers": {listed_models_header: concat(",", sort(listed_models))},
+	"dynamic_metadata": limits,
+} if {
 	allow
 	path == "/v1/models"
-} else := {"allowed": true} if allow
+} else := {"allowed": true, "dynamic_metadata": limits} if allow
+
+# The project's limits travel with the allow decision (docs/project-registry.md
+# "Limits travel with the decision"): agentgateway reads them as extauthz.* and
+# sends each to the rate-limit service as the descriptor's limitOverride
+# (agentgateway-config ratelimit.yaml), so a limit change goes live with the
+# bundle, in the same step as the project's access. The service needs no entry
+# per project. Absent in the project data: no limit, sent as unlimited (the
+# override's requests_per_unit is a uint32). The budget is in micro-USD, what
+# the gateway counts (llm.cost.total x 1e6), per fixed 30-day window.
+unlimited := 4000000000
+
+limits := {
+	"requests_per_minute": object.get(project, ["limits", "requests_per_minute"], unlimited),
+	"tokens_per_minute": object.get(project, ["limits", "tokens_per_minute"], unlimited),
+	"budget_micro_usd": budget_micro_usd,
+}
+
+budget_micro_usd := round(project.budget.usd_per_30_days * 1000000) if project.budget
+
+else := unlimited
 
 decision := {
 	"allowed": false,

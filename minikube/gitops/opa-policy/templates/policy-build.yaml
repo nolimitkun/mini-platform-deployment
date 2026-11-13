@@ -1,0 +1,66 @@
+{{- $v := .Values }}
+# Signs with Vault Transit as this service account (Vault role bundle-signer,
+# sign only): the token is mounted for the Vault login and nothing else.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $v.signing.serviceAccount }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: policy-build
+  labels: {app.kubernetes.io/name: policy-build}
+spec:
+  schedule: {{ $v.policyBuild.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 300
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels: {app.kubernetes.io/name: policy-build}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ $v.signing.serviceAccount }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: build
+              image: {{ $v.policyBuild.image }}
+              command: [python, -m, registry.policybuild]
+              env:
+                - {name: POLICY_REPO, value: {{ $v.policyBuild.repo | quote }}}
+                - {name: POLICY_REF, value: {{ $v.policyBuild.ref | quote }}}
+                - {name: POLICY_DIR, value: {{ $v.policyBuild.dir | quote }}}
+                - {name: POLICY_TEST_DIRS, value: {{ $v.policyBuild.testDirs | quote }}}
+                - {name: BUNDLE_NAME, value: {{ $v.bundles.policy | quote }}}
+                - {name: BUNDLE_PREFIX, value: {{ $v.policyBuild.prefix | quote }}}
+                - {name: S3_ENDPOINT, value: {{ $v.minio.url | quote }}}
+                - {name: S3_BUCKET, value: {{ $v.minio.bucket | quote }}}
+                - {name: AWS_REGION, value: {{ $v.minio.region | quote }}}
+                - {name: VAULT_ADDR, value: {{ $v.signing.vaultAddr | quote }}}
+                - {name: VAULT_ROLE, value: {{ $v.signing.vaultRole | quote }}}
+                - {name: TRANSIT_KEY, value: {{ $v.signing.transitKey | quote }}}
+                - {name: SIGNING_KEYID, value: {{ $v.signing.keyid | quote }}}
+              envFrom:
+                - secretRef:
+                    name: {{ $v.minio.writerSecret }}
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits: {memory: 512Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              volumeMounts:
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: tmp
+              emptyDir: {}

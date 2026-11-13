@@ -1,25 +1,38 @@
-# OPA Control Plane: builds the Rego in policies/<bundle> of this repo into a
-# bundle and uploads it to MinIO whenever the branch moves (it polls Git about
-# every 30-60 s). Policy changes therefore go live on merge, without an Argo CD
-# sync. Its state is rebuilt from this config on every start, so its SQLite
-# database lives on an emptyDir.
-ocp:
-  image: openpolicyagent/opa-control-plane:v0.10.0
-  # Public repo, no credentials. A branch name here, not a commit, so OCP
-  # follows it.
+# The policy bundle's build, the platform's stand-in for CI (the cluster's Vault
+# and MinIO are out of GitHub Actions' reach). Every minute it resolves the
+# branch; on a new commit it runs opa test over policies/gateway and
+# policies/gateway-projects, builds policies/gateway with the commit as its
+# revision, signs it through Vault Transit and activates it in MinIO. A failing
+# test publishes nothing, and OPA keeps the active bundle.
+# (nolimitkun/project-registry, registry/policybuild.py)
+policyBuild:
+  image: ghcr.io/nolimitkun/project-registry:sha-fa487ce8f07d9ae8aa945d29222352053fd885ce
+  schedule: "* * * * *"
+  # Public repo, no credentials. A branch name, not a commit: the build follows it.
   repo: https://github.com/nolimitkun/mini-platform-deployment.git
-  reference: refs/heads/main
-  bundles:
-    # bundle name -> directory under policies/. Each directory's .manifest
-    # sets the bundle's roots; they must not overlap (validate-gitops.sh).
-    # The Rego and the data that changes with it (catalog, data classes).
-    # Not called "gateway": that was the single bundle holding project data
-    # too, and an OPA still on the old config must not pick up a gateway
-    # bundle without it during a rollout.
-    gateway-policy: policies/gateway
-    # Per-project data (scripts/gen-projects.py), one file per project: a
-    # project change rebuilds only this bundle.
-    gateway-projects: policies/gateway-projects
+  ref: feat/project-registry   # TEMPORARY, for the branch test on the cluster: back to main before merge
+  dir: policies/gateway
+  testDirs: policies/gateway,policies/gateway-projects
+  # "" for the bundles OPA loads. A branch build sets its own prefix (e.g.
+  # branches/my-change/), so trying a branch never replaces what OPA loads.
+  prefix: ""
+
+# The project data bundle (gateway-projects) is built by the project registry's
+# publisher (project-registry chart), not here.
+bundles:
+  policy: gateway-policy
+  projects: gateway-projects
+
+# Signing: an RSA key in Vault Transit that never leaves Vault. The builders may
+# only sign with it (Vault role bundle-signer); OPA verifies with its public key,
+# from Vault through VSO (opa-policy-resources.yaml).
+signing:
+  vaultAddr: http://vault.mini-platform.svc.cluster.local:8200
+  vaultRole: bundle-signer
+  transitKey: opa-bundles
+  keyid: opa-bundles
+  publicKeySecret: opa-bundle-signing
+  serviceAccount: policy-builder
 
 minio:
   url: http://minio.mini-platform.svc.cluster.local:9000
@@ -36,7 +49,6 @@ opa:
   grpcPort: 9191
   # The rule agentgateway's verdict comes from (policies/gateway/authz.rego).
   decision: gateway/authz/decision
-  # The bundles OPA loads together (ocp.bundles above).
-  bundles:
-    - gateway-policy
-    - gateway-projects
+  # Where OPA reports the bundle revisions it has loaded: the registry marks a
+  # change active once every OPA has its revision.
+  statusUrl: http://project-registry.mini-platform.svc.cluster.local:8080/opa

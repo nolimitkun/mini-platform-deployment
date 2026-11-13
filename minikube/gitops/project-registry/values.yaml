@@ -1,0 +1,52 @@
+# The registry API, the publisher and the one-off import, all one image
+# (github.com/nolimitkun/project-registry). Design: docs/project-registry.md.
+image: ghcr.io/nolimitkun/project-registry:sha-fa487ce8f07d9ae8aa945d29222352053fd885ce
+
+# DATABASE_URL, from Vault (project-registry-db), for project-registry-postgresql.
+databaseSecret: project-registry-db
+
+# The deployment repo the publisher renders with: scripts/gen-projects.py and
+# the catalog at the commit of the active policy bundle. Public, no credentials.
+deployRepo: https://github.com/nolimitkun/mini-platform-deployment.git
+
+# The bundle store and signing, as the policy build (opa-policy values.yaml).
+bundles:
+  policy: gateway-policy
+  projects: gateway-projects
+  prefix: ""
+minio:
+  url: http://minio.mini-platform.svc.cluster.local:9000
+  bucket: opa-bundles
+  region: us-east-1
+  writerSecret: opa-bundles-writer
+signing:
+  vaultAddr: http://vault.mini-platform.svc.cluster.local:8200
+  vaultRole: bundle-signer
+  transitKey: opa-bundles
+  keyid: opa-bundles
+serviceAccount: project-registry
+
+# Approval rules: data.portal.required_approvals on the gateway's OPA (its
+# policy bundle carries policies/gateway/portal.rego).
+opaUrl: http://opa.mini-platform.svc.cluster.local:8181
+
+# People log in to Keycloak; the registry checks their access tokens (signed by
+# the realm, issued to its client) and reads their groups.
+keycloak:
+  jwksUrl: http://keycloak.mini-platform.svc.cluster.local/realms/mini-platform/protocol/openid-connect/certs
+  issuer: http://keycloak.test/realms/mini-platform
+  clientId: project-registry
+
+# The publisher replays this window of OPA's decision log (Loki) before every
+# publish: a change may change decisions only for the projects it touches.
+replay:
+  lokiUrl: http://loki.mini-platform.svc.cluster.local:3100
+  since: 24h
+  limit: "2000"
+# Approved changes are batched: at most one publish this often (seconds).
+publishInterval: "30"
+
+# First load from projects/*.yaml (an Argo CD PostSync hook; does nothing once
+# the registry has records): every imported project's owner group.
+import:
+  ownerGroup: platform-admins
