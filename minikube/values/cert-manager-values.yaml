@@ -4,3 +4,9 @@
 # removing the release never deletes every Certificate in the cluster.
 crds:
   enabled: true
+# Leader-election leases in cert-manager's own namespace, not kube-system
+# (the chart default), which the mini-platform Argo CD project does not deploy
+# to.
+global:
+  leaderElection:
+    namespace: cert-manager

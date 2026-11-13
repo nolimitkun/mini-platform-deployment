@@ -137,7 +137,10 @@ KServe itself is platform GitOps too: `gateway-api-crds`, `cert-manager`,
 vendored KServe charts carry v0.21.0-rc1 names (the release published no
 others); `kserve.version: v0.21.0` picks the release images. The two apps that
 call an earlier wave's webhook set `retry: true`, since waves only order
-creation.
+creation; `kserve-runtime-configs` sets `serverSideDiff: true`, since its CRD's
+schema defaults would otherwise leave it OutOfSync. cert-manager's leader
+election lives in its own namespace (the project does not deploy to
+`kube-system`).
 
 Supporting subsystems: Vault + VSO (secrets), Ingress NGINX (`.test`
 hostnames), MLflow (experiments), Qdrant

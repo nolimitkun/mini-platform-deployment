@@ -190,6 +190,8 @@ applications:
     retry: true
   # The LLMInferenceServiceConfig presets every release starts from (router,
   # scheduler, vLLM template), which go through KServe's validating webhook.
+  # Their CRD's schema fills in defaults the chart leaves out, hence the
+  # server-side diff.
   kserve-runtime-configs:
     chartPath: charts/kserve-runtime-configs
     valuesFile: minikube/values/kserve-runtime-configs-values.yaml
@@ -197,6 +199,7 @@ applications:
     namespace: kserve
     wave: "-2"
     retry: true
+    serverSideDiff: true
   prometheus:
     chartPath: charts/prometheus
     valuesFile: minikube/values/prometheus-values.yaml
