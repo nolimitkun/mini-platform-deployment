@@ -37,6 +37,10 @@ signing:
   keyVersion: 1
   keyid: opa-bundles
   publicKeySecret: opa-bundle-signing
+  # The field of that secret holding this version's public key: public_key for
+  # version 1, public_key_v<N> after a rotation, written next to the old one so
+  # an OPA pod that restarts mid-rotation still finds the key it is configured for.
+  publicKeyField: public_key
   serviceAccount: policy-builder
 
 minio:

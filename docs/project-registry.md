@@ -349,11 +349,14 @@ are signed again for the new key:
 1. Create the new version in Vault: `vault write -f transit/keys/opa-bundles/rotate`.
    The builders keep signing with the pinned version (`keyVersion`), so nothing
    changes yet.
-2. Publish the new version's public key, for example version 2:
-   `vault kv put mini-platform/opa-bundle-signing public_key="$(vault read -format=json transit/keys/opa-bundles | jq -r '.data.keys["2"].public_key')"`.
-   Running OPA pods read the key only at start, so they keep the old one.
+2. Publish the new version's public key in a field of its own, next to the old
+   one, for example version 2:
+   `vault kv patch mini-platform/opa-bundle-signing public_key_v2="$(vault read -format=json transit/keys/opa-bundles | jq -r '.data.keys["2"].public_key')"`.
+   Nothing reads it yet: an OPA pod that restarts now still gets version 1's
+   key from `public_key`.
 3. In one commit, set `signing.keyVersion: 2` and `signing.keyid: opa-bundles-v2` in
-   both `opa-policy` and `project-registry` values, and merge it.
+   both `opa-policy` and `project-registry` values, and
+   `signing.publicKeyField: public_key_v2` in `opa-policy`, and merge it.
 4. The rest is automatic:
    - **Builders:** the policy build and the publisher see that the active bundles
      are signed with another key and sign them again (the same commit, the same

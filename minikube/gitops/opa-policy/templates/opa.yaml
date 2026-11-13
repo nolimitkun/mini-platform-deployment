@@ -66,7 +66,7 @@ spec:
         - name: signing-key
           secret:
             secretName: {{ $v.signing.publicKeySecret }}
-            items: [{key: public_key, path: public_key}]
+            items: [{key: {{ $v.signing.publicKeyField }}, path: public_key}]
         - name: config
           configMap: {name: opa-config}
         - name: persist
