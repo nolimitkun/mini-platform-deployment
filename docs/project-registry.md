@@ -2,9 +2,10 @@
 
 Status: **proof of concept built and deployed on minikube** (2026-11-13): the
 core below, in [nolimitkun/project-registry](https://github.com/nolimitkun/project-registry)
-and the `project-registry` and `opa-policy` apps. OAuth clients for callers and
-the portal page are not built yet. [Proof of concept](#proof-of-concept) has
-what was built, what differs from this design and what was measured.
+and the `project-registry` and `opa-policy` apps, with a portal page at
+`registry.test/portal/`. OAuth clients for callers are not built yet.
+[Proof of concept](#proof-of-concept) has what was built, what differs from this
+design and what was measured.
 
 Today a project is a file, `projects/<id>.yaml`, changed by pull request.
 [multi-project-policy.md](multi-project-policy.md) records that design and
@@ -202,8 +203,9 @@ outbox(seq, change_id, published_at)
 
 - **The audit log is append-only.** It is exported to WORM storage and the
   SIEM.
-- **Change states:** `draft → pending_approval → approved → publishing →
-  active`. A change can also end in `rejected`, `failed` or `rolled_back`.
+- **Change states:** `pending_approval → approved → publishing → active`.
+  A change can also end in `rejected`, `withdrawn` (by its author or the
+  platform team, before it is published), `failed` or `rolled_back`.
 
 ## Publishing
 
@@ -244,7 +246,8 @@ request for review instead of stopping on it.
   24 hours of spend, so the number of rules no longer grows with projects, and
   a budget changed in the registry is the one the alert uses. Built.
 - **Usage pages** in the portal read Prometheus (spend, requests),
-  agentgateway Analytics and Langfuse.
+  agentgateway Analytics and Langfuse. Not built: the PoC portal shows the
+  records, changes and publications only.
 - **The budget window** stays the rate-limit service's fixed 30-day window
   (`budget.usd_per_30_days`), now sent as an override with unit `month`.
 
@@ -478,7 +481,8 @@ week of shadow running:
 
   A failure anywhere leaves the records, and what OPA loads, unchanged, and
   marks the changes `failed` with the reason. A change is `active` once every
-  OPA has reported its revision through the status plugin.
+  ready OPA pod has reported its revision (`registry/activation.py`, checked on
+  every report and every round of the publisher).
 - **The policy build** (`registry/policybuild.py`): a CronJob that, when `main`
   moves, runs `opa test`, then builds, signs and activates `gateway-policy`.
   It replaces OPA Control Plane, which is removed.
@@ -493,6 +497,22 @@ week of shadow running:
 - **Limits from OPA**: the allow decision carries `limits` as dynamic metadata.
   Every descriptor's `limitOverride` reads it, defaulting to 0. The rate-limit
   config is down to the domain and a default entry.
+- **Who may propose** a change is policy too (`portal.may_submit`), and a change
+  not yet published can be withdrawn by its author or the platform team.
+- **The portal** (`registry/static/portal.html`, at `registry.test/portal/`):
+  - Keycloak login with PKCE;
+  - projects and their changes;
+  - proposing a change or a new project;
+  - change requests with their diff, approvals and replay report, and the
+    buttons to act on them;
+  - publications, with rollback.
+- **The budget metric** `project_budget_usd` and one budget alert rule for all
+  projects.
+- **The export to Git**: `scripts/registry-export.py`, by hand or daily by the
+  CronJob `project-registry-git-export`, as one pull request.
+- **Key rotation**: pinned Transit key versions; the builders re-sign the
+  active bundles for a new key. Done on the cluster, version 1 to 2 (see
+  "Rotating the signing key").
 
 ### Where it differs from this design
 
@@ -512,8 +532,15 @@ week of shadow running:
 - **Owners are groups.** Each project has an owner group (`project_owner`). The
   import gives every project `project-owners`. Who may submit is policy
   (`portal.may_submit`), as is who approves.
-- **Callers still use API keys.** The OAuth clients (and the JWT-versus-API-key
-  check below) come with the portal, in the next round.
+- **Callers still use API keys.** The OAuth clients, and the check that a JWT
+  call and an API key call get the same decision, are the next round.
+- **The policy build doesn't replay.** The design's CI attaches a replay of the
+  policy change to the pull request. The in-cluster build runs `opa test` only;
+  run `scripts/policy-replay.py` before merging.
+- **Store layout.** No `latest` pointer: each build is kept under
+  `<bundle>/revisions/<revision>/`, and activating one copies it to
+  `<bundle>/bundle.tar.gz` (what OPA pulls) and records it in
+  `<bundle>/active.json`.
 
 ### Checks (all on the cluster, through the gateway)
 
@@ -525,6 +552,10 @@ week of shadow running:
 | Bad signature | A `gateway-projects` bundle with `admin` edited to 1/min, uploaded straight to MinIO: OPA refuses it (`data.json: digest mismatch`) and keeps the signed one; `admin` keeps its real limit |
 | Registry down | API and publisher at 0 pods: the gateway keeps serving models and chat, and OPA's status reports fail quietly |
 | Policy build | A failing `opa test` publishes nothing (tested in the repo); on the cluster the first build replaced OCP's unsigned bundle, which OPA refused for its missing signature |
+| Key rotation (v1 → v2) | A gateway call every second throughout: 101 of 101 answered. The new OPA pod became ready once both builders had re-signed (about 50 s) |
+| Submit rights, withdraw | Security and the cost owner can't propose changes to a project (403); a change nobody could approve was withdrawn by its author |
+| Portal login | Authorization code with PKCE, run by script through the ingress: a token the registry accepts, CORS allowed for `registry.test`, refresh works; a wrong verifier is refused |
+| Daily export | Run with the real token: clone, render, compare; "nothing to export" while Git matches the registry |
 
 A change that alters another project's decisions can't be produced through
 valid project data with the current Rego: every rule reads only the
@@ -544,9 +575,6 @@ on the cluster, every publish so far changed nothing for other projects.
 - the model choices as the intersection of the catalog and the model
   registry's `prod` versions.
 
-Built since the first round: who may submit is policy (`portal.may_submit`),
-`project_budget_usd` and the one budget alert rule, the export to Git, and key
-rotation (pinned key versions, active bundles re-signed for a new key).
 
 ## Spike: limits set by OPA
 

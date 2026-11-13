@@ -50,7 +50,7 @@ flowchart LR
 | Gateway config | `agentgateway-config` (`minikube/gitops/agentgateway-config`) | The `agentgateway-proxy` Gateway, one `AgentgatewayModel` per model, the `auto` virtual models, passthrough routes to Google's APIs, the merged MCP endpoint, and policies for API keys, OPA, the semantic router, rate limits, the model list, metrics labels and tracing |
 | OPA | `opa-policy` (`minikube/gitops/opa-policy`) | `opa-envoy`, answering ext_authz over gRPC on `opa:9191` |
 | Policy build | `opa-policy` | A CronJob (`policy-build`): when this repo's `main` moves, runs `opa test`, builds `policies/gateway` into the `gateway-policy` bundle with the commit as its revision, signs it with Vault Transit and activates it in MinIO (`opa-bundles/gateway-policy/`) |
-| Project registry | `project-registry`, `project-registry-postgresql` | Projects, agents and exceptions as change requests with approvals, published as the signed `gateway-projects` bundle ([project-registry.md](project-registry.md)) |
+| Project registry | `project-registry`, `project-registry-postgresql` | Projects, agents and exceptions as change requests with approvals, published as the signed `gateway-projects` bundle; a portal at `registry.test/portal/`, and a daily export to Git as a PR ([project-registry.md](project-registry.md)) |
 | Rate-limit service | `rate-limit` (`minikube/gitops/rate-limit`) | Counts each project's requests, tokens and spend in Redis; the limits come from OPA with each request (see "Rate limits and budgets") |
 | vLLM Semantic Router | `semantic-router` | Classifies `auto` prompts into task classes for the gateway, over ext_proc (see "The semantic router") |
 | agentregistry | `agentregistry`, `agentregistry-postgresql`, `agentregistry-catalog` | The catalog of MCP servers (and later agents), at `agentregistry.test` behind the Keycloak login. Its entries live in `minikube/gitops/agentregistry-catalog/files/catalog.yaml` |
@@ -174,12 +174,13 @@ curl -s http://agentgateway.test/google/tts/v1/text:synthesize \
 
 > **Project registry (phase 2 PoC).** Since the registry imported them, the
 > projects, agents and exceptions OPA sees come from the
-> [project registry](project-registry.md), not from Git: change them there (a
-> change request, approved by policy, published within about a minute).
+> [project registry](project-registry.md), not from Git: change them there, in
+> its portal at `http://registry.test/portal/` or through its API (a change
+> request, approved by policy, published within about a minute).
 > `projects/*.yaml` and `agents/*.yaml` were the import's source and are no
 > longer read by OPA. They still drive what isn't in the registry yet: the API
 > keys in Vault (`bootstrap-vault-secrets.sh`) and the agentregistry catalog;
-> `scripts/registry-export.py` brings them up to date from the registry
+> a daily job brings them up to date from the registry as a pull request
 > (["Keeping Git's copy current"](project-registry.md#keeping-gits-copy-current)).
 > Below is the record format both use.
 
