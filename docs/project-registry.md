@@ -256,6 +256,7 @@ DELETE /{collection}/{id}             delete
 GET    /changes/{id}                  the diff, approvals needed and given, replay
                                       report, state, bundle revision
 POST   /changes/{id}/approve|reject   (body: {"comment": ...})
+POST   /changes/{id}/withdraw         its author or the platform team, before it is published
 GET    /publications                  published revisions, newest first
 GET    /export                        every record, in the files' format (registry-export.py)
 GET    /metrics                       project_budget_usd, for Prometheus (cluster-internal)

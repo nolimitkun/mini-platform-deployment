@@ -6,7 +6,7 @@
 # test publishes nothing, and OPA keeps the active bundle.
 # (nolimitkun/project-registry, registry/policybuild.py)
 policyBuild:
-  image: ghcr.io/nolimitkun/project-registry:sha-73a9b197a68838ae869c72526aed515a9a5ff372
+  image: ghcr.io/nolimitkun/project-registry:sha-b44837a313ee3d1463ea0df25f40ac2b310181af
   schedule: "* * * * *"
   # Public repo, no credentials. A branch name, not a commit: the build follows it.
   repo: https://github.com/nolimitkun/mini-platform-deployment.git
