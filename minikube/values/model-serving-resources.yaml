@@ -1,0 +1,24 @@
+# Credentials the model namespaces get from Vault (scripts/bootstrap-vault-secrets.sh).
+# Each lands under `name` in `namespace`; `path` is the Vault path when the two differ.
+externalVaultSecrets:
+  # The pipeline: its gateway project key (projects/model-onboarding.yaml) and
+  # its MinIO account (minio-values.yaml, model-onboarding), under the names
+  # the workflow reads them by.
+  - name: gateway-key
+    path: model-onboarding-agentgateway
+    namespace: model-onboarding
+  - name: s3-creds
+    path: minio-model-onboarding
+    namespace: model-onboarding
+  # The serving namespaces: the read-only MinIO account vLLM streams weights
+  # with, and the vLLM key the gateway sends.
+  - name: model-weights-s3
+    path: minio-model-serving
+    namespace: model-hprd
+  - name: model-weights-s3
+    path: minio-model-serving
+    namespace: model-prod
+  - name: model-serving-key
+    namespace: model-hprd
+  - name: model-serving-key
+    namespace: model-prod

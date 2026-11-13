@@ -313,3 +313,36 @@ test_catalog_tool_risks_are_known if {
 		risk in {"read", "write", "irreversible"}
 	}
 }
+
+# The onboarding pipeline's own deployments, by KServe's path route.
+deployment_req(project) := req(project, "/model-hprd/qwen-0-5b-989aa798-1a2b3c/v1/chat/completions", {"model": "Qwen/Qwen2.5-0.5B-Instruct@989aa79"})
+
+test_deployments_only_for_projects_that_have_them if {
+	authz.allow with input as deployment_req("model-onboarding")
+	authz.allow with input as req("model-onboarding", "/model-prod/qwen-0-5b-989aa798-1a2b3c/v1/completions", {"prompt": "x"})
+	not authz.allow with input as deployment_req("admin")
+	authz.reason == "project admin may not call model deployments directly" with input as deployment_req("admin")
+	not authz.allow with input as deployment_req("open-webui")
+}
+
+test_deployments_need_a_serving_namespace if {
+	not authz.allow with input as req("model-onboarding", "/mini-platform/vllm/v1/chat/completions", {"model": "x"})
+	not authz.allow with input as req("model-onboarding", "/model-hprd", {})
+}
+
+test_deployments_need_onprem if {
+	not authz.allow with input as deployment_req("model-onboarding")
+		with data.projects["model-onboarding"].placement as ["gcp"]
+}
+
+test_deployments_never_for_agent_keys if {
+	not authz.allow with input as req_key("model-onboarding", "kagent-k8s-agent", "/model-hprd/x/v1/chat/completions", {})
+		with data.projects["model-onboarding"].agent_keys as {"kagent-k8s-agent": "kagent-k8s-agent"}
+		with data.projects["model-onboarding"].keys as ["model-onboarding", "kagent-k8s-agent"]
+}
+
+# The catalog's KServe releases are ordinary catalog models.
+test_kserve_release_is_an_onprem_model if {
+	authz.allow with input as chat("open-webui", "qwen2.5-1.5b")
+		with data.catalog.models["qwen2.5-1.5b"] as {"placement": "onprem", "provider": "KServe", "price": {"input": 0, "output": 0}}
+}

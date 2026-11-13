@@ -12,3 +12,10 @@ controller:
 # No Istio on this cluster: don't ask for RBAC on its CRDs.
 istio:
   enabled: false
+
+# Gateway API Inference Extension: lets a model route point at an InferencePool
+# (provider Custom, custom.backendRef) and pick the pod through the pool's
+# endpoint picker. KServe's LLMInferenceServices, which the model onboarding
+# pipeline deploys, each come with one (catalog/models.yaml, provider KServe).
+inferenceExtension:
+  enabled: true

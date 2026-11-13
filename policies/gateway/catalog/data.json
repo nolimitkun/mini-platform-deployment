@@ -60,9 +60,13 @@
         "input": 0,
         "output": 0
       },
-      "provider": "OpenAI"
+      "provider": "KServe"
     }
   },
+  "serving_namespaces": [
+    "model-hprd",
+    "model-prod"
+  ],
   "tasks": {
     "code": [
       "deepseek-v4-pro",

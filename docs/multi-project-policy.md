@@ -63,6 +63,7 @@ flowchart LR
 | 12 | **Two bundles** (`gateway-policy`, `gateway-projects` with one file per project); the rate limiter refuses unknown projects; decision log keeps the model; `policy-replay.py` | #42 |
 | 13 | **Agents** `agents/<id>.yaml`: per-agent keys narrowing their project's models and tools; kagent's agents on their own ModelConfigs; published in agentregistry | #44 |
 | 14 | **Tool risk**: `catalog/tools.yaml` classes every MCP tool read, write or irreversible; OPA holds agents to their autonomy; unknown tools count as irreversible; `tools-drift.py` | #45 |
+| 15 | **Self-hosted models on KServe**: catalog provider `KServe` routes a model name to a release's InferencePool; projects with `deployments: true` may call `/<serving namespace>/...` directly (the onboarding pipeline); weights in MinIO `models` | — |
 
 ## Decisions
 
@@ -219,7 +220,9 @@ sends three descriptors per request:
 agentgateway answers `/v1/models` itself, and a model's `visibility` is global,
 so it can't hide a model from one project. For that path OPA's allow decision
 adds an `x-allowed-models` request header, `lib.allowed(project)` plus the
-`auto` names, and a response transformation keeps only those entries. One
+`auto` names, and a response transformation answers with those names. It never
+reads the upstream body: on a Gateway-wide policy that would buffer every
+response, streaming included (fixed after #35 kept the metadata that way). One
 source of truth, the same set authorization uses; a test checks that every
 listed model is callable. OPA's header replaces any the client sends, and
 without it the list goes out whole: the list is cosmetic.

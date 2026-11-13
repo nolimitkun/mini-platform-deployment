@@ -45,19 +45,30 @@ PROVIDERS = {
     "OpenAI": {"required": {"baseURL"}, "optional": {"secretRef"}},
     "Deepseek": {"required": {"secretRef"}, "optional": set()},
     "VertexAI": {"required": {"region"}, "optional": set()},
+    # A release of the model onboarding pipeline: the KServe
+    # LLMInferenceService <namespace>/<name> (its InferencePool), and the
+    # model name its vLLM serves, which the gateway puts in the request in
+    # place of the catalog name. Both come from the pipeline's release record.
+    "KServe": {"required": {"deployment", "servedModel"}, "optional": set()},
 }
 GOOGLE_API_FIELDS = {"required": {"placement", "host"}, "optional": {"http1Only"}}
 
 # Kubernetes object names are derived from these, so keep them DNS-safe once
 # dots are replaced (agentgateway-config templates/models.yaml).
 NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$")
+DNS_LABEL_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
 
 def validate(catalog):
     errors = []
-    top = {"models", "googleApis", "tasks"}
+    top = {"models", "googleApis", "tasks", "servingNamespaces"}
     if set(catalog) - top:
         errors.append(f"unknown top-level keys: {sorted(set(catalog) - top)}")
+
+    serving = catalog.get("servingNamespaces") or []
+    if not isinstance(serving, list) or any(not isinstance(n, str) or not DNS_LABEL_RE.match(n) for n in serving):
+        errors.append("servingNamespaces: must be a list of namespace names")
+        serving = []
 
     models = catalog.get("models") or {}
     if not models:
@@ -95,6 +106,16 @@ def validate(catalog):
             errors.append(f"{where}: {provider} needs {f}")
         for f in sorted(fields - spec["required"] - spec["optional"]):
             errors.append(f"{where}: {f} is not a {provider} setting")
+        if provider == "KServe":
+            ns, _, svc = str(m.get("deployment", "")).partition("/")
+            if not (DNS_LABEL_RE.match(ns) and DNS_LABEL_RE.match(svc)):
+                errors.append(f"{where}.deployment: must be <namespace>/<LLMInferenceService name>")
+            elif ns not in serving:
+                errors.append(f"{where}.deployment: namespace {ns} is not in servingNamespaces")
+            if not isinstance(m.get("servedModel"), str) or not m.get("servedModel"):
+                errors.append(f"{where}.servedModel: must be the model name the deployment's vLLM serves")
+            if m.get("placement") != "onprem":
+                errors.append(f"{where}.placement: a KServe release runs on this cluster, so onprem")
 
     for task, prefs in (catalog.get("tasks") or {}).items():
         where = f"tasks.{task}"
@@ -186,6 +207,7 @@ def render(catalog, tool_risks):
             for name, a in apis.items()
         },
         "tasks": sorted(catalog.get("tasks") or {}),
+        "servingNamespaces": catalog.get("servingNamespaces") or [],
     }
     policy = {
         "models": {
@@ -195,6 +217,7 @@ def render(catalog, tool_risks):
         "google_apis": {name: {"placement": a["placement"]} for name, a in apis.items()},
         "tasks": catalog.get("tasks") or {},
         "tools": tool_risks,
+        "serving_namespaces": catalog.get("servingNamespaces") or [],
     }
     return {
         GATEWAY_OUT: json.dumps(gateway, indent=2) + "\n",

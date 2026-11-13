@@ -12,6 +12,13 @@ argoNamespace: argocd
 destination:
   server: https://kubernetes.default.svc
   namespace: mini-platform
+# Namespaces besides the two above that applications may deploy into: the
+# model onboarding pipeline's and the KServe serving namespaces, which the
+# model-serving application creates and fills (minikube/gitops/model-serving).
+extraNamespaces:
+  - model-onboarding
+  - model-hprd
+  - model-prod
 
 # Shared first-party chart rendered as a second source on every application that
 # declares a `resourcesFile`. It turns that file's `routes` into Ingresses and
@@ -128,14 +135,20 @@ applications:
     chartPath: charts/trino
     valuesFile: minikube/values/trino-values.yaml
     wave: "-2"
+  # The production-stack vLLM, retired: self-hosted models are KServe
+  # releases of the model onboarding pipeline now (catalog provider KServe,
+  # docs/agentgateway.md "Self-hosted models"). Kept for a rollback: enable it
+  # and point the catalog's qwen3.6-27b back at vllm-router-service; the
+  # node's single GPU holds one of the two at a time.
   vllm:
+    enabled: false
     chartPath: charts/vllm-stack
     valuesFile: minikube/values/vllm-values.yaml
     resourcesFile: minikube/values/vllm-resources.yaml
     wave: "-2"
   # Alternative inference path: llm-d (GAIE standalone scheduler + vLLM decode
-  # pods). Disabled by default — the node's single GPU cannot host llm-d and
-  # production-stack (vllm) at the same time. To switch paths, set
+  # pods). Disabled by default — the node's single GPU holds one inference
+  # path at a time (today the KServe releases). To switch paths, set
   # enabled: true here AND servingEngineSpec.modelSpec[0].replicaCount: 0 in
   # minikube/values/vllm-values.yaml (or the reverse), then commit and push.
   llm-d-modelserver:
@@ -276,6 +289,18 @@ applications:
     valuesFile: minikube/gitops/agentregistry-catalog/values.yaml
     releaseName: agentregistry-catalog
     wave: "2"
+  # The namespaces self-hosted models are served from (KServe
+  # LLMInferenceServices, deployed by the model onboarding pipeline) and the
+  # pipeline's own, with what they need from the platform: weight-store and
+  # gateway credentials from Vault, and the gateway's key for the vLLM pods.
+  # After MinIO (its accounts) and before the gateway config, whose model
+  # routes point into these namespaces.
+  model-serving:
+    chartPath: minikube/gitops/model-serving
+    valuesFile: minikube/gitops/model-serving/values.yaml
+    resourcesFile: minikube/values/model-serving-resources.yaml
+    releaseName: model-serving
+    wave: "0"
   agentgateway-config:
     chartPath: minikube/gitops/agentgateway-config
     valuesFile: minikube/gitops/agentgateway-config/values.yaml

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: model-serving
+description: Mini Platform's self-hosted model serving - the KServe serving namespaces and the model onboarding pipeline's, wired to the platform's gateway and weight store.
+type: application
+version: 0.1.0

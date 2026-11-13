@@ -12,6 +12,10 @@ vaultSecrets:
   # consumer; OCP and OPA (opa-policy, a later wave) read the same Secrets.
   - opa-bundles-writer
   - opa-bundles-reader
+  # The model weight store's accounts (minio-values.yaml). The pipeline and
+  # the serving namespaces get their own copies (model-serving-resources.yaml).
+  - minio-model-onboarding
+  - minio-model-serving
 
 routes:
   - name: minio

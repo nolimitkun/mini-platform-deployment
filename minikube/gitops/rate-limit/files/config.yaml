@@ -55,6 +55,21 @@ descriptors:
       unit: month
       requests_per_unit: 30000000
 - key: project
+  value: model-onboarding
+  descriptors:
+  - key: kind
+    value: requests
+    rate_limit:
+      unlimited: true
+  - key: kind
+    value: tokens
+    rate_limit:
+      unlimited: true
+  - key: kind
+    value: budget_micro_usd
+    rate_limit:
+      unlimited: true
+- key: project
   value: open-webui
   descriptors:
   - key: kind

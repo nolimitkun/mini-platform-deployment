@@ -115,6 +115,10 @@
         "type": "string",
         "minLength": 1
       }
+    },
+    "deployments": {
+      "description": "May call the self-hosted model deployments directly, by KServe's path route /<namespace>/<name>/v1/... in the catalog's servingNamespaces, bypassing the catalog: the model onboarding pipeline evaluating and smoke-testing exactly what it deployed. Needs onprem among the placements. Default false.",
+      "type": "boolean"
     }
   }
 }

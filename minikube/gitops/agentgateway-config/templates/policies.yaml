@@ -44,11 +44,16 @@ spec:
         requestMetadata:
           agentgateway: '{"project": apiKey.project, "key_id": apiKey.key_id}'
 ---
-# /v1/models per project. The gateway answers it itself with every public
-# model; OPA's decision for that path sets x-allowed-models to the models the
-# project may use (policies/gateway/authz.rego), and this keeps only those, with
-# their metadata. Without the header (OPA from before this change) the list
-# is left whole: it is cosmetic, authorization still decides every call.
+# /v1/models per project. OPA's decision for that path sets x-allowed-models to
+# the models the project may use (policies/gateway/authz.rego), and this answers
+# with exactly those. It is built from the header alone, never from the upstream
+# body: a policy on the Gateway that reads response.body makes agentgateway
+# buffer every response on every route, whatever its condition, which turns
+# streamed completions into one block (no tokens until the last one). So the
+# entries carry ids only, with owned_by "virtual" for the auto names as the
+# gateway reports them. Without the header (OPA from before this change) the
+# gateway's own list goes out whole: it is cosmetic, authorization still
+# decides every call.
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
@@ -64,7 +69,7 @@ spec:
         - condition: 'request.path == "/v1/models" && "x-allowed-models" in request.headers'
           policy:
             response:
-              body: 'toJson({"object": "list", "data": json(response.body).data.filter(m, m.id in request.headers["x-allowed-models"].split(","))})'
+              body: 'toJson({"object": "list", "data": request.headers["x-allowed-models"].split(",").filter(m, m != "").map(m, {"id": m, "object": "model", "created": 0, "owned_by": m == "auto" || m.startsWith("auto-") ? "virtual" : "agentgateway"})})'
 {{- end }}
 ---
 apiVersion: agentgateway.dev/v1alpha1

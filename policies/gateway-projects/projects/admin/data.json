@@ -4,6 +4,7 @@
     "usd_per_30_days": 25
   },
   "data_class": "public",
+  "deployments": false,
   "keys": [
     "admin"
   ],

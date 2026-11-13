@@ -132,6 +132,10 @@ def load():
 
         routing = doc.get("routing", "cheapest")
 
+        deployments = doc.get("deployments", False)
+        if deployments and "onprem" not in placement:
+            errors.append(f"{rel(path)}: deployments: true needs onprem among its placements")
+
         projects[pid] = {
             "owner": doc["owner"],
             "data_class": doc["data_class"],
@@ -143,6 +147,7 @@ def load():
             "routing": routing,
             "limits": doc.get("limits", {}),
             "budget": doc.get("budget", {}),
+            "deployments": deployments,
         }
 
     if not projects:

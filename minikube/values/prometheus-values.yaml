@@ -44,14 +44,28 @@ extraScrapeConfigs: |
     metrics_path: /minio/v2/metrics/node
     static_configs:
       - targets: ["langfuse-s3:9000"]
-  - job_name: vllm-engine
+  # vLLM of the KServe releases (model onboarding pipeline), per pod: every
+  # replica of every release in the serving namespaces, on the main
+  # container's port. /metrics needs no key (vLLM's --api-key guards /v1).
+  - job_name: kserve-vllm
     metrics_path: /metrics
-    static_configs:
-      - targets: ["vllm-qwen-engine-service:80"]
-  - job_name: vllm-router
-    metrics_path: /metrics
-    static_configs:
-      - targets: ["vllm-router-service:80"]
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ["model-hprd", "model-prod"]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+        regex: llminferenceservice-workload
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_container_name, __meta_kubernetes_pod_container_port_number]
+        regex: main;8000
+        action: keep
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        target_label: release
   - job_name: trino
     metrics_path: /metrics
     static_configs:
@@ -97,9 +111,10 @@ extraScrapeConfigs: |
   #
   # honor_labels because the pod, namespace and container labels the exporter
   # attaches name the workload *holding* the GPU rather than the exporter — it
-  # reads them from the kubelet pod-resources socket, so today they say
-  # pod="vllm-qwen-deployment-vllm-...". That attribution is the point of
-  # scraping this at all: it is what joins DCGM_FI_* to vLLM's own series.
+  # reads them from the kubelet pod-resources socket, so today they name the
+  # KServe release's vLLM pod in model-prod or model-hprd. That attribution is
+  # the point of scraping this at all: it is what joins DCGM_FI_* to vLLM's own
+  # series (job kserve-vllm, same namespace and pod labels).
   # Without it Prometheus would push them aside as exported_pod and set pod to
   # the exporter's own name, which is the one pod nobody needs to ask about.
   - job_name: dcgm-exporter

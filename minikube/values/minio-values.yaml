@@ -63,8 +63,30 @@ metrics:
 # each scoped to the bucket; their secret keys come from Vault
 # (minio-resources.yaml). Setting `users` also drops the chart's default
 # console/console123 account from what the post-install job creates.
+#
+# Model weights and the model onboarding pipeline's buckets (model-serving
+# chart). `models` holds every self-hosted model's weights, one write-once
+# prefix per revision (models/<repo>/<revision>/), with object locking (and so
+# versioning) on: an overwrite or delete leaves the published version in
+# place. The pipeline publishes there after its scan; vLLM streams from it
+# read-only. The other three are the pipeline's own: Argo's artifact
+# repository and its results (argo-artifacts), its model registry's store
+# (model-store) and its model pages (model-onboarding).
 buckets:
   - name: opa-bundles
+    policy: none
+    purge: false
+  - name: models
+    policy: none
+    purge: false
+    objectlocking: true
+  - name: argo-artifacts
+    policy: none
+    purge: false
+  - name: model-store
+    policy: none
+    purge: false
+  - name: model-onboarding
     policy: none
     purge: false
 policies:
@@ -80,6 +102,23 @@ policies:
         actions: ["s3:GetObject"]
       - resources: ["arn:aws:s3:::opa-bundles"]
         actions: ["s3:GetBucketLocation", "s3:ListBucket"]
+  # The onboarding pipeline: publishes weights (write, never delete: a
+  # published revision is permanent), and reads and writes its own buckets.
+  - name: model-onboarding
+    statements:
+      - resources: ["arn:aws:s3:::models/*"]
+        actions: ["s3:GetObject", "s3:PutObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
+      - resources: ["arn:aws:s3:::argo-artifacts/*", "arn:aws:s3:::model-store/*", "arn:aws:s3:::model-onboarding/*"]
+        actions: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
+      - resources: ["arn:aws:s3:::models", "arn:aws:s3:::argo-artifacts", "arn:aws:s3:::model-store", "arn:aws:s3:::model-onboarding"]
+        actions: ["s3:GetBucketLocation", "s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:ListBucketVersions"]
+  # vLLM in the serving namespaces: read the weights, nothing else.
+  - name: models-read
+    statements:
+      - resources: ["arn:aws:s3:::models/*"]
+        actions: ["s3:GetObject"]
+      - resources: ["arn:aws:s3:::models"]
+        actions: ["s3:GetBucketLocation", "s3:ListBucket"]
 users:
   - accessKey: ocp
     existingSecret: opa-bundles-writer
@@ -89,3 +128,11 @@ users:
     existingSecret: opa-bundles-reader
     existingSecretKey: AWS_SECRET_ACCESS_KEY
     policy: opa-bundles-read
+  - accessKey: model-onboarding
+    existingSecret: minio-model-onboarding
+    existingSecretKey: secret-key
+    policy: model-onboarding
+  - accessKey: model-serving
+    existingSecret: minio-model-serving
+    existingSecretKey: AWS_SECRET_ACCESS_KEY
+    policy: models-read

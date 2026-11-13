@@ -92,9 +92,9 @@ here means rendering and schema-checking.
 
 ## Architecture
 
-Default AI request path: `Open WebUI → agentgateway → vLLM Router → vLLM`.
+Default AI request path: `Open WebUI → agentgateway → KServe InferencePool (EPP) → vLLM`.
 **agentgateway** is the platform's model and tool gateway (`docs/agentgateway.md`):
-one OpenAI-compatible endpoint for every model (vLLM, Gemini on Vertex AI over the
+one OpenAI-compatible endpoint for every model (self-hosted KServe releases, Gemini on Vertex AI over the
 mini-cloud VPN, DeepSeek), passthrough routes to Google's speech APIs, and one MCP
 endpoint over the cluster's MCP servers. Every request carries a per-project API key
 and is decided by **OPA** (ext_authz, FailClosed) from the Rego in `policies/gateway`
@@ -120,14 +120,20 @@ OPA holds each agent to its autonomy; `scripts/tools-drift.py` reports tools tha
 appeared, vanished or changed since they were classified. **agentregistry** is the catalog of
 MCP servers and agents; its entries live in `minikube/gitops/agentregistry-catalog`.
 
-An alternative **llm-d serving path** exists behind `enabled: false` app-of-apps
-toggles (`llm-d-scheduler` + `llm-d-modelserver`): the GAIE standalone endpoint
-picker with llm-d's prefix-cache/load-aware scorers in front of a vLLM decode
-deployment that mirrors the production-stack engine flags (entrypoint
-`llm-d-epp.mini-platform.svc:80`). The single GPU cannot host both inference
-paths at once — flip the llm-d toggles and the `vllm` overlay's `replicaCount`
-together, in one commit. Both decode paths share the HF-cache PVC
-(`vllm-qwen-storage-claim`), so swapping does not re-download weights.
+Self-hosted models are KServe `LLMInferenceService`s in `model-hprd` /
+`model-prod`, created by the model onboarding pipeline (separate repo,
+`model-onboarding-pipeline`); this repo's `model-serving` app owns their
+namespaces, Vault-fed credentials and the gateway policy that sends the vLLM key.
+A catalog entry with `provider: KServe` (`deployment: <ns>/<name>`,
+`servedModel`) routes a model name to a release's InferencePool; projects with
+`deployments: true` (the pipeline) may call `/<serving ns>/<name>/v1/...`
+directly. Weights live in MinIO bucket `models` (object-locked). A
+Gateway-wide AgentgatewayPolicy must never read `response.body`: agentgateway
+then buffers every response, streaming included.
+
+The production-stack `vllm` app and the **llm-d serving path**
+(`llm-d-scheduler` + `llm-d-modelserver`) are behind `enabled: false`; the single
+GPU holds one inference path at a time.
 
 Supporting subsystems: Vault + VSO (secrets), Ingress NGINX (`.test`
 hostnames), MLflow (experiments), Qdrant
@@ -293,7 +299,7 @@ Each entry maps a `chartPath` (under `charts/` in the charts repo, or
 | `-4` | Vault, VSO, kagent CRDs |
 | `-4` (also) | agentgateway CRDs |
 | `-3` | Stateful deps (postgres, redis, qdrant, spark-operator) |
-| `-2` | Keycloak, Langfuse, MLflow, Trino, vLLM |
+| `-2` | Keycloak, Langfuse, MLflow, Trino |
 | `-1` → `0` | MinIO, Prometheus, dcgm-exporter, Loki, Tempo, then Grafana, Alloy, JupyterHub, Superset, the agentgateway controller, OPA + OCP (`opa-policy`), agentregistry's PostgreSQL |
 | `1` → `2` | agentgateway's Gateway/models/policies (`agentgateway-config`) and agentregistry, then Open WebUI, kagent, HolmesGPT, oauth2-proxy and the agentregistry catalog |
 | `3` | Open WebUI Holmes Pipe, after Holmes and its API-key mapping are healthy |
@@ -383,9 +389,8 @@ defaults together. Any subset of the four values may be passed.
 Minikube + Argo CD + Vault bring-up (key flags: `--reset`, `--local-source`,
 `--no-gpu`, `--rotate-secrets`, `--charts-dir`). It uses the local charts
 checkout only to bootstrap Argo CD itself and, in `--local-source` mode, to
-serve **both** repos through an in-cluster git daemon. The default
-`minikube/values/vllm-values.yaml` requests an NVIDIA GPU — for CPU-only work,
-edit that overlay or pass `--no-gpu`. `scripts/port-forward-services.sh` exposes
+serve **both** repos through an in-cluster git daemon. The self-hosted models (KServe releases)
+need an NVIDIA GPU — for CPU-only work pass `--no-gpu`. `scripts/port-forward-services.sh` exposes
 services on the Minikube host (`--mode lan` for LAN access).
 
 The README is the authoritative deployment/operations reference and includes the

@@ -19,14 +19,30 @@
 #   gcp       Google, over the VPN and PSC (mini-cloud)
 #   external  a third-party API over the internet
 
+# placement onprem also covers the KServe releases below (provider KServe).
+#
+# Where self-hosted models are served: KServe LLMInferenceServices that the
+# model onboarding pipeline deploys (minikube/gitops/model-serving), its
+# candidates and tuning trials in model-hprd, its releases in model-prod. Routes
+# from these namespaces may attach to the gateway. Each deployment is reachable
+# by KServe's own path route, /<namespace>/<name>/v1/..., which only projects
+# with `deployments: true` may call (the pipeline, to evaluate and smoke-test
+# exactly what it deployed); clients use a release by its name below.
+servingNamespaces:
+  - model-hprd
+  - model-prod
+
 # Chat and embedding models. Clients send the key as `model` to the
 # OpenAI-compatible endpoint /v1/chat/completions; one AgentgatewayModel each.
 models:
-  # vLLM on the local GPU (vllm-values.yaml).
+  # On the local GPU: the model onboarding pipeline's release in model-prod
+  # (KServe LLMInferenceService, weights from MinIO). A new release is a new
+  # deployment / servedModel here; clients keep calling qwen3.6-27b.
   qwen3.6-27b:
     placement: onprem
-    provider: OpenAI
-    baseURL: http://vllm-router-service.mini-platform.svc.cluster.local/v1
+    provider: KServe
+    deployment: model-prod/unsloth-qwen3-6-27b-nvfp4-ccdaab7e-e8eb38
+    servedModel: unsloth/Qwen3.6-27B-NVFP4@ccdaab7e68af2409599b8949a8f2685703c9bae5
     price: {input: 0, output: 0}
 
   # Hosted, over the internet. The key comes from Vault (agentgateway-deepseek).

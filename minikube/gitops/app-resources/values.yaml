@@ -97,7 +97,9 @@ vault:
 vaultSecrets: []
 
 # Secrets a workload can only consume from its own namespace, i.e. one outside
-# the application's destination namespace.
+# the application's destination namespace: {name, namespace, path?, labels?}.
+# `path` is the Vault path when it differs from the Secret's name, so the same
+# credential can land under the name each consumer expects.
 #
 # VSO resolves `vaultAuthRef` within the VaultStaticSecret's own namespace, so
 # each namespace named here also gets a `vault-auth` ServiceAccount and a

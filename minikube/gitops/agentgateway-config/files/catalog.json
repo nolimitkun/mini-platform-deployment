@@ -2,8 +2,9 @@
   "models": [
     {
       "name": "qwen3.6-27b",
-      "provider": "OpenAI",
-      "baseURL": "http://vllm-router-service.mini-platform.svc.cluster.local/v1"
+      "provider": "KServe",
+      "deployment": "model-prod/unsloth-qwen3-6-27b-nvfp4-ccdaab7e-e8eb38",
+      "servedModel": "unsloth/Qwen3.6-27B-NVFP4@ccdaab7e68af2409599b8949a8f2685703c9bae5"
     },
     {
       "name": "deepseek-v4-pro",
@@ -53,5 +54,9 @@
     "code",
     "general",
     "reasoning"
+  ],
+  "servingNamespaces": [
+    "model-hprd",
+    "model-prod"
   ]
 }
