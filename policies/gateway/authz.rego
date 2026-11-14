@@ -1,7 +1,8 @@
 # Gateway authorization for agentgateway, evaluated by OPA through Envoy's
-# ext_authz protocol. The policy build (opa-policy chart, a CronJob) tests this
-# directory, builds it into a signed bundle and publishes it to MinIO, where the
-# OPA next to the gateway picks it up and verifies its signature.
+# ext_authz protocol. The project registry tests each new commit of this
+# directory, builds it into a signed bundle and, once the policy change is
+# approved, publishes it to MinIO, where the OPA next to the gateway picks it
+# up and verifies its signature.
 #
 # Every API key belongs to a project (projects/*.yaml, generated into
 # data.projects by scripts/gen-projects.py). A project has a data class, which

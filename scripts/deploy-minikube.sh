@@ -1037,8 +1037,8 @@ vault_exec write auth/kubernetes/role/mini-platform \
   policies=mini-platform-read \
   ttl=1h >/dev/null
 # Bundle signing (docs/project-registry.md "Two signed bundles, no OCP"): an RSA
-# key in Transit, never exported. The policy build and the project registry may
-# only sign with it (role bundle-signer); OPA verifies with its public key,
+# key in Transit, never exported. The project registry, which publishes both
+# bundles, may only sign with it (role bundle-signer); OPA verifies with its public key,
 # published to KV for VSO (opa-policy-resources.yaml).
 if ! vault_exec secrets list -format=json | jq -e 'has("transit/")' >/dev/null; then
   vault_exec secrets enable transit >/dev/null
@@ -1055,7 +1055,7 @@ path "transit/sign/opa-bundles" {
 }
 EOF
 vault_exec write auth/kubernetes/role/bundle-signer \
-  bound_service_account_names=policy-builder,project-registry \
+  bound_service_account_names=project-registry \
   bound_service_account_namespaces="$NS" \
   policies=bundle-signer \
   ttl=15m >/dev/null

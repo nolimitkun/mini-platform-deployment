@@ -58,8 +58,7 @@ metrics:
     enabled: false
 
 
-# OPA policy bundles: the policy build (opa-policy chart) and the project
-# registry's publisher write them here, signed, and the OPA beside agentgateway
+# OPA policy bundles: the project registry's publisher writes both here, signed, and the OPA beside agentgateway
 # downloads and verifies them. One write account and one read account,
 # each scoped to the bucket; their secret keys come from Vault
 # (minio-resources.yaml). Setting `users` also drops the chart's default

@@ -1,6 +1,6 @@
 # The registry API, the publisher and the one-off import, all one image
 # (github.com/nolimitkun/project-registry). Design: docs/project-registry.md.
-image: ghcr.io/nolimitkun/project-registry:sha-90306e0078470a26f9942163255ae5c935879592
+image: ghcr.io/nolimitkun/project-registry:sha-42fde4af0766f7dafdf5b58ac7912d80e0a8fdca
 
 # DATABASE_URL, from Vault (project-registry-db), for project-registry-postgresql.
 databaseSecret: project-registry-db
@@ -9,7 +9,20 @@ databaseSecret: project-registry-db
 # the catalog at the commit of the active policy bundle. Public, no credentials.
 deployRepo: https://github.com/nolimitkun/mini-platform-deployment.git
 
-# The bundle store and signing, as the policy build (opa-policy values.yaml).
+# The policy the publisher follows: every new commit of this branch becomes a
+# policy change request (kind policy), tested, built, signed and replayed, and
+# OPA loads it once it is approved (docs/project-registry.md "Policy changes").
+# The repository is deployRepo: the records render with gen-projects.py at the
+# policy's commit. A branch name, not a commit. To try a branch on the cluster,
+# set it here for the test, and back to main before the merge.
+policy:
+  ref: main
+  dir: policies/gateway
+  testDirs: policies/gateway,policies/gateway-projects
+  # how often the branch is checked (seconds)
+  poll: "60"
+
+# The bundle store and signing (OPA's side: opa-policy values.yaml).
 bundles:
   policy: gateway-policy
   projects: gateway-projects

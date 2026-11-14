@@ -102,6 +102,11 @@ spec:
             - {name: REPLAY_SINCE, value: {{ .Values.replay.since | quote }}}
             - {name: REPLAY_LIMIT, value: {{ .Values.replay.limit | quote }}}
             - {name: MIN_INTERVAL, value: {{ .Values.publishInterval | quote }}}
+            - {name: OPA_URL, value: {{ .Values.opaUrl | quote }}}
+            - {name: POLICY_REF, value: {{ .Values.policy.ref | quote }}}
+            - {name: POLICY_DIR, value: {{ .Values.policy.dir | quote }}}
+            - {name: POLICY_TEST_DIRS, value: {{ .Values.policy.testDirs | quote }}}
+            - {name: POLICY_POLL, value: {{ .Values.policy.poll | quote }}}
           resources:
             requests: {cpu: 50m, memory: 128Mi}
             limits: {memory: 1Gi}

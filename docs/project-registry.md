@@ -289,7 +289,9 @@ Keycloak account of the realm. The portal shows:
   request a new project;
 - every change request with its diff, its approvals and the replay report,
   with approve, reject and withdraw;
-- the published bundles, with rollback for the platform team.
+- policy changes: each new commit on `main` of `policies/gateway`, with its
+  subject, a link to the diff on GitHub and its replay report;
+- the published bundles of both kinds, with rollback for the platform team.
 
 It logs in with the authorization code flow and PKCE through the public client
 `project-registry`, and calls the API with that token.
@@ -366,20 +368,20 @@ builders and OPA move to a new key in a single change, and the active bundles
 are signed again for the new key:
 
 1. Create the new version in Vault: `vault write -f transit/keys/opa-bundles/rotate`.
-   The builders keep signing with the pinned version (`keyVersion`), so nothing
-   changes yet.
+   The publisher keeps signing with the pinned version (`keyVersion`), so
+   nothing changes yet.
 2. Publish the new version's public key in a field of its own, next to the old
    one, for example version 2:
    `vault kv patch mini-platform/opa-bundle-signing public_key_v2="$(vault read -format=json transit/keys/opa-bundles | jq -r '.data.keys["2"].public_key')"`.
    Nothing reads it yet: an OPA pod that restarts now still gets version 1's
    key from `public_key`.
-3. In one commit, set `signing.keyVersion: 2` and `signing.keyid: opa-bundles-v2` in
-   both `opa-policy` and `project-registry` values, and
-   `signing.publicKeyField: public_key_v2` in `opa-policy`, and merge it.
+3. In one commit, set `signing.keyVersion: 2` and `signing.keyid: opa-bundles-v2`
+   in the `project-registry` values, and `signing.keyid: opa-bundles-v2` and
+   `signing.publicKeyField: public_key_v2` in the `opa-policy` values, and merge it.
 4. The rest is automatic:
-   - **Builders:** the policy build and the publisher see that the active bundles
-     are signed with another key and sign them again (the same commit, the same
-     records, in a new data revision).
+   - **Publisher:** it sees that the active bundles are signed with another key
+     and signs them again: the same commit, and the same records in a new data
+     revision. No approval, since the content is unchanged.
    - **New OPA pods** start with the new key and become ready once the re-signed
      bundles are there.
    - **Old OPA pods** keep the bundles they have loaded and refuse the re-signed
@@ -483,10 +485,32 @@ week of shadow running:
   marks the changes `failed` with the reason. A change is `active` once every
   ready OPA pod has reported its revision (`registry/activation.py`, checked on
   every report and every round of the publisher).
-- **The policy build** (`registry/policybuild.py`): a CronJob that, when `main`
-  moves, runs `opa test`, then builds, signs and activates `gateway-policy`.
-  It replaces OPA Control Plane, which is removed.
-- **Signing**: one RSA key in Vault Transit, not exportable. The builders'
+- **Policy changes** (`registry/policy.py`, in the publisher): every minute it
+  checks `main` (`policy.ref`). For a new commit it:
+  1. runs `opa test`;
+  2. builds and signs `gateway-policy`, but doesn't activate it;
+  3. renders the records with that commit's `gen-projects.py`;
+  4. replays recent decisions under the active bundles and the new ones;
+  5. files a change request of kind `policy`.
+
+  It is approved like any change; `portal.rego` asks for the platform team and
+  security. Then the publisher activates the records rendered at that commit
+  (if they differ), and then the policy. It is `active` once every ready OPA
+  pod reports the commit. A rollback moves one bundle, so it is refused
+  when the records would not render the same at the target commit (a data
+  format change in between); a revert commit then republishes both. Each OPA
+  loads the two bundles on its own, so a commit that changes the data format
+  is replayed under both mixed pairs too (old policy with new data, new policy
+  with old data); if either decides a request differently from both the old
+  and the new pair, the commit is filed as `failed`. Such a change is staged:
+  first a policy that reads both formats, then the format change. If either
+  bundle is published while the change waits, it is checked again before it
+  goes live: an unsafe result fails it, and an outcome the approvers didn't see
+  sends it back to them.
+
+  This replaces the first round's policy build, a CronJob that activated every
+  commit on `main` within a minute. OPA Control Plane is removed too.
+- **Signing**: one RSA key in Vault Transit, not exportable. The publisher's
   Vault role (`bundle-signer`) can only sign. `opa build` computes the file
   hashes with a throwaway key, and the token is then re-signed through Transit
   (`registry/bundles.py`). OPA verifies both bundles.
@@ -505,21 +529,25 @@ week of shadow running:
   - proposing a change or a new project;
   - change requests with their diff, approvals and replay report, and the
     buttons to act on them;
-  - publications, with rollback.
+  - publications of both bundles, with rollback.
 - **The budget metric** `project_budget_usd` and one budget alert rule for all
   projects.
 - **The export to Git**: `scripts/registry-export.py`, by hand or daily by the
   CronJob `project-registry-git-export`, as one pull request.
-- **Key rotation**: pinned Transit key versions; the builders re-sign the
+- **Key rotation**: a pinned Transit key version; the publisher re-signs the
   active bundles for a new key. Done on the cluster, version 1 to 2 (see
   "Rotating the signing key").
 
 ### Where it differs from this design
 
-- **CI is a CronJob in the cluster.** GitHub Actions can't reach this cluster's
-  Vault or MinIO. It isn't an Argo CD PostSync hook either: a commit that only
-  changes `policies/` renders no different manifests, so Argo CD never syncs
-  and the hook never runs.
+- **The registry publishes the policy too, after an approval.** The design has
+  CI build and publish `gateway-policy` on merge. Here the registry's publisher
+  does it, because GitHub Actions can't reach this cluster's Vault or MinIO.
+  A merge to `main` alone no longer changes what OPA loads: the commit becomes
+  a change request, with its replay attached, and waits for the platform team
+  and security. Both bundles thus go through one path: one state machine, one
+  audit log, activation tracking and rollback. GitHub's CI still runs
+  `opa test` and the other checks on the pull request.
 - **The replay compares the active and the candidate data bundle.** Both are
   evaluated against the logged inputs, under the active policy. Comparing with
   the logged verdicts, as first written, would blame a project change for
@@ -534,9 +562,10 @@ week of shadow running:
   (`portal.may_submit`), as is who approves.
 - **Callers still use API keys.** The OAuth clients, and the check that a JWT
   call and an API key call get the same decision, are the next round.
-- **The policy build doesn't replay.** The design's CI attaches a replay of the
-  policy change to the pull request. The in-cluster build runs `opa test` only;
-  run `scripts/policy-replay.py` before merging.
+- **The policy replay comes after the merge.** The design's CI attaches it to
+  the pull request; here it is on the policy change request in the registry,
+  before the approval. Before merging, `scripts/policy-replay.py` gives the same
+  answer from a checkout.
 - **Store layout.** No `latest` pointer: each build is kept under
   `<bundle>/revisions/<revision>/`, and activating one copies it to
   `<bundle>/bundle.tar.gz` (what OPA pulls) and records it in
@@ -551,7 +580,8 @@ week of shadow running:
 | Replay | 1,800–1,860 logged decisions replayed per publish; 0 changed for other projects |
 | Bad signature | A `gateway-projects` bundle with `admin` edited to 1/min, uploaded straight to MinIO: OPA refuses it (`data.json: digest mismatch`) and keeps the signed one; `admin` keeps its real limit |
 | Registry down | API and publisher at 0 pods: the gateway keeps serving models and chat, and OPA's status reports fail quietly |
-| Policy build | A failing `opa test` publishes nothing (tested in the repo); on the cluster the first build replaced OCP's unsigned bundle, which OPA refused for its missing signature |
+| Policy build (first round) | A failing `opa test` publishes nothing (tested in the repo); on the cluster the first build replaced OCP's unsigned bundle, which OPA refused for its missing signature |
+| Policy changes through the registry | On deploy the registry adopted the active policy commit, then filed the branch's head as a policy change: 1,326 decisions replayed, 0 changed. A newer commit superseded it (`withdrawn`, "superseded by …"). After the approval the change was active everywhere in 15 s, without republishing the unchanged records; the gateway kept answering 200. Rollback to the previous commit and forward again worked through the API; security may not roll back (403). A change approved under the new `portal.rego` needed the platform team and security |
 | Key rotation (v1 → v2) | A gateway call every second throughout: 101 of 101 answered. The new OPA pod became ready once both builders had re-signed (about 50 s) |
 | Submit rights, withdraw | Security and the cost owner can't propose changes to a project (403); a change nobody could approve was withdrawn by its author |
 | Portal login | Authorization code with PKCE, run by script through the ingress: a token the registry accepts, CORS allowed for `registry.test`, refresh works; a wrong verifier is refused |
