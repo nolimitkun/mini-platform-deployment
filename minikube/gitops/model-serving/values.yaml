@@ -3,7 +3,7 @@
 # its candidates and tuning trials in the HPRD namespace, releases in prod.
 # Weights are read from MinIO (bucket models, minio-values.yaml), streamed by
 # vLLM straight from S3. Clients reach a release through the gateway by its
-# catalog name (catalog/models.yaml, provider KServe); the pipeline reaches
+# catalog name (its model record in the project registry, provider KServe); the pipeline reaches
 # every deployment through the gateway too, by KServe's own path route
 # /<namespace>/<name>/v1/..., which only projects with `deployments: true`
 # may use (policies/gateway).
