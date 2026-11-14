@@ -7,14 +7,6 @@ chartsRepo: https://github.com/nolimitkun/mini-platform.git
 chartsRevision: main
 deployRepo: https://github.com/nolimitkun/mini-platform-deployment.git
 deployRevision: main
-# The gateway policy (nolimitkun/gateway-policy): the Rego, which the project
-# registry publishes to OPA after an approval, and the model catalog. An
-# application lists the generated values files it takes from there
-# (policyValueFiles), at this commit: a new model's routes appear when this pin
-# moves, after its placement is approved there. CI checks this repo's wiring
-# against the policy at this commit (scripts/validate-gitops.sh).
-policyRepo: https://github.com/nolimitkun/gateway-policy.git
-policyRevision: 625a7bb516e46aa1f9c3e8f7a0828664935545cc
 
 argoNamespace: argocd
 destination:
@@ -363,11 +355,22 @@ applications:
     resourcesFile: minikube/values/model-serving-resources.yaml
     releaseName: model-serving
     wave: "0"
+  # The gateway's model routes: one AgentgatewayModel per model, the auto models
+  # and the Google API routes, from the approved policy's catalog. The project
+  # registry publishes the chart (gateway-policy's charts/gateway-models) to its
+  # Helm repository in MinIO; this follows the newest version.
+  gateway-models:
+    helmRepo: http://minio.mini-platform.svc.cluster.local:9000/gateway-models
+    chart: gateway-models
+    chartVersion: "*"
+    valuesFile: minikube/values/gateway-models-values.yaml
+    releaseName: gateway-models
+    # Before agentgateway-config, which had these objects until 2026-11-14 (an
+    # existing cluster upgrades as README "Upgrading to gateway-models" says).
+    wave: "0"
   agentgateway-config:
     chartPath: minikube/gitops/agentgateway-config
     valuesFile: minikube/gitops/agentgateway-config/values.yaml
-    # the models, Google APIs and task classes (catalog/models.yaml there)
-    policyValueFiles: [generated/agentgateway-catalog.yaml]
     resourcesFile: minikube/values/agentgateway-resources.yaml
     releaseName: agentgateway-config
     wave: "1"

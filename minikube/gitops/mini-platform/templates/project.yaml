@@ -12,7 +12,11 @@ spec:
   sourceRepos:
     - {{ $chartsRepo | quote }}
     - {{ $deployRepo | quote }}
-    - {{ .Values.policyRepo | quote }}
+{{- range .Values.applications }}
+{{- with .helmRepo }}
+    - {{ . | quote }}
+{{- end }}
+{{- end }}
   destinations:
     - namespace: {{ .Values.destination.namespace }}
       server: {{ .Values.destination.server }}

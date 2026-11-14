@@ -76,6 +76,13 @@ buckets:
   - name: opa-bundles
     policy: none
     purge: false
+  # The project registry's Helm repository of the gateway's model routes, which
+  # Argo CD reads (gateway-models application): anonymous download, as Argo CD's
+  # Helm repositories don't sign S3 requests. Model names, in-cluster backends
+  # and secret names, no secret.
+  - name: gateway-models
+    policy: download
+    purge: false
   - name: models
     policy: none
     purge: false
@@ -92,9 +99,9 @@ buckets:
 policies:
   - name: opa-bundles-write
     statements:
-      - resources: ["arn:aws:s3:::opa-bundles/*"]
+      - resources: ["arn:aws:s3:::opa-bundles/*", "arn:aws:s3:::gateway-models/*"]
         actions: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
-      - resources: ["arn:aws:s3:::opa-bundles"]
+      - resources: ["arn:aws:s3:::opa-bundles", "arn:aws:s3:::gateway-models"]
         actions: ["s3:GetBucketLocation", "s3:ListBucket", "s3:ListBucketMultipartUploads"]
   - name: opa-bundles-read
     statements:

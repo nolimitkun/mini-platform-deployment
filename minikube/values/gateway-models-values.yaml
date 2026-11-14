@@ -1,0 +1,30 @@
+# The gateway's model routes (the gateway-models application): a chart the project
+# registry publishes to its Helm repository in MinIO (bucket gateway-models) once
+# a policy change is approved, with the catalog as its values (the gateway policy's
+# charts/gateway-models, nolimitkun/gateway-policy). These are the gateway's own
+# settings it needs; the models come with the chart.
+gatewayName: agentgateway-proxy
+
+# Vertex AI models: the project the gateway calls Vertex in (agentgateway-config
+# gcp.project).
+gcp:
+  project: mini-cloud-499820
+
+# Releases of the model onboarding pipeline (catalog provider KServe): the
+# Secret, in each serving namespace, with the vLLM key the gateway sends
+# (model-serving chart, servingKeySecret).
+kserve:
+  servingKeySecret: model-serving-key
+
+# Model "auto" and "auto-<task>": virtual models that ask OPA's REST API which
+# model the caller's project gets (the policy's select.rego).
+auto:
+  enabled: true
+  opaService: opa
+  opaPort: 8181
+  # Per-project cache of OPA's answer, e.g. 1m. Off by default: a cache hit
+  # skips OPA, so after a policy change removes the cached model the gateway
+  # would keep routing to it until the entry expires, and ext_authz only ever
+  # sees "auto", not the model behind it. Uncached, the callout adds about a
+  # millisecond.
+  cacheTTL: ""

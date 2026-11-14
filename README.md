@@ -112,8 +112,8 @@ Every browser-facing service authenticates against Keycloak — see
 | `scripts/port-forward-services.sh` | Host-local or LAN port forwards for browser services |
 | `scripts/check-local-deployment.sh` | Verifies local Argo CD sync/health, pod readiness, secret sync, and optional Open WebUI smoke test |
 | `scripts/set-repo.sh` | Repoints the charts/deploy repo URLs and revisions in one command |
-| `scripts/validate-gitops.sh` | Lints/renders the GitOps charts, shellchecks the scripts, checks this repo's wiring against the gateway policy at `policyRevision`, and runs `promtool`; run in CI too |
-| `scripts/policy-checkout.sh` | Fetches the gateway policy ([nolimitkun/gateway-policy](https://github.com/nolimitkun/gateway-policy)) at the pinned `policyRevision` |
+| `scripts/validate-gitops.sh` | Lints/renders the GitOps charts (and the gateway policy's `gateway-models` chart with this repo's values), shellchecks the scripts, checks this repo's wiring against the policy, and runs `promtool`; run in CI too |
+| `scripts/policy-checkout.sh` | Fetches the gateway policy ([nolimitkun/gateway-policy](https://github.com/nolimitkun/gateway-policy)) at the head of `main` |
 | `scripts/check-policy-wiring.py` | Checks the gateway's MCP targets and the semantic router's decisions against the policy's catalog |
 | `tools/` | Optional utility workloads (e.g. network diagnostics) |
 
@@ -216,7 +216,7 @@ Useful flags:
 | Flag | Effect |
 | --- | --- |
 | `--reset` | Delete and recreate the profile first (backs up any existing Vault init JSON) |
-| `--local-source` | Serve the committed checkouts (charts, deploy, and the gateway policy at `--policy-dir`) through a cluster-only Git service instead of a remote |
+| `--local-source` | Serve both committed checkouts (charts + deploy) through a cluster-only Git service instead of a remote |
 | `--no-gpu` | Start without GPU passthrough (use only with a CPU-capable vLLM overlay, and set `dcgm-exporter`'s `enabled: false` in the app-of-apps values — it exits on a GPU-less node and would stall wave `-1`) |
 | `--rotate-secrets` | Rewrite Vault credentials on an already-initialized Vault |
 | `--skip-image-preload` | Skip loading host-cached images into Minikube |
@@ -241,22 +241,36 @@ honouring the old key while the lookup below hands out the new one.
 
 **Deploying from a local checkout.** When the repos live only on the Minikube
 host, or are private and Argo CD has no credential, use `--local-source`. Both
-the deployment repo and the sibling charts checkout must have a clean tree, and
-the sibling gateway policy checkout (`--policy-dir`, default `../gateway-policy`)
-must contain the commit pinned at `policyRevision`:
+the deployment repo and the sibling charts checkout must have a clean tree:
 
 ```bash
 git -C . status --short                       # this deploy repo — must be clean
 git -C ../mini-platform status --short        # charts repo — must be clean
-git -C ../gateway-policy fetch                # has the pinned policyRevision
 ./scripts/deploy-minikube.sh --reset --local-source
 ```
 
 This creates a persistent, cluster-internal `gitops-source/git-source` service
-that serves the three repos and pins Argo CD to the deploy and charts repos'
-current commits and the policy's pinned one. Re-run it after committing later
-changes to refresh the source. (The project registry still follows the gateway
-policy's `main` on GitHub: it files new commits as policy changes.)
+that serves both repos and pins Argo CD to their current commits. Re-run it
+after committing later changes to refresh the source. (The gateway's model
+routes come from the project registry's Helm repository in MinIO, and the
+registry follows the gateway policy's `main` on GitHub.)
+
+**Upgrading to gateway-models (a cluster deployed before 2026-11-14).** The model,
+`auto` and Google API routes moved from `agentgateway-config` to the `gateway-models`
+application. Argo CD doesn't wait for one child application before the next, so
+`agentgateway-config` could prune them before `gateway-models` adopts them. Upgrade in
+this order:
+
+1. Turn off auto-sync of `mini-platform-agentgateway-config` (Argo CD UI, or
+   `kubectl -n argocd patch app mini-platform-agentgateway-config --type json -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]'`).
+2. Make sure the project registry has published a chart: the bucket `gateway-models`
+   has an `index.yaml` once a policy commit with `charts/gateway-models` is active.
+3. Sync the root app at the new commit, and wait until `mini-platform-gateway-models`
+   is Synced (it adopts the existing objects; they are not recreated).
+4. Sync the root app again: it restores `agentgateway-config`'s auto-sync, which now
+   prunes nothing of the routes.
+
+A new cluster needs none of this.
 
 **Rootless Docker on Linux.** If Minikube uses rootless Docker on a remote host,
 ensure the user's Docker service keeps running without an active login (user
@@ -1140,10 +1154,11 @@ also:
 - lints and renders the app-of-apps and the shared app-resources chart, and runs
   `kubeconform` over the rendered manifests;
 - `shellcheck`s the scripts;
-- fetches the gateway policy at `policyRevision`, renders `agentgateway-config`
-  with its catalog, checks the MCP targets and the semantic router's decisions
-  against it, and renders the project registry's seed with its renderer (and
-  the kagent agents' wiring); the Rego's tests run in gateway-policy's own CI;
+- fetches the gateway policy's `main`, renders its `gateway-models` chart with
+  this repo's values and `agentgateway-config`, checks the MCP targets, serving
+  namespaces and the semantic router's decisions against its catalog, and
+  renders the project registry's seed with its renderer (and the kagent agents'
+  wiring); the Rego's tests run in gateway-policy's own CI;
 - runs `promtool` on Prometheus's config and the alert rules.
 
 `kubeconform`, `shellcheck` and `promtool` are used if installed and
