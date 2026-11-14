@@ -1,8 +1,9 @@
 apiVersion: v2
 name: opa-policy
 description: >-
-  The OPA-Envoy authorizer agentgateway asks, and the policy build: a CronJob
-  that tests, builds and signs the Rego bundle from Git (it replaced OPA
-  Control Plane). OPA verifies the signature of every bundle it loads.
+  The OPA-Envoy authorizer agentgateway asks. It loads two signed bundles from
+  MinIO, both published by the project registry: the Rego from Git, once a
+  policy change is approved, and the project data. OPA verifies the signature
+  of every bundle it loads.
 type: application
-version: 0.2.0
+version: 0.3.0

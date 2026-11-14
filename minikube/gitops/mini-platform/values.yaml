@@ -285,11 +285,10 @@ applications:
     valuesFile: minikube/values/agentgateway-values.yaml
     releaseName: agentgateway
     wave: "0"
-  # The policy build (a CronJob) tests, builds and signs the Rego in
-  # policies/gateway into a bundle in MinIO (wave -1, which also creates the
-  # bucket and both accounts); OPA verifies and serves it, with the project
-  # registry's gateway-projects bundle, to the gateway. Before the gateway
-  # config, which fails closed without OPA.
+  # OPA, which verifies and serves the project registry's two signed bundles
+  # from MinIO (the Rego from Git and the project data) to the gateway. Wave
+  # -1, with MinIO (the bucket and both accounts), before the gateway config,
+  # which fails closed without OPA.
   opa-policy:
     chartPath: minikube/gitops/opa-policy
     valuesFile: minikube/gitops/opa-policy/values.yaml

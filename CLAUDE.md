@@ -99,14 +99,17 @@ mini-cloud VPN, DeepSeek), passthrough routes to Google's speech APIs, and one M
 endpoint over the cluster's MCP servers. Every request carries a per-project API key
 and is decided by **OPA** (ext_authz, FailClosed) from the Rego in `policies/gateway`
 and the per-project data, two bundles in MinIO with disjoint `.manifest` roots, both
-signed with a Vault Transit key that never leaves Vault (OPA verifies them): the
-**policy build** (`opa-policy`, a CronJob running the `project-registry` image) runs
-`opa test` and builds and signs `gateway-policy` when `main` moves — so a policy change
-goes live on merge, without an Argo CD sync, and must pass `opa test` and the two-bundle
-load (run by `validate-gitops.sh`); the **project registry** (`project-registry`, code in
-`nolimitkun/project-registry`, docs/project-registry.md) holds the projects, agents and
-exceptions as change requests with policy-decided approvals (`policies/gateway/portal.rego`)
-and publishes `gateway-projects` after replaying recent decisions. OPA Control Plane was
+signed with a Vault Transit key that never leaves Vault (OPA verifies them). The
+**project registry** (`project-registry`, code in `nolimitkun/project-registry`,
+docs/project-registry.md) publishes both, every change after policy-decided approvals
+(`policies/gateway/portal.rego`): it holds the projects, agents and exceptions as change
+requests and publishes `gateway-projects` after replaying recent decisions; and it files
+every new commit on `main` as a **policy change** (it runs `opa test`, builds and signs
+`gateway-policy`, replays), which goes live, without an Argo CD sync, only once the
+platform team and security approve it in the portal. So a Rego change must pass `opa test`
+and the two-bundle load (run by `validate-gitops.sh`) to merge, and an approval to reach
+OPA; to try a branch on the cluster, point `policy.ref` in the project-registry values at
+it for the test. OPA Control Plane was
 removed. Each project's rate limits travel with OPA's allow decision (dynamic metadata →
 `limitOverride`); the rate-limit config lists no project. `scripts/policy-replay.py` replays recent decisions
 from Loki against a change. Models and Google APIs are declared
@@ -323,7 +326,7 @@ Each entry maps a `chartPath` (under `charts/` in the charts repo, or
 | `-4` (also) | agentgateway CRDs, Gateway API CRDs, cert-manager, KServe's CRDs |
 | `-3` | Stateful deps (postgres, redis, qdrant, spark-operator), LWS, KServe's controller (`kserve-llmisvc-resources`) |
 | `-2` | Keycloak, Langfuse, MLflow, Trino, KServe's presets (`kserve-runtime-configs`) |
-| `-1` → `0` | MinIO, Prometheus, dcgm-exporter, Loki, Tempo, Langfuse's project jobs, then Grafana, Alloy, JupyterHub, Superset, the agentgateway controller, OPA and the policy build (`opa-policy`), the model serving namespaces (`model-serving`), the PostgreSQL of agentregistry and of the project registry |
+| `-1` → `0` | MinIO, Prometheus, dcgm-exporter, Loki, Tempo, Langfuse's project jobs, then Grafana, Alloy, JupyterHub, Superset, the agentgateway controller and OPA (`opa-policy`), the model serving namespaces (`model-serving`), the PostgreSQL of agentregistry and of the project registry |
 | `1` → `2` | agentgateway's Gateway/models/policies (`agentgateway-config`), the rate-limit service, the semantic router, the project registry and agentregistry, then Open WebUI, kagent, HolmesGPT, oauth2-proxy and the agentregistry catalog |
 | `3` | Open WebUI Holmes Pipe, after Holmes and its API-key mapping are healthy |
 

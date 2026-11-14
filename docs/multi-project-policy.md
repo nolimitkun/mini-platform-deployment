@@ -7,8 +7,8 @@ rotating a key, changing a limit), use [agentgateway.md](agentgateway.md).
 
 > **Since the phase 2 proof of concept** ([project-registry.md](project-registry.md)),
 > three things below describe how it was, not how it is: OPA Control Plane no
-> longer builds the bundles (a policy build signs `gateway-policy`, the project
-> registry's publisher signs `gateway-projects`); project data comes from the
+> longer builds the bundles (the project registry's publisher builds and signs
+> both, each change after an approval); project data comes from the
 > registry, not from `projects/*.yaml`; and the rate-limit config no longer
 > lists projects, because each project's limits travel with OPA's decision.
 > The table "How long changes take" has the current delays.
@@ -275,7 +275,7 @@ the project sets no limit.
 | Change | Path | Delay |
 |--------|------|-------|
 | Project change | registry change approved → publisher (batches every 30 s, renders, replays, signs) → OPA poll (10–30 s) | under 1 min (measured: active everywhere 9 s after approval) |
-| Catalog or Rego change | merge → policy build (every minute: opa test, build, sign) → OPA poll (10–30 s) | 1–2 min |
+| Catalog or Rego change | merge → the registry files a policy change within a minute (opa test, build, sign, replay) → approval → publisher → OPA poll (10–30 s) | the approval, plus under 1 min |
 | Revoke a key | drop its id from the project in the registry | the same as a project change |
 | Remove a key from Vault | bootstrap → VSO refresh → gateway reload | VSO interval (1 min) |
 | New model routes or `auto` models | merge → Argo CD sync of `agentgateway-config` | sync |

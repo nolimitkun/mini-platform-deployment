@@ -13,7 +13,7 @@ data:
             environment_credentials: {}
       registry:
         url: {{ $v.opa.statusUrl }}
-    # The bundles' signing key (Vault Transit, policy build and project registry).
+    # The bundles' signing key (Vault Transit; the project registry signs both).
     # The public key itself is set from a file at start (opa.yaml --set-file).
     keys:
       {{ $v.signing.keyid }}:

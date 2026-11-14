@@ -55,6 +55,10 @@ test_every_change_has_an_approver if {
 	}
 }
 
+test_a_policy_change_needs_platform_and_security_not_an_owner if {
+	roles("policy", "update", {"commit": "a"}, {"commit": "b", "subject": "x"}) == {"platform", "security"}
+}
+
 may(kind, op, groups, owner) := r if {
 	r := portal.may_submit with input as {
 		"change": {"kind": kind, "object_id": "p", "op": op, "before": null, "after": {}},

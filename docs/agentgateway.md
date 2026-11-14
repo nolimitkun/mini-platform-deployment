@@ -3,9 +3,10 @@
 Every model call and every shared MCP tool call on the platform goes through one
 gateway, [agentgateway](https://agentgateway.dev). Before routing a request, the
 gateway asks OPA whether this client may use this model or tool. OPA's policy is
-Rego in this repo, built and signed by the policy build; each project's data is
-published, signed, by the [project registry](project-registry.md). OPA loads the
-two bundles together and verifies both signatures. agentregistry is the catalog
+Rego in this repo; each project's data lives in the
+[project registry](project-registry.md). The registry publishes both as signed
+bundles, each change after an approval. OPA loads the two bundles together and
+verifies both signatures. agentregistry is the catalog
 where people find the tools.
 
 agentgateway replaces LiteLLM, which this platform used before.
@@ -23,7 +24,6 @@ flowchart LR
     route[model / route / MCP]
   end
   opa[OPA<br/>opa-envoy]
-  build[policy build<br/>CronJob]
   registry[project registry<br/>+ publisher]
   git[(policies/ in Git)]
   minio[(MinIO<br/>opa-bundles)]
@@ -31,8 +31,8 @@ flowchart LR
   authz <-->|gRPC :9191| opa
   gw <-->|ext_proc, auto only| vsr[vLLM Semantic Router]
   gw <-->|limits from OPA| rl[rate-limit service<br/>Redis]
-  git --> build -->|gateway-policy, signed| minio
-  registry -->|gateway-projects, signed| minio
+  git -->|new commit: a policy change| registry
+  registry -->|gateway-policy, gateway-projects<br/>signed, once approved| minio
   minio --> opa
   opa -.->|status: loaded revisions| registry
   route --> vllm[vLLM<br/>on-prem GPU]
@@ -49,8 +49,7 @@ flowchart LR
 | agentgateway controller | `agentgateway`, `agentgateway-crds` | Creates the GatewayClass `agentgateway`. For each Gateway, it runs a proxy Deployment, Service and ServiceAccount named after the Gateway |
 | Gateway config | `agentgateway-config` (`minikube/gitops/agentgateway-config`) | The `agentgateway-proxy` Gateway, one `AgentgatewayModel` per model, the `auto` virtual models, passthrough routes to Google's APIs, the merged MCP endpoint, and policies for API keys, OPA, the semantic router, rate limits, the model list, metrics labels and tracing |
 | OPA | `opa-policy` (`minikube/gitops/opa-policy`) | `opa-envoy`, answering ext_authz over gRPC on `opa:9191` |
-| Policy build | `opa-policy` | A CronJob (`policy-build`): when this repo's `main` moves, runs `opa test`, builds `policies/gateway` into the `gateway-policy` bundle with the commit as its revision, signs it with Vault Transit and activates it in MinIO (`opa-bundles/gateway-policy/`) |
-| Project registry | `project-registry`, `project-registry-postgresql` | Projects, agents and exceptions as change requests with approvals, published as the signed `gateway-projects` bundle; a portal at `registry.test/portal/`, and a daily export to Git as a PR ([project-registry.md](project-registry.md)) |
+| Project registry | `project-registry`, `project-registry-postgresql` | Publishes both of OPA's bundles, signed with Vault Transit, to MinIO (`opa-bundles/`). Projects, agents and exceptions are change requests with approvals (`gateway-projects`). A new commit of `policies/gateway` on `main` is a policy change request, tested and replayed, published once approved (`gateway-policy`). A portal at `registry.test/portal/`, and a daily export of the records to Git as a PR ([project-registry.md](project-registry.md)) |
 | Rate-limit service | `rate-limit` (`minikube/gitops/rate-limit`) | Counts each project's requests, tokens and spend in Redis; the limits come from OPA with each request (see "Rate limits and budgets") |
 | vLLM Semantic Router | `semantic-router` | Classifies `auto` prompts into task classes for the gateway, over ext_proc (see "The semantic router") |
 | agentregistry | `agentregistry`, `agentregistry-postgresql`, `agentregistry-catalog` | The catalog of MCP servers (and later agents), at `agentregistry.test` behind the Keycloak login. Its entries live in `minikube/gitops/agentregistry-catalog/files/catalog.yaml` |
@@ -93,9 +92,9 @@ To add a model or a Google API:
 2. Run `python3 scripts/gen-catalog.py` and commit the generated files with it.
    CI (`validate-gitops.sh`) fails if they are out of date.
 
-The policy change goes live when the policy build rebuilds the bundle from
-`main` (within a minute or two). The gateway change goes live on the next Argo
-CD sync.
+The policy change goes live once its change request in the project registry is
+approved (see "Changing a policy"). The gateway change goes live on the next
+Argo CD sync.
 
 ### Self-hosted models (KServe)
 
@@ -555,7 +554,7 @@ leaves Vault:
 
 | Bundle | Built from | By | Roots (`.manifest`) | Changes when |
 |--------|------------|----|---------------------|--------------|
-| `gateway-policy` | `policies/gateway` in Git | the policy build (CronJob, `opa-policy`) | `gateway`, `catalog`, `system`, `portal` | the Rego, the data classes, the model catalog or the approval rules change |
+| `gateway-policy` | `policies/gateway` in Git | the project registry's publisher, once the commit's policy change is approved | `gateway`, `catalog`, `system`, `portal` | the Rego, the data classes, the model catalog or the approval rules change |
 | `gateway-projects` | the project registry's records | its publisher (`project-registry`) | `projects`, `exceptions`, `agents` | an approved change is published |
 
 Each bundle activates on its own, so a project change swaps only
@@ -579,18 +578,28 @@ To change the policy:
    evaluates each logged request with the policy in your checkout and lists
    every request whose verdict would flip. It needs the cluster, so CI doesn't
    run it.
-3. Merge to `main`. The policy build checks Git every minute; on a new commit
-   it runs `opa test` again, builds, signs and activates the bundle, with the
-   commit as its revision. A failing test publishes nothing. OPA checks MinIO
-   every 10–30 seconds and loads it. No Argo CD sync is involved.
-4. Check what OPA has loaded with `kubectl -n mini-platform port-forward
+3. Merge to `main`. Within a minute the project registry files the commit as a
+   policy change request:
+   - it has run `opa test` again and built and signed the bundle, with the
+     commit as its revision;
+   - it has replayed recent decisions under the new policy;
+   - the request shows the commit, a link to its diff and the replay report.
+
+   A failing test is filed as `failed`, and nothing is published. A newer
+   commit supersedes a request still waiting.
+4. Approve it in the portal (`registry.test/portal/`, Changes). The policy
+   decides who approves (`portal.rego`): the platform team and security. Then
+   the publisher activates it, together with the project data rendered at that
+   commit if it differs. OPA checks MinIO every 10–30 seconds and loads it; the
+   change is `active` once every ready OPA pod has. No Argo CD sync is involved.
+5. Check what OPA has loaded with `kubectl -n mini-platform port-forward
    deploy/opa 8181` and `curl localhost:8181/v1/status`: each bundle's
    `active_revision` is the commit (policy) or `projects-<n>` (data).
 
 Every build is kept under `opa-bundles/<bundle>/revisions/<revision>/`;
 `<bundle>/bundle.tar.gz` is the active one and `<bundle>/active.json` names it.
-A rollback activates an earlier revision (the registry's `/rollback/<revision>`
-for project data).
+A rollback activates an earlier revision: in the portal (Publications), or with
+the registry's `/rollback/<revision>`, for either bundle.
 
 OPA logs every decision to stdout, and Loki collects them
 (`policies/gateway/log_mask.rego`). The log keeps the project and key id, the

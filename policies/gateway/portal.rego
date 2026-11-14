@@ -2,16 +2,20 @@
 # docs/project-registry.md "Approval rules are policy"). The registry asks for
 # data.portal.required_approvals with the change as input:
 #
-#   input.change   {kind: project | agent | exception, object_id, op: create | update | delete,
-#                   before, after}   before / after: the record as in projects/*.yaml,
-#                                    agents/*.yaml, or one entry of _exceptions.yaml
+#   input.change   {kind: project | agent | exception | policy, object_id,
+#                   op: create | update | delete, before, after}
+#                   before / after: the record as in projects/*.yaml, agents/*.yaml,
+#                   or one entry of _exceptions.yaml; for a policy change (a commit
+#                   of policies/gateway), {commit} and {commit, subject, author, ref}
 #   input.requester  who submitted it
 #
 # The answer is a set of roles; one approval per role, none by the requester:
 #   project_owner  the project's owner group     security    security-reviewers
 #   cost_owner     cost-owners                    platform    platform-admins
 # An empty answer would let a change through unapproved, so every change needs at
-# least its project's owner, and the registry refuses an answer without roles.
+# least its project's owner (a policy change: the platform team), and the
+# registry refuses an answer without roles. The answer for a policy change comes
+# from the policy active now, not the one proposed.
 package portal
 
 import rego.v1
@@ -26,8 +30,8 @@ after := object.get(change, "after", {}) if change.after != null
 
 else := {}
 
-# --- every change ---
-required_approvals contains "project_owner" if change.kind != "project"
+# --- every change to a project's records ---
+required_approvals contains "project_owner" if change.kind in {"agent", "exception"}
 
 required_approvals contains "project_owner" if {
 	change.kind == "project"
@@ -93,6 +97,11 @@ required_approvals contains "security" if {
 	contains(t, "*")
 	not t in object.get(before, "mcp_tools", [])
 }
+
+# --- the policy itself (this file included): it decides for every project ---
+required_approvals contains "platform" if change.kind == "policy"
+
+required_approvals contains "security" if change.kind == "policy"
 
 # --- exceptions: models beyond the data class, always reviewed by security ---
 required_approvals contains "security" if {

@@ -34,8 +34,8 @@ Open WebUI ──▶ agentgateway ──▶ KServe InferencePool (EPP) ──▶
                   │  ├── rate-limit service (per-project limits and budgets)
                   │  └── OPA (allow/deny per project, model and tool; picks "auto")
                   │        ▲
-                  │        └── signed bundles via MinIO ◀── policy build (policies/ in Git)
-                  │                                     ◀── project registry (projects, approvals)
+                  │        └── signed bundles via MinIO ◀── project registry (approvals; policies/ in Git,
+                  │                                         projects in the registry)
                   ├──▶ Vertex AI Gemini, Speech, TTS   (mini-cloud VPN, keyless)
                   ├──▶ DeepSeek                        (internet)
                   └──▶ MCP: Grafana MCP, kagent tools
@@ -52,9 +52,9 @@ on Vertex AI, `deepseek-v4-pro`), passes Google's speech APIs through, and merge
 the cluster's MCP servers into one endpoint. Before routing, it asks **OPA**,
 whose policy (the Rego in `policies/gateway`: data class per project, placement
 per model, allowed tools, the model behind `auto`) and per-project data come in
-two signed bundles: a policy build makes one from Git, the **project registry**'s
-publisher the other ([docs/project-registry.md](docs/project-registry.md)), and
-OPA verifies both. Each project's limits travel with OPA's decision, and a rate-limit service counts against them. **agentregistry** is the
+two signed bundles, both published by the **project registry** once a change is
+approved: the Rego from Git, the project data from its own records
+([docs/project-registry.md](docs/project-registry.md)). OPA verifies both. Each project's limits travel with OPA's decision, and a rate-limit service counts against them. **agentregistry** is the
 catalog of MCP servers and the registered agents. See [docs/agentgateway.md](docs/agentgateway.md).
 
 Supporting subsystems:
@@ -389,7 +389,7 @@ kubectl -n argocd get applications
 
 Sync waves order the rollout: Argo CD and Vault/VSO come first, then the
 stateful dependencies, then the application tier, and finally the gateway (with
-OPA, the policy build and the project registry ahead of it), Open WebUI and the agents. Each release brings its own ingress route and
+OPA and the project registry ahead of it), Open WebUI and the agents. Each release brings its own ingress route and
 `VaultStaticSecret` mappings with it, so a secret is declared on the
 earliest-syncing application that consumes it — and, where a release needs a
 dependency *running* rather than just a Secret, a wave later still (MinIO reads

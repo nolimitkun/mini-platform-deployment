@@ -431,8 +431,8 @@ if ! vault_cli kv get mini-platform/registry-git >/dev/null 2>&1; then
   vault_cli kv put mini-platform/registry-git GITHUB_TOKEN=""
 fi
 
-# MinIO accounts for the OPA policy bundles: the policy build and the project
-# registry write them, OPA reads them.
+# MinIO accounts for the OPA policy bundles: the project registry writes them,
+# OPA reads them.
 # The access key names the account; the field names are what the AWS SDKs in
 # both read from the environment.
 kv_put mini-platform/opa-bundles-writer \
