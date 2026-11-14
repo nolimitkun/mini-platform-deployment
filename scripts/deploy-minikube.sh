@@ -1054,10 +1054,23 @@ path "transit/sign/opa-bundles" {
   capabilities = ["update"]
 }
 EOF
+# The registry's publisher also writes the gateway's two API key maps (its
+# registry/keys.py), and nothing else in the KV mount.
+kubectl -n "$NS" exec -i vault-0 -- env \
+  VAULT_ADDR=http://127.0.0.1:8200 \
+  VAULT_TOKEN="$VAULT_TOKEN" \
+  vault policy write gateway-keys - >/dev/null <<'EOF'
+path "mini-platform/data/agentgateway-api-keys" {
+  capabilities = ["create", "read", "update"]
+}
+path "mini-platform/data/agentgateway-client-keys" {
+  capabilities = ["create", "read", "update"]
+}
+EOF
 vault_exec write auth/kubernetes/role/bundle-signer \
   bound_service_account_names=project-registry \
   bound_service_account_namespaces="$NS" \
-  policies=bundle-signer \
+  policies=bundle-signer,gateway-keys \
   ttl=15m >/dev/null
 # Only key version 1 is published: a rotation is a new key id in OPA's config.
 signing_public_key="$(vault_exec read -format=json transit/keys/opa-bundles | jq -r '.data.keys["1"].public_key')"

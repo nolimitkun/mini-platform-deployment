@@ -483,14 +483,15 @@ reviewer accounts (`keycloak-registry-users`). The deploy script creates the bun
 signing key in Vault Transit (`transit/keys/opa-bundles`, not exportable), a role that
 may only sign with it (`bundle-signer`), and publishes its public key at
 `mini-platform/opa-bundle-signing` for OPA.
-The gateway's API keys are one per key id of a project in the project registry
-(the script asks the registry's `/internal/keys`, or renders its seed on a new
-cluster):
-`mini-platform/agentgateway-api-keys` is what the gateway reads, `mini-platform/agentgateway-client-keys` holds the raw
-keys, and each client gets a mirror under the env name it reads
-(`open-webui-agentgateway`, `kagent-agentgateway`, `holmes-agentgateway`). Those
-mirrors, `mini-platform/kagent-grafana` and `mini-platform/holmes-grafana` (the
-Grafana admin login) are copies rather than fresh credentials, so on a
+The gateway's API keys are not the script's: the project registry writes them from
+its records, one per key id (`mini-platform/agentgateway-api-keys`, what the gateway
+reads, and `mini-platform/agentgateway-client-keys`, the raw keys; the deploy script
+gives its signing role a policy for those two paths, `gateway-keys`). Each client's key
+is a VSO copy of one entry under the env name it reads (`vaultSecrets` with
+`gatewayKey` and `field`: `open-webui-agentgateway`, `kagent-agentgateway`,
+`holmes-agentgateway`, ...). On a new cluster they appear once the registry has
+imported its seed. `mini-platform/kagent-grafana` and `mini-platform/holmes-grafana`
+(the Grafana admin login) are copies rather than fresh credentials, so on a
 `SEED_MISSING_ONLY=true` upgrade the script reads the existing values back out of
 Vault instead of generating new ones that the owning service would reject.
 Langfuse's headless init creates the `mini-platform` organization and its owner

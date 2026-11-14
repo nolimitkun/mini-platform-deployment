@@ -129,9 +129,10 @@ Three repos split this, and neither of the other two is in this one:
   with the kagent agents wired to their keys. This repo keeps the seed a new cluster's registry imports
   (`minikube/gitops/project-registry/files/seed.yaml`), not the records.
 
-What reads the records reads the registry: the Vault bootstrap gets the key ids from its
-cluster-internal `/internal/keys` (or renders the seed with the policy's
-`render-records.py` on a new cluster), the registry applies agentregistry's agent catalog
+What reads the records reads the registry: the registry writes the gateway's API keys
+to Vault itself (`agentgateway-api-keys`, `agentgateway-client-keys`; every client's
+key is a VSO copy of one entry, a `vaultSecrets` entry with `gatewayKey` and `field`,
+and the Vault bootstrap writes no gateway key), applies agentregistry's agent catalog
 itself, and `policy-replay.py` takes the active data bundle from it. A daily CronJob
 (`project-registry-snapshot`) copies the records into the bundle store, which an empty
 registry imports. Each project's rate limits travel with OPA's allow decision (dynamic

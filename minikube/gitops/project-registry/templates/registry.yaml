@@ -108,6 +108,7 @@ spec:
             - {name: POLICY_POLL, value: {{ .Values.policy.poll | quote }}}
             - {name: AGENTREGISTRY_URL, value: {{ .Values.agentregistryUrl | quote }}}
             - {name: GATEWAY_MODELS_BUCKET, value: {{ .Values.gatewayModels.bucket | quote }}}
+            - {name: GATEWAY_KEYS_MOUNT, value: {{ .Values.gatewayKeys.mount | quote }}}
           resources:
             requests: {cpu: 50m, memory: 128Mi}
             limits: {memory: 1Gi}

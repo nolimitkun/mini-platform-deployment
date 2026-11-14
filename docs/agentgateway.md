@@ -256,30 +256,43 @@ with one key whose id is the project id:
 | `kagent` | `internal`, plus the DeepSeek exception | `cheapest` | `kagent-agentgateway` |
 | `holmes` | `internal`, plus the DeepSeek exception | `cheapest` | `holmes-agentgateway` |
 | `admin` | `public` | `semantic` | none: for people |
-| `model-onboarding` | `internal`, on-prem only, `deployments: true` | none | `model-onboarding-agentgateway` (VSO puts it in `model-onboarding/gateway-key`) |
+| `model-onboarding` | `internal`, on-prem only, `deployments: true` | none | `model-onboarding/gateway-key` (field `key`) |
 
 Their limits and budgets are under "Rate limits and budgets".
 
-Keys are created by `scripts/bootstrap-vault-secrets.sh`, which reads the key
-ids with `gen-projects.py --keys`, so it needs python3 with PyYAML and
-jsonschema:
+The project registry issues the keys: its publisher writes two maps in Vault
+from its records, after each data bundle and every five minutes (its
+`registry/keys.py`):
 
 - `mini-platform/agentgateway-api-keys` is what the gateway reads: one entry per
   key id, `{"key": ..., "metadata": {"project": ..., "key_id": ...}}`.
 - `mini-platform/agentgateway-client-keys` holds the raw keys under the same
   ids.
 
+A new key id gets a random key, a key id no record lists any more is dropped from
+both (revoked), and an existing one keeps its key. Nothing else in Vault holds a
+gateway key: each client's Secret is a VSO copy of one entry of the clients' map,
+an entry of the app's `vaultSecrets` (or `externalVaultSecrets`) with `gatewayKey`
+(the key id) and `field` (the name its consumer reads), for example in
+`kagent-resources.yaml`:
+
+```yaml
+- name: kagent-k8s-agent-agentgateway
+  gatewayKey: kagent-k8s-agent
+  field: OPENAI_API_KEY
+```
+
 To add a project, request it in the project registry's portal. Once it is
-published, run the bootstrap with `SEED_MISSING_ONLY=true` to create its keys
-(it reads the key ids from the registry).
+published, its keys are in Vault within seconds and the gateway knows them after
+the next VSO refresh (a minute); a client that needs one gets a copy entry here.
 
 To rotate a key:
 
-1. Add a second id, such as `holmes-2`, and create it with the bootstrap.
-2. Move the client to the new key.
-3. Remove the old id from the project file. OPA refuses the old key as soon as
-   the new bundle is live (`key holmes is not active for project holmes`). The
-   next bootstrap run drops it from Vault.
+1. Add a second id, such as `holmes-2`, to the project or agent in the registry.
+2. Move the client's copy to the new key id.
+3. Remove the old id in the registry. OPA refuses the old key as soon as the new
+   bundle is live (`key holmes is not active for project holmes`), and the
+   registry drops it from both maps.
 
 ## Agents
 
@@ -347,10 +360,9 @@ map (key id → agent) and writes `data.agents.<id>` into the `gateway-projects`
 bundle, so registering, changing or removing an agent touches only its own
 files. It also checks the wiring a kagent agent needs: a `modelConfigRef` in
 `kagent-values.yaml` naming a ModelConfig in `kagent-resources.yaml`
-`extraObjects` that reads the agent's secret, listed in `vaultSecrets`.
-`bootstrap-vault-secrets.sh` writes each agent's key to its `secret`
-(`gen-projects.py --mirrors`), and every agent appears in agentregistry as an
-`Agent` (`agentregistry-catalog/files/agents.yaml`, generated).
+`extraObjects` that reads the agent's secret, listed in `vaultSecrets` as a copy
+of one of the agent's keys with the record's field. Every agent appears in
+agentregistry as an `Agent` (`agentregistry-catalog/files/agents.yaml`, generated).
 
 Registered today:
 
@@ -369,9 +381,9 @@ created in kagent's UI use until they are registered: they get the project's
 scope.
 
 To register an agent: wire its runtime to the key here (for kagent, the three
-places above) and merge, then request the agent in the project registry. Once
-it is published, run the Vault bootstrap (`SEED_MISSING_ONLY=true` creates the
-new key). The registry checks a proposed agent against the policy's rules and,
+places above, the secret a copy of the agent's key id) and merge, then request
+the agent in the project registry. Once it is published, the registry writes its
+key to Vault and VSO fills the copy. The registry checks a proposed agent against the policy's rules and,
 for a kagent agent, against the wiring on this repo's `main`, so the wiring
 merges first; this repo's CI checks the seed's kagent agents the same way.
 

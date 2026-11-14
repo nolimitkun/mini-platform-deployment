@@ -1,6 +1,6 @@
 # The registry API, the publisher and the one-off import, all one image
 # (github.com/nolimitkun/project-registry). Design: nolimitkun/project-registry docs/design.md.
-image: ghcr.io/nolimitkun/project-registry:sha-efea60613e4859e1e1d2f202db6cea7f0ecfde6f
+image: ghcr.io/nolimitkun/project-registry:sha-99704783558a8c0d95ec73f21c2e867994674a4f
 
 # DATABASE_URL, from Vault (project-registry-db), for project-registry-postgresql.
 databaseSecret: project-registry-db
@@ -35,6 +35,12 @@ kagentWiring:
 # (minio-values.yaml: anonymous download, the writer account may write it).
 gatewayModels:
   bucket: gateway-models
+
+# The gateway's API keys: the publisher writes agentgateway-api-keys and
+# agentgateway-client-keys in this KV mount from the records (its registry/keys.py),
+# with the signing role's Vault token (policy gateway-keys, deploy-minikube.sh).
+gatewayKeys:
+  mount: mini-platform
 
 # The bundle store and signing (OPA's side: opa-policy values.yaml).
 bundles:
