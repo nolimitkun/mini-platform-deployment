@@ -27,8 +27,8 @@ routes:
 
 # One ModelConfig per registered kagent agent, the same as the chart's
 # default-model-config but with the agent's own key; kagent-values.yaml points
-# each agent's modelConfigRef here. CI (validate-gitops.sh) checks the three stay in
-# step with the kagent agents of the project registry's seed.
+# each agent's modelConfigRef here. The project registry checks a proposed
+# kagent agent against the three on main, and CI (validate-gitops.sh) the seed's.
 extraObjects:
   - apiVersion: kagent.dev/v1alpha2
     kind: ModelConfig
