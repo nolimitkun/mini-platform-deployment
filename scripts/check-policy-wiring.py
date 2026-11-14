@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Check this repo's wiring against the gateway policy (its main branch).
+"""Check this repo's wiring against the catalog its project registry starts with.
 
-    python3 scripts/check-policy-wiring.py POLICY_DIR
+    python3 scripts/check-policy-wiring.py [RECORDS]
 
-POLICY_DIR is a checkout of nolimitkun/gateway-policy (scripts/policy-checkout.sh, main).
-The policy's catalog names things this repo deploys, so both must agree:
+RECORDS: the registry's seed (default: minikube/gitops/project-registry/files/seed.yaml),
+whose catalog settings (the registry holds the live ones) name things this repo deploys,
+so both must agree:
   - the gateway's MCP targets (agentgateway-config values mcp.targets) are the
-    catalog's (catalog/tools.yaml targets): every tool name starts with one;
+    catalog's targets: every tool name starts with one;
   - the vLLM Semantic Router's decisions (semantic-router-values.yaml) route to
     exactly the catalog's task classes, auto-<task>, and so does its default;
   - the gateway admits routes from the catalog's serving namespaces
@@ -20,12 +21,14 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 GATEWAY_VALUES = ROOT / "minikube" / "gitops" / "agentgateway-config" / "values.yaml"
 VSR_VALUES = ROOT / "minikube" / "values" / "semantic-router-values.yaml"
+SEED = ROOT / "minikube" / "gitops" / "project-registry" / "files" / "seed.yaml"
 
 
 def main() -> int:
-    policy = Path(sys.argv[1])
-    catalog = yaml.safe_load((policy / "catalog" / "models.yaml").read_text()) or {}
-    tools = yaml.safe_load((policy / "catalog" / "tools.yaml").read_text()) or {}
+    records = yaml.safe_load(Path(sys.argv[1] if len(sys.argv) > 1 else SEED).read_text()) or {}
+    settings = (records.get("catalog") or {}).get("settings") or {}
+    catalog = {"servingNamespaces": settings.get("servingNamespaces") or [], "tasks": settings.get("tasks") or {}}
+    tools = {"targets": settings.get("targets") or []}
     errors = []
 
     gateway = yaml.safe_load(GATEWAY_VALUES.read_text()) or {}
@@ -34,8 +37,8 @@ def main() -> int:
                       f"the catalog's {catalog.get('servingNamespaces')}")
     targets = set((gateway.get("mcp") or {}).get("targets") or {})
     if targets != set(tools.get("targets") or []):
-        errors.append(f"{GATEWAY_VALUES.relative_to(ROOT)}: mcp.targets {sorted(targets)} are not the policy "
-                      f"catalog's targets {sorted(tools.get('targets') or [])} (catalog/tools.yaml)")
+        errors.append(f"{GATEWAY_VALUES.relative_to(ROOT)}: mcp.targets {sorted(targets)} are not the "
+                      f"catalog's targets {sorted(tools.get('targets') or [])} (the seed's catalog settings)")
 
     config = (yaml.safe_load(VSR_VALUES.read_text()) or {}).get("config") or {}
     expected = {f"auto-{t}" for t in (catalog.get("tasks") or {})}
