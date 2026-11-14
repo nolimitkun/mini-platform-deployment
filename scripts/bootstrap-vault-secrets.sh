@@ -325,9 +325,17 @@ registry_lines() {
   if [[ "$(kubectl -n mini-platform get deploy project-registry -o jsonpath='{.status.readyReplicas}' 2>/dev/null)" -ge 1 ]] 2>/dev/null; then
     kubectl -n mini-platform exec deploy/project-registry -- python -c \
       "import sys, urllib.request; sys.stdout.write(urllib.request.urlopen('http://127.0.0.1:8080/internal/$1', timeout=120).read().decode())"
-  else
-    echo "project registry not running: using its seed for the $1" >&2
+  elif ! vault_cli kv get mini-platform/agentgateway-api-keys >/dev/null 2>&1; then
+    # A new cluster: no gateway keys yet, and the registry isn't up. Its seed is what
+    # it will import, so the keys made from it are the ones its projects list.
+    echo "new cluster, project registry not running yet: using its seed for the $1" >&2
     python3 "$(dirname "$0")/render-records.py" "$(dirname "$0")/../minikube/gitops/project-registry/files/seed.yaml" "--$1"
+  else
+    # An existing cluster: the seed is not the live key list (keys were added since),
+    # and the maps below are rewritten from it. Refuse rather than drop keys.
+    echo "ERROR: the project registry is not running; the gateway keys exist, so the seed" >&2
+    echo "  would drop keys added since. Start the registry and run this again." >&2
+    return 1
   fi
 }
 # agentgateway reads agentgateway-api-keys, one entry per key id whose JSON value carries the key
