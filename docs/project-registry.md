@@ -496,7 +496,9 @@ week of shadow running:
   It is approved like any change; `portal.rego` asks for the platform team and
   security. Then the publisher activates the records rendered at that commit
   (if they differ), and then the policy. It is `active` once every ready OPA
-  pod reports the commit.
+  pod reports the commit. A rollback moves one bundle, so it is refused
+  when the records would not render the same at the target commit (a data
+  format change in between); a revert commit then republishes both.
 
   This replaces the first round's policy build, a CronJob that activated every
   commit on `main` within a minute. OPA Control Plane is removed too.
