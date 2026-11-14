@@ -323,7 +323,8 @@ kv_put mini-platform/holmes-api \
 # gateway keys (which is what tells a new cluster from an existing one).
 if [[ "$(kubectl -n mini-platform get deploy project-registry -o jsonpath='{.status.readyReplicas}' 2>/dev/null)" -ge 1 ]] 2>/dev/null; then
   registry_source=registry
-elif ! vault_cli kv get mini-platform/agentgateway-api-keys >/dev/null 2>&1; then
+elif [[ "${KEY_IDS_FROM_SEED:-false}" == true ]] \
+     || ! vault_cli kv get mini-platform/agentgateway-api-keys >/dev/null 2>&1; then
   # A new cluster: no gateway keys yet, and the registry isn't up. Its seed is what
   # it will import, so the keys made from it are the ones its projects list.
   registry_source=seed
@@ -332,7 +333,8 @@ else
   # An existing cluster: the seed is not the live key list (keys were added since),
   # and the maps below are rewritten from it. Refuse rather than drop keys.
   echo "ERROR: the project registry is not running; the gateway keys exist, so the seed" >&2
-  echo "  would drop keys added since. Start the registry and run this again." >&2
+  echo "  would drop keys added since. Start the registry and run this again (or, on a new" >&2
+  echo "  cluster whose first run stopped half way, KEY_IDS_FROM_SEED=true)." >&2
   exit 1
 fi
 registry_lines() {
