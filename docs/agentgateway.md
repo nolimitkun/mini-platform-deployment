@@ -586,7 +586,8 @@ To change the policy:
    - the request shows the commit, a link to its diff and the replay report.
 
    A failing test is filed as `failed`, and nothing is published. A newer
-   commit supersedes a request still waiting.
+   commit supersedes a request still waiting. A commit that changes neither
+   bundle (docs, another chart) is recorded as `skipped` and needs nobody.
 4. Approve it in the portal (`registry.test/portal/`, Changes). The policy
    decides who approves (`portal.rego`): the platform team and security. Then
    the publisher activates it, together with the project data rendered at that
