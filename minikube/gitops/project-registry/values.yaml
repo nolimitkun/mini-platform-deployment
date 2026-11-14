@@ -1,6 +1,6 @@
 # The registry API, the publisher and the one-off import, all one image
 # (github.com/nolimitkun/project-registry). Design: nolimitkun/project-registry docs/design.md.
-image: ghcr.io/nolimitkun/project-registry:sha-b276ea34ca42dfd789755512ea28a295c7615ffb
+image: ghcr.io/nolimitkun/project-registry:sha-a88de698f262541b4a2c1d08c1d33072bd10d0db
 
 # DATABASE_URL, from Vault (project-registry-db), for project-registry-postgresql.
 databaseSecret: project-registry-db
@@ -14,9 +14,6 @@ databaseSecret: project-registry-db
 # the cluster, set it here for the test, and back to main before the merge.
 policy:
   repo: https://github.com/nolimitkun/gateway-policy.git
-  # Where the policy lived before (its commits until 2026-11-14): the active
-  # commit, or an older one a rollback activates, may only be there.
-  fallbackRepos: https://github.com/nolimitkun/mini-platform-deployment.git
   ref: main
   dir: policies/gateway
   # how often the branch is checked (seconds)
