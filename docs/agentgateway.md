@@ -74,21 +74,23 @@ Outside the cluster, the same endpoints are at `http://agentgateway.test`.
 
 The names are the ones LiteLLM used, so no client had to rename a model.
 
-Every model and Google API is declared once, in the model catalog
-[`catalog/models.yaml`](https://github.com/nolimitkun/gateway-policy/blob/main/catalog/models.yaml) of the gateway policy
-([nolimitkun/gateway-policy](https://github.com/nolimitkun/gateway-policy)), with
-its placement and provider settings. Its `scripts/gen-catalog.py` validates the
-catalog and generates two files from it:
+Every model and Google API is declared once, as a record in the
+[project registry](https://github.com/nolimitkun/project-registry) (kinds `model` and
+`google_api`), with its placement, provider settings and price. The catalog's other
+records are the MCP tools (`tool`) and its settings (`catalog/settings`: the task
+classes behind `auto`, the serving namespaces, the MCP targets). The registry renders
+them with the gateway policy's `scripts/gen-catalog.py`
+([nolimitkun/gateway-policy](https://github.com/nolimitkun/gateway-policy)), which
+validates them, into two places:
 
-- `generated/agentgateway-catalog.yaml`, the values of the policy's
-  `charts/gateway-models`: an `AgentgatewayModel` per model, the `auto` models
-  and the Google API routes. Once a policy commit is approved and active, the
-  project registry packages that chart with this catalog and publishes it to
-  its Helm repository in MinIO (bucket `gateway-models`); the Argo CD
-  application `gateway-models` here installs the newest version, with the
-  gateway's own values (`minikube/values/gateway-models-values.yaml`).
-- `policies/gateway/catalog/data.json`, which OPA reads as `data.catalog` for
-  placements.
+- the values of the policy's `charts/gateway-models`: an `AgentgatewayModel` per
+  model, the `auto` models and the Google API routes. The registry packages that
+  chart at the active policy commit with these values and publishes it to its
+  Helm repository in MinIO (bucket `gateway-models`); the Argo CD application
+  `gateway-models` here installs the newest version, with the gateway's own
+  values (`minikube/values/gateway-models-values.yaml`).
+- the `gateway-projects` data bundle, which OPA reads as `data.registry.catalog`
+  for placements.
 
 A model therefore can't be routed without a placement, or allowed without a
 route.
@@ -97,15 +99,18 @@ To add a model or a Google API:
 
 1. For a self-hosted model, its serving release first (the onboarding
    pipeline, `model-serving`).
-2. In gateway-policy: add it to `catalog/models.yaml`, run
-   `python3 scripts/gen-catalog.py`, and merge. The project registry files the
-   commit as a policy change; once it is approved, OPA knows the model's
-   placement and the registry publishes the routes (a new `gateway-models`
-   version), which Argo CD installs within about three minutes. Until then a
-   call gets 404 (no route) or 403 (not allowed yet): both fail closed.
+2. In the project registry's portal: a change request that adds the `model` or
+   `google_api` record. The platform team proposes; the platform team, security
+   and the cost owner approve (`portal.rego`). Once it is approved, the registry
+   publishes the data bundle (OPA knows the model's placement) and the routes (a
+   new `gateway-models` version), which Argo CD installs within about three
+   minutes. Until then a call gets 404 (no route) or 403 (not allowed yet): both
+   fail closed.
 
-Nothing here changes for a new model. This repo's CI checks its own side against
-the policy's `main` (`scripts/check-policy-wiring.py`: MCP targets, serving
+Nothing here changes for a new model, and nothing in gateway-policy either. This
+repo's registry seed (`minikube/gitops/project-registry/files/seed.yaml`) has the
+catalog a new cluster starts with; its CI checks this repo's side against the
+seed's catalog settings (`scripts/check-policy-wiring.py`: MCP targets, serving
 namespaces, the semantic router's decisions).
 
 ### Self-hosted models (KServe)
@@ -116,7 +121,7 @@ model onboarding pipeline (`model-onboarding-pipeline`) creates. The platform's
 
 - the namespaces `model-onboarding` (the pipeline) and `model-hprd` /
   `model-prod` (the serving namespaces, listed as `servingNamespaces` in
-  `catalog/models.yaml`);
+  the registry's catalog settings);
 - their credentials, from Vault through VSO: the pipeline's gateway key
   (`gateway-key`) and MinIO account (`s3-creds`), and in each serving namespace
   the read-only MinIO account (`model-weights-s3`) and the vLLM key
@@ -308,7 +313,7 @@ kagent-k8s-agent (project kagent)`.
 
 ### Tool risk and autonomy
 
-The policy's `catalog/tools.yaml` (gateway-policy) lists every tool behind `/mcp` (189 today: Grafana MCP and
+The project registry's `tool` records list every tool behind `/mcp` (189 today: Grafana MCP and
 kagent-tools) with the most it can do:
 
 | Risk | Meaning | read-only agent | supervised agent | autonomous agent |
@@ -334,8 +339,8 @@ Each entry also has a `fingerprint`, a hash of the description and input
 schema the server announced when it was classified. The policy repo's `scripts/tools-drift.py`
 lists the live tools through the gateway and reports tools that are new,
 removed or changed since; run it after upgrading kagent or Grafana MCP, and
-before trusting a changed tool, re-check its risk. `gen-catalog.py` puts the
-risks into the policy's `data.catalog.tools`.
+before trusting a changed tool, re-check its risk (a change request to the tool's
+record). `gen-catalog.py` puts the risks into `data.registry.catalog.tools`.
 
 `gen-projects.py` adds each agent's keys to its project with an `agent_keys`
 map (key id → agent) and writes `data.agents.<id>` into the `gateway-projects`
@@ -379,7 +384,8 @@ merges first; this repo's CI checks the seed's kagent agents the same way.
 
 - `data.projects`, `data.exceptions` and `data.agents`, the project registry's
   records rendered by `scripts/gen-projects.py` (the `gateway-projects` bundle)
-- `data.catalog`, generated from `catalog/models.yaml`
+- `data.registry.catalog`, the registry's catalog records rendered by
+  `scripts/gen-catalog.py` (in the same bundle)
 - `data.gateway.classes` in `policies/gateway/data.json`, which maps each data
   class to the placements it may use
 
@@ -553,8 +559,9 @@ the project's model for that class. The steps:
 2. VSR's decisions (`minikube/values/semantic-router-values.yaml`) match
    domain signals: computer science and engineering → `auto-code`; math,
    physics or "step by step" → `auto-reasoning`; anything else →
-   `auto-general`. `gen-catalog.py --check` fails if a decision names anything
-   but the catalog's task classes.
+   `auto-general`. This repo's CI (`scripts/check-policy-wiring.py`) fails if a
+   decision names anything but the task classes in the registry seed's catalog
+   settings.
 3. The task class matters only for projects whose routing is `semantic`.
    Today that is `admin` and `open-webui`; kagent and Holmes keep `cheapest`
    and ignore it.
@@ -593,10 +600,10 @@ anyone else, or changed there, is not loaded.
 
 To change the policy (in [gateway-policy](https://github.com/nolimitkun/gateway-policy)):
 
-1. Edit the Rego, the data classes or the catalog, regenerate with
-   `scripts/gen-catalog.py`, and run `scripts/validate.sh` (what its CI runs:
-   the catalog, the test records rendered, `opa check`, `opa fmt`, `opa test`,
-   the two-bundle load).
+1. Edit the Rego, the data classes or the chart, and run `scripts/validate.sh`
+   (what its CI runs: the test records rendered with the catalog, the chart,
+   `opa check`, `opa fmt`, `opa test`, the two-bundle load). The catalog itself
+   is not there: it changes in the registry.
 2. Replay recent traffic against the change with
    `python3 scripts/policy-replay.py` there. It reads OPA's decisions from Loki,
    evaluates each logged request with the policy in your checkout and the
@@ -670,7 +677,7 @@ views, LLM > Models, LLM > Client Setup (client settings for a chosen model),
 the CEL Playground, and LLM > Analytics: spend, tokens and calls over time per
 model, provider or user, from a request log the proxy keeps in SQLite on the
 PVC `agentgateway-proxy-request-log` (values.yaml, `analytics`). Costs come from
-agentgateway's built-in price table, the rates `catalog/models.yaml` mirrors;
+agentgateway's built-in price table, the rates the registry's `model` records mirror;
 self-hosted models count as $0. Each replica would keep its own log, so it is a
 per-request view; the Prometheus metrics stay the source for budgets and alerts.
 
@@ -697,8 +704,8 @@ cluster enforces NetworkPolicy, so any pod can reach it there.
   - the model mix, which shows what `auto` picked
   - model request duration and MCP calls
 
-  Cost uses agentgateway's own price table, the same prices as
-  `catalog/models.yaml`. Self-hosted models count as $0.
+  Cost uses agentgateway's own price table, the same prices as the
+  registry's `model` records. Self-hosted models count as $0.
 - **Traces.** OTLP goes to Alloy, then to Tempo, under service name
   `agentgateway-proxy`. Langfuse gets the clients' own traces (kagent, Holmes,
   Open WebUI projects), not a per-call gateway project like LiteLLM's.

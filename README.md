@@ -114,7 +114,7 @@ Every browser-facing service authenticates against Keycloak — see
 | `scripts/set-repo.sh` | Repoints the charts/deploy repo URLs and revisions in one command |
 | `scripts/validate-gitops.sh` | Lints/renders the GitOps charts (and the gateway policy's `gateway-models` chart with this repo's values), shellchecks the scripts, checks this repo's wiring against the policy, and runs `promtool`; run in CI too |
 | `scripts/policy-checkout.sh` | Fetches the gateway policy ([nolimitkun/gateway-policy](https://github.com/nolimitkun/gateway-policy)) at the head of `main` |
-| `scripts/check-policy-wiring.py` | Checks the gateway's MCP targets and the semantic router's decisions against the policy's catalog |
+| `scripts/check-policy-wiring.py` | Checks the gateway's MCP targets and the semantic router's decisions against the catalog settings in the project registry's seed |
 | `tools/` | Optional utility workloads (e.g. network diagnostics) |
 
 The vendored charts (`charts/`) live in the separate
@@ -1154,11 +1154,11 @@ also:
 - lints and renders the app-of-apps and the shared app-resources chart, and runs
   `kubeconform` over the rendered manifests;
 - `shellcheck`s the scripts;
-- fetches the gateway policy's `main`, renders its `gateway-models` chart with
-  this repo's values and `agentgateway-config`, checks the MCP targets, serving
-  namespaces and the semantic router's decisions against its catalog, and
-  renders the project registry's seed with its renderer (and the kagent agents'
-  wiring); the Rego's tests run in gateway-policy's own CI;
+- fetches the gateway policy's `main`, renders the project registry's seed with
+  its renderer (the projects, the kagent agents' wiring and the catalog), renders
+  its `gateway-models` chart with that catalog, this repo's values and
+  `agentgateway-config`, and checks the MCP targets, serving namespaces and the
+  semantic router's decisions against the seed's catalog settings; the Rego's tests run in gateway-policy's own CI;
 - runs `promtool` on Prometheus's config and the alert rules.
 
 `kubeconform`, `shellcheck` and `promtool` are used if installed and

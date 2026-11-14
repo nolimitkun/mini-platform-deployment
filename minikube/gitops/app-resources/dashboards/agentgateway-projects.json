@@ -116,7 +116,7 @@
         "type": "prometheus",
         "uid": "$datasource"
       },
-      "description": "agentgateway's own price table (the catalog/models.yaml prices). Self-hosted models cost nothing here.",
+      "description": "agentgateway's own price table (the prices of the registry's model records). Self-hosted models cost nothing here.",
       "gridPos": {
         "x": 6,
         "y": 1,

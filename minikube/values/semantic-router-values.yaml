@@ -10,7 +10,7 @@
 # if VSR is down the request goes on as "auto" and gets the project's default.
 #
 # The decisions below must name exactly the catalog's task classes
-# (gateway-policy catalog/models.yaml tasks); scripts/check-policy-wiring.py verifies it.
+# (catalog settings `tasks` in the registry seed); scripts/check-policy-wiring.py verifies it.
 
 podAnnotations:
   prometheus.io/scrape: "true"
