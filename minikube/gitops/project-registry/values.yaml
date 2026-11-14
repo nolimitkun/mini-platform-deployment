@@ -17,6 +17,10 @@ policy:
   # Where the policy lived before (its commits until 2026-11-14): the active
   # commit, or an older one a rollback activates, may only be there.
   fallbackRepos: https://github.com/nolimitkun/mini-platform-deployment.git
+  ref: main
+  dir: policies/gateway
+  # how often the branch is checked (seconds)
+  poll: "60"
 
 # A proposed kagent agent must be wired to its own key in this repo's kagent
 # values first (kagent-values.yaml modelConfigRef, a ModelConfig and the secret
@@ -24,10 +28,6 @@ policy:
 kagentWiring:
   repo: https://github.com/nolimitkun/mini-platform-deployment.git
   ref: main
-  ref: main
-  dir: policies/gateway
-  # how often the branch is checked (seconds)
-  poll: "60"
 
 # The bundle store and signing (OPA's side: opa-policy values.yaml).
 bundles:

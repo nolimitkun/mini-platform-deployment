@@ -101,6 +101,32 @@ for path in minikube/values/*-resources.yaml; do
   [[ "$found" == true ]] || bad "not referenced by any application: $path"
 done
 
+echo "==> No duplicate keys in values files"
+# YAML takes the last of two equal keys without a word: a block pasted into the
+# middle of another silently moves its keys (it did, to project-registry's policy).
+if python3 - minikube/values/*.yaml minikube/gitops/*/values.yaml minikube/gitops/*/files/*.yaml <<'PY'
+import sys, yaml
+class Strict(yaml.SafeLoader):
+    pass
+def mapping(loader, node, deep=False):
+    seen = set()
+    for k, _ in node.value:
+        key = loader.construct_object(k, deep=True)
+        if key in seen:
+            raise yaml.constructor.ConstructorError(None, None, f"duplicate key {key!r}", k.start_mark)
+        seen.add(key)
+    return yaml.SafeLoader.construct_mapping(loader, node, deep)
+Strict.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, mapping)
+bad = 0
+for f in sys.argv[1:]:
+    try:
+        list(yaml.load_all(open(f), Strict))
+    except yaml.YAMLError as e:
+        print(f"{f}: {e}"); bad = 1
+sys.exit(bad)
+PY
+then ok "values files"; else bad "duplicate keys (see above)"; fi
+
 echo "==> helm lint"
 if helm lint "$APP_OF_APPS" "${APP_PARAMS[@]}" >/dev/null 2>&1; then ok "$APP_OF_APPS"; else
   bad "$APP_OF_APPS"; helm lint "$APP_OF_APPS" "${APP_PARAMS[@]}" || true
