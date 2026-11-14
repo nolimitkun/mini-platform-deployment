@@ -79,15 +79,14 @@ This is exactly what CI (`.github/workflows/validate.yaml`) runs. It:
   source parameters) and the `app-resources` chart once per `resourcesFile`,
 - runs `kubeconform` over the rendered manifests,
 - `shellcheck`s `scripts/*.sh`,
-- runs `gen-catalog.py --check`, so generated files can't drift from
-  `catalog/models.yaml`, and renders the project registry's seed
-  (`render-records.py`: the project and agent schemas, the cross-file rules),
-- runs `opa check --strict` and `opa fmt` on `policies/gateway`, `opa test` over
-  it with the rendered seed as project data, then builds both bundles and loads
-  them together (their `.manifest` roots must not overlap), and
+- fetches gateway-policy at `policyRevision` (`policy-checkout.sh`), renders
+  `agentgateway-config` with its catalog, checks the MCP targets and semantic
+  router decisions against it (`check-policy-wiring.py`), and renders the
+  registry's seed with its renderer and the kagent wiring check (the Rego's own
+  tests run in gateway-policy's CI), and
 - runs `promtool` on the rendered Prometheus config and the alert rules.
 
-`helm` is required; `kubeconform`, `shellcheck`, `opa` and `promtool` are
+`helm` and `git` are required; `kubeconform`, `shellcheck` and `promtool` are
 skipped if absent locally but always run in CI. Beyond the Rego unit tests in `policies/`, "tests"
 here means rendering and schema-checking.
 
@@ -98,50 +97,43 @@ Default AI request path: `Open WebUI → agentgateway → KServe InferencePool (
 one OpenAI-compatible endpoint for every model (self-hosted KServe releases, Gemini on Vertex AI over the
 mini-cloud VPN, DeepSeek), passthrough routes to Google's speech APIs, and one MCP
 endpoint over the cluster's MCP servers. Every request carries a per-project API key
-and is decided by **OPA** (ext_authz, FailClosed) from the Rego in `policies/gateway`
-and the per-project data, two bundles in MinIO with disjoint `.manifest` roots, both
-signed with a Vault Transit key that never leaves Vault (OPA verifies them). The
-**project registry** (`project-registry`, code in `nolimitkun/project-registry`,
-docs/project-registry.md) publishes both, every change after policy-decided approvals
-(`policies/gateway/portal.rego`): it holds the projects, agents and exceptions as change
-requests and publishes `gateway-projects` after replaying recent decisions; and it files
-every new commit on `main` as a **policy change** (it runs `opa test`, builds and signs
-`gateway-policy`, replays), which goes live, without an Argo CD sync, only once the
-platform team and security approve it in the portal. So a Rego change must pass `opa test`
-and the two-bundle load (run by `validate-gitops.sh`) to merge, and an approval to reach
-OPA; to try a branch on the cluster, point `policy.ref` in the project-registry values at
-it for the test. OPA Control Plane was
-removed. Each project's rate limits travel with OPA's allow decision (dynamic metadata →
-`limitOverride`); the rate-limit config lists no project. `scripts/policy-replay.py` replays recent decisions
-from Loki against a change. Models and Google APIs are declared
-once in `catalog/models.yaml`; `scripts/gen-catalog.py` generates the gateway chart's
-`files/catalog.json` and the policy's `catalog/data.json` from it (CI checks they are
-current). API keys belong to projects (data class, placement, allowed models, key ids,
-MCP tools). Projects, agents and exceptions live ONLY in the project registry: change
-them in its portal (`registry.test/portal/`, Keycloak login with PKCE) or API, never
-in this repo, which has no copy. This repo keeps their format (`projects/schema.json`,
-`agents/schema.json`), the renderer, and the seed a new cluster's registry imports
-(`minikube/gitops/project-registry/files/seed.yaml`, also what CI tests the Rego
-with). What used to read project files reads the registry: the Vault bootstrap gets the
-key ids from its cluster-internal `/internal/keys` (or renders the seed before the
-registry runs), the registry applies agentregistry's agent catalog itself, and
-`policy-replay.py` takes the active data bundle from it. A daily CronJob
-(`project-registry-snapshot`) copies the records into the bundle store, which an
-empty registry imports. The budget
-alert is one rule joining spend with the registry's `project_budget_usd`; who may
-submit and who must approve a change are both Rego (`portal.may_submit`,
-`portal.required_approvals`). `scripts/gen-projects.py` validates the records against
-`projects/schema.json` and renders `data.projects` (one file per project in the
-`gateway-projects` bundle); the registry runs it on every change, at the active
-policy commit (`render-records.py` does the same for a records file). Agents
-(the registry's agent records) belong to a project and narrow it: own keys, models, MCP tools,
-owner, autonomy; gen-projects.py adds them to the policy data (`data.agents`,
-each project's `agent_keys`) and to agentregistry, and checks a kagent agent is
-wired to its own ModelConfig and secret. `catalog/tools.yaml` classes every MCP
-tool behind the gateway (read, write, irreversible; unlisted = irreversible) and
-OPA holds each agent to its autonomy; `scripts/tools-drift.py` reports tools that
-appeared, vanished or changed since they were classified. **agentregistry** is the catalog of
-MCP servers and agents; its entries live in `minikube/gitops/agentregistry-catalog`.
+and is decided by **OPA** (ext_authz, FailClosed) from two signed bundles in MinIO
+(disjoint `.manifest` roots, signed with a Vault Transit key that never leaves Vault).
+Three repos split this, and neither of the other two is in this one:
+- **nolimitkun/gateway-policy**: the Rego (`policies/gateway`, including who proposes and
+  who approves registry changes, `portal.rego`), the model and tool catalog
+  (`catalog/models.yaml`, `catalog/tools.yaml`), the record schemas, and the scripts
+  (`gen-catalog.py`, `gen-projects.py`, `render-records.py`, `policy-replay.py`,
+  `tools-drift.py`). Its own CI tests the Rego. Change the policy there, never here.
+- **nolimitkun/project-registry** (deployed here by `project-registry`, design in its
+  `docs/design.md`): holds the projects, agents and exceptions, ONLY there (portal at
+  `registry.test/portal/`, Keycloak login with PKCE, or its API), and publishes both
+  bundles, every change after policy-decided approvals. It files every new commit on
+  gateway-policy's `main` as a **policy change** (opa test with its live records, build,
+  sign, replay; `skipped` if neither bundle changes), live without an Argo CD sync once the
+  platform team and security approve it. To try a policy branch on the cluster, point
+  `policy.ref` in the project-registry values at it for the test.
+- **This repo** pins gateway-policy at `policyRevision` (`minikube/gitops/mini-platform/
+  values.yaml`). `agentgateway-config` takes the catalog's generated values file
+  (`generated/agentgateway-catalog.yaml`) from there at that commit (Argo CD multi-source,
+  `policyValueFiles`), so a new model's routes appear when the pin moves, after its
+  placement is approved as a policy change. `scripts/policy-checkout.sh` fetches the pinned
+  commit; `validate-gitops.sh` renders the gateway with its catalog and checks this repo's
+  wiring against it (`scripts/check-policy-wiring.py`: MCP targets, semantic router
+  decisions), and that the registry's seed renders with the kagent agents wired to their
+  keys. This repo keeps the seed a new cluster's registry imports
+  (`minikube/gitops/project-registry/files/seed.yaml`), not the records.
+
+What reads the records reads the registry: the Vault bootstrap gets the key ids from its
+cluster-internal `/internal/keys` (or renders the seed with the pinned policy's
+`render-records.py` on a new cluster), the registry applies agentregistry's agent catalog
+itself, and `policy-replay.py` takes the active data bundle from it. A daily CronJob
+(`project-registry-snapshot`) copies the records into the bundle store, which an empty
+registry imports. Each project's rate limits travel with OPA's allow decision (dynamic
+metadata → `limitOverride`); the rate-limit config lists no project. The budget alert is
+one rule joining spend with the registry's `project_budget_usd`. OPA Control Plane was
+removed. **agentregistry** is the catalog of MCP servers and agents; its static entries
+live in `minikube/gitops/agentregistry-catalog`.
 
 Self-hosted models are KServe `LLMInferenceService`s in `model-hprd` /
 `model-prod`, created by the model onboarding pipeline (separate repo,

@@ -1,9 +1,10 @@
 {{- $v := .Values }}
-{{- /* Models come from the repo's catalog/models.yaml, through files/catalog.json
-     (scripts/gen-catalog.py). */}}
-{{- $catalog := .Files.Get "files/catalog.json" | fromJson }}
+{{- /* Models come from the gateway policy's catalog/models.yaml, through its
+     generated/agentgateway-catalog.yaml, a values file (the root app's
+     policyValueFiles, at policyRevision). */}}
+{{- $catalog := .Values.catalog | default dict }}
 {{- if not $catalog.models }}
-{{- fail "files/catalog.json is missing or lists no models: run scripts/gen-catalog.py" }}
+{{- fail "catalog.models is empty: the values from gateway-policy's generated/agentgateway-catalog.yaml are missing" }}
 {{- end }}
 {{- range $catalog.models }}
 {{- if eq .provider "KServe" }}

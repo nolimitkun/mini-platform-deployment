@@ -1036,7 +1036,7 @@ vault_exec write auth/kubernetes/role/mini-platform \
   audience=vault \
   policies=mini-platform-read \
   ttl=1h >/dev/null
-# Bundle signing (docs/project-registry.md "Two signed bundles, no OCP"): an RSA
+# Bundle signing (nolimitkun/project-registry docs/design.md "Two signed bundles, no OCP"): an RSA
 # key in Transit, never exported. The project registry, which publishes both
 # bundles, may only sign with it (role bundle-signer); OPA verifies with its public key,
 # published to KV for VSO (opa-policy-resources.yaml).

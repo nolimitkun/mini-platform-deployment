@@ -344,11 +344,13 @@ registry_lines() {
     kubectl -n mini-platform exec deploy/project-registry -- python -c \
       "import sys, urllib.request; sys.stdout.write(urllib.request.urlopen('http://127.0.0.1:8080/internal/$1', timeout=120).read().decode())"
   else
-    python3 "$(dirname "$0")/render-records.py" "$(dirname "$0")/../minikube/gitops/project-registry/files/seed.yaml" "--$1"
+    # the renderer of the gateway policy this repo pins (policyRevision)
+    python3 "$("$(dirname "$0")/policy-checkout.sh")/scripts/render-records.py" \
+      "$(dirname "$0")/../minikube/gitops/project-registry/files/seed.yaml" "--$1"
   fi
 }
 # agentgateway reads agentgateway-api-keys, one entry per key id whose JSON value carries the key
-# and the {project, key_id} the OPA policy keys on (policies/gateway); the raw
+# and the {project, key_id} the OPA policy keys on (gateway-policy); the raw
 # keys are in agentgateway-client-keys under the same key ids. Both are written
 # from the same values, reused on a SEED_MISSING_ONLY pass so a client never
 # holds a key the gateway does not. A key id removed from its project in the registry is

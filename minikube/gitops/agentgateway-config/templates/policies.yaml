@@ -18,7 +18,7 @@ spec:
         name: {{ $v.apiKeysSecret }}
 {{- if $v.extAuth.enabled }}
 ---
-# Then OPA decides (opa-policy chart, policies/gateway in this repo). It gets
+# Then OPA decides (opa-policy chart; policies/gateway in gateway-policy). It gets
 # the request with its body, plus the key's project and key id; FailClosed,
 # so an unreachable OPA denies everything rather than allowing it.
 apiVersion: agentgateway.dev/v1alpha1

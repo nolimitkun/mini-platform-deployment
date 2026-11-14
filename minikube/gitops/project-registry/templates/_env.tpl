@@ -1,6 +1,7 @@
 {{- define "registry.env" -}}
 - {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: {{ .Values.databaseSecret }}, key: DATABASE_URL}}}
-- {name: DEPLOY_REPO, value: {{ .Values.deployRepo | quote }}}
+- {name: POLICY_REPO, value: {{ .Values.policy.repo | quote }}}
+- {name: POLICY_REPO_FALLBACKS, value: {{ .Values.policy.fallbackRepos | default "" | quote }}}
 - {name: S3_ENDPOINT, value: {{ .Values.minio.url | quote }}}
 - {name: S3_BUCKET, value: {{ .Values.minio.bucket | quote }}}
 - {name: AWS_REGION, value: {{ .Values.minio.region | quote }}}

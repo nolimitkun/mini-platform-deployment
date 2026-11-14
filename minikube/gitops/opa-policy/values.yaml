@@ -1,6 +1,6 @@
 # Both bundles are built, signed and published by the project registry's
-# publisher (project-registry chart): the Rego in policies/gateway from Git, once
-# its change is approved, and the project data.
+# publisher (project-registry chart): the Rego in policies/gateway of
+# nolimitkun/gateway-policy, once its change is approved, and the project data.
 bundles:
   policy: gateway-policy
   projects: gateway-projects
@@ -14,7 +14,7 @@ signing:
   transitKey: opa-bundles
   # The key id OPA verifies with; the public key comes from publicKeySecret.
   # Both change together with the project registry's key id and key version,
-  # in one commit (docs/project-registry.md "Rotating the signing key").
+  # in one commit (nolimitkun/project-registry docs/design.md "Rotating the signing key").
   keyid: opa-bundles-v2
   publicKeySecret: opa-bundle-signing
   # The field of that secret holding this version's public key: public_key for

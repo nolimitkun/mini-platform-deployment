@@ -50,11 +50,11 @@ pipeline tuned, evaluated and deployed, its weights streamed from MinIO; see
 "Self-hosted models" in `docs/agentgateway.md`; the Gemini models
 on Vertex AI, `deepseek-v4-pro`), passes Google's speech APIs through, and merges
 the cluster's MCP servers into one endpoint. Before routing, it asks **OPA**,
-whose policy (the Rego in `policies/gateway`: data class per project, placement
+whose policy (the Rego in [gateway-policy](https://github.com/nolimitkun/gateway-policy): data class per project, placement
 per model, allowed tools, the model behind `auto`) and per-project data come in
 two signed bundles, both published by the **project registry** once a change is
-approved: the Rego from Git, the project data from its own records
-([docs/project-registry.md](docs/project-registry.md)). OPA verifies both. Each project's limits travel with OPA's decision, and a rate-limit service counts against them. **agentregistry** is the
+approved: the Rego from gateway-policy, the project data from its own records
+([the project registry's design](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)). OPA verifies both. Each project's limits travel with OPA's decision, and a rate-limit service counts against them. **agentregistry** is the
 catalog of MCP servers and the registered agents. See [docs/agentgateway.md](docs/agentgateway.md).
 
 Supporting subsystems:
@@ -112,9 +112,9 @@ Every browser-facing service authenticates against Keycloak — see
 | `scripts/port-forward-services.sh` | Host-local or LAN port forwards for browser services |
 | `scripts/check-local-deployment.sh` | Verifies local Argo CD sync/health, pod readiness, secret sync, and optional Open WebUI smoke test |
 | `scripts/set-repo.sh` | Repoints the charts/deploy repo URLs and revisions in one command |
-| `scripts/validate-gitops.sh` | Lints/renders the GitOps charts, shellchecks the scripts, checks the catalog and projects generators, runs `opa test` and loads the two policy bundles together, and runs `promtool`; run in CI too |
-| `scripts/policy-replay.py` | Replays recent gateway decisions from Loki against the policy in the checkout and lists verdicts that would flip |
-| `scripts/tools-drift.py` | Compares the MCP tools behind the gateway with `catalog/tools.yaml`: new, removed or changed tools |
+| `scripts/validate-gitops.sh` | Lints/renders the GitOps charts, shellchecks the scripts, checks this repo's wiring against the gateway policy at `policyRevision`, and runs `promtool`; run in CI too |
+| `scripts/policy-checkout.sh` | Fetches the gateway policy ([nolimitkun/gateway-policy](https://github.com/nolimitkun/gateway-policy)) at the pinned `policyRevision` |
+| `scripts/check-policy-wiring.py` | Checks the gateway's MCP targets and the semantic router's decisions against the policy's catalog |
 | `tools/` | Optional utility workloads (e.g. network diagnostics) |
 
 The vendored charts (`charts/`) live in the separate
@@ -1135,18 +1135,19 @@ also:
 - lints and renders the app-of-apps and the shared app-resources chart, and runs
   `kubeconform` over the rendered manifests;
 - `shellcheck`s the scripts;
-- checks that the files `gen-catalog.py` and `gen-projects.py` generate are
-  current;
-- runs `opa check`, `opa fmt` and `opa test` over `policies/`, then builds the
-  `gateway-policy` and `gateway-projects` bundles and loads them together;
+- fetches the gateway policy at `policyRevision`, renders `agentgateway-config`
+  with its catalog, checks the MCP targets and the semantic router's decisions
+  against it, and renders the project registry's seed with its renderer (and
+  the kagent agents' wiring); the Rego's tests run in gateway-policy's own CI;
 - runs `promtool` on Prometheus's config and the alert rules.
 
-`kubeconform`, `shellcheck`, `opa` and `promtool` are used if installed and
+`kubeconform`, `shellcheck` and `promtool` are used if installed and
 skipped otherwise; CI installs them all.
 
-Before merging a policy or project change, `python3 scripts/policy-replay.py`
-replays recent gateway decisions from Loki against the change and lists every
-verdict that would flip (see [docs/agentgateway.md](docs/agentgateway.md)).
+Policy changes are made in [gateway-policy](https://github.com/nolimitkun/gateway-policy),
+whose `scripts/policy-replay.py` replays recent gateway decisions against a
+change, and project changes in the project registry, which replays them itself
+(see [docs/agentgateway.md](docs/agentgateway.md)).
 
 ## Production Hardening
 

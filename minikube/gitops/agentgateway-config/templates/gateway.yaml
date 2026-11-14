@@ -108,7 +108,7 @@ spec:
         # catalog's model routes to releases (provider KServe), which have to
         # sit next to the InferencePool they target.
         namespaces:
-          {{- $catalog := .Files.Get "files/catalog.json" | fromJson }}
+          {{- $catalog := .Values.catalog | default dict }}
           {{- if $catalog.servingNamespaces }}
           from: Selector
           selector:

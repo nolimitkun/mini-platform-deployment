@@ -1,5 +1,5 @@
 # The project registry's own database: projects, change requests, approvals and
-# the audit log (docs/project-registry.md "Data model").
+# the audit log (nolimitkun/project-registry docs/design.md "Data model").
 fullnameOverride: project-registry-postgresql
 
 auth:

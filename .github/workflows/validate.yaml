@@ -48,14 +48,6 @@ jobs:
             | tar -xz -C /usr/local/bin kubeconform
           kubeconform -v
 
-      # OPA for the gateway policies under policies/ (opa check, fmt, test).
-      - name: Install opa
-        run: |
-          curl -sSL -o /usr/local/bin/opa \
-            https://github.com/open-policy-agent/opa/releases/download/v1.22.2/opa_linux_amd64_static
-          chmod +x /usr/local/bin/opa
-          opa version | head -1
-
       # promtool for Prometheus's rendered config and the alert rules. Same
       # version as the server (charts/prometheus appVersion).
       - name: Install promtool
@@ -65,7 +57,8 @@ jobs:
             | tar -xz -C /usr/local/bin --strip-components=1 prometheus-3.11.3.linux-amd64/promtool
           promtool --version | head -1
 
-      # PyYAML and jsonschema for scripts/gen-catalog.py and gen-projects.py.
+      # PyYAML and jsonschema for the gateway policy's render-records.py and
+      # scripts/check-policy-wiring.py.
       - name: Python modules
         run: python3 -c 'import yaml, jsonschema' || python3 -m pip install --user pyyaml jsonschema
 

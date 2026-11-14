@@ -1,21 +1,22 @@
 # The registry API, the publisher and the one-off import, all one image
-# (github.com/nolimitkun/project-registry). Design: docs/project-registry.md.
-image: ghcr.io/nolimitkun/project-registry:sha-01dc33612e59c48c40e5e6e4fd8c654e85fa45db
+# (github.com/nolimitkun/project-registry). Design: nolimitkun/project-registry docs/design.md.
+image: ghcr.io/nolimitkun/project-registry:sha-a9df07807d0cffde334fe7e9c70c50cd70ec7811
 
 # DATABASE_URL, from Vault (project-registry-db), for project-registry-postgresql.
 databaseSecret: project-registry-db
 
-# The deployment repo the publisher renders with: scripts/gen-projects.py and
-# the catalog at the commit of the active policy bundle. Public, no credentials.
-deployRepo: https://github.com/nolimitkun/mini-platform-deployment.git
-
-# The policy the publisher follows: every new commit of this branch becomes a
+# The gateway policy (nolimitkun/gateway-policy): the Rego, the catalog and the
+# record schemas. The publisher follows its branch: every new commit becomes a
 # policy change request (kind policy), tested, built, signed and replayed, and
-# OPA loads it once it is approved (docs/project-registry.md "Policy changes").
-# The repository is deployRepo: the records render with gen-projects.py at the
-# policy's commit. A branch name, not a commit. To try a branch on the cluster,
-# set it here for the test, and back to main before the merge.
+# OPA loads it once it is approved (nolimitkun/project-registry docs/design.md "Policy changes").
+# The records render with its gen-projects.py, at the active policy's commit.
+# Public, no credentials. ref: a branch name, not a commit. To try a branch on
+# the cluster, set it here for the test, and back to main before the merge.
 policy:
+  repo: https://github.com/nolimitkun/gateway-policy.git
+  # Where the policy lived before (its commits until 2026-11-14): the active
+  # commit, or an older one a rollback activates, may only be there.
+  fallbackRepos: https://github.com/nolimitkun/mini-platform-deployment.git
   ref: main
   dir: policies/gateway
   # how often the branch is checked (seconds)
@@ -36,7 +37,7 @@ signing:
   vaultRole: bundle-signer
   transitKey: opa-bundles
   # The Transit key version that signs, and the key id OPA knows it by. Both
-  # change together with opa-policy's, in one commit (docs/project-registry.md
+  # change together with opa-policy's, in one commit (nolimitkun/project-registry docs/design.md
   # "Rotating the signing key").
   keyVersion: 2
   keyid: opa-bundles-v2
@@ -44,7 +45,7 @@ serviceAccount: project-registry
 
 # Who may propose a change and who must approve it: data.portal.may_submit and
 # data.portal.required_approvals on the gateway's OPA (its policy bundle
-# carries policies/gateway/portal.rego).
+# carries gateway-policy's policies/gateway/portal.rego).
 opaUrl: http://opa.mini-platform.svc.cluster.local:8181
 
 # People log in to Keycloak; the registry checks their access tokens (signed by
