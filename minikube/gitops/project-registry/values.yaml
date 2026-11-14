@@ -16,7 +16,7 @@ deployRepo: https://github.com/nolimitkun/mini-platform-deployment.git
 # the test, and back to main before the merge.
 policy:
   repo: https://github.com/nolimitkun/mini-platform-deployment.git
-  ref: feat/policy-via-registry   # TEMPORARY: branch test, back to main before merge
+  ref: main
   dir: policies/gateway
   testDirs: policies/gateway,policies/gateway-projects
   # how often the branch is checked (seconds)
