@@ -216,7 +216,7 @@ Useful flags:
 | Flag | Effect |
 | --- | --- |
 | `--reset` | Delete and recreate the profile first (backs up any existing Vault init JSON) |
-| `--local-source` | Serve both committed checkouts (charts + deploy) through a cluster-only Git service instead of a remote |
+| `--local-source` | Serve the committed checkouts (charts, deploy, and the gateway policy at `--policy-dir`) through a cluster-only Git service instead of a remote |
 | `--no-gpu` | Start without GPU passthrough (use only with a CPU-capable vLLM overlay, and set `dcgm-exporter`'s `enabled: false` in the app-of-apps values — it exits on a GPU-less node and would stall wave `-1`) |
 | `--rotate-secrets` | Rewrite Vault credentials on an already-initialized Vault |
 | `--skip-image-preload` | Skip loading host-cached images into Minikube |
@@ -241,17 +241,22 @@ honouring the old key while the lookup below hands out the new one.
 
 **Deploying from a local checkout.** When the repos live only on the Minikube
 host, or are private and Argo CD has no credential, use `--local-source`. Both
-the deployment repo and the sibling charts checkout must have a clean tree:
+the deployment repo and the sibling charts checkout must have a clean tree, and
+the sibling gateway policy checkout (`--policy-dir`, default `../gateway-policy`)
+must contain the commit pinned at `policyRevision`:
 
 ```bash
 git -C . status --short                       # this deploy repo — must be clean
 git -C ../mini-platform status --short        # charts repo — must be clean
+git -C ../gateway-policy fetch                # has the pinned policyRevision
 ./scripts/deploy-minikube.sh --reset --local-source
 ```
 
 This creates a persistent, cluster-internal `gitops-source/git-source` service
-that serves both repos and pins Argo CD to their current commits. Re-run it
-after committing later changes to refresh the source.
+that serves the three repos and pins Argo CD to the deploy and charts repos'
+current commits and the policy's pinned one. Re-run it after committing later
+changes to refresh the source. (The project registry still follows the gateway
+policy's `main` on GitHub: it files new commits as policy changes.)
 
 **Rootless Docker on Linux.** If Minikube uses rootless Docker on a remote host,
 ensure the user's Docker service keeps running without an active login (user

@@ -49,6 +49,12 @@ OPERATOR_RESTARTED=false
 # CHARTS_REPO_URL; this local path is only used to bootstrap Argo CD itself and,
 # in --local-source mode, to serve the charts repo from inside the cluster.
 CHARTS_DIR="${CHARTS_DIR:-$ROOT/../mini-platform}"
+# The gateway policy (nolimitkun/gateway-policy), pinned at policyRevision in
+# minikube/gitops/mini-platform/values.yaml. Argo CD reads its generated catalog
+# values from GitHub, or, in --local-source mode, from this checkout served by the
+# same internal Git service (it must contain the pinned commit).
+POLICY_DIR="${POLICY_DIR:-$ROOT/../gateway-policy}"
+POLICY_REPO_URL=""
 
 usage() {
   cat <<'EOF'
@@ -56,13 +62,16 @@ Usage: scripts/deploy-minikube.sh [options]
 
 Options:
   --reset                 Delete and recreate the Minikube profile first.
-  --local-source          Serve the committed charts and deployment checkouts
-                          through an internal cluster-only Git service for Argo CD.
+  --local-source          Serve the committed charts, deployment and gateway policy
+                          checkouts through an internal cluster-only Git service
+                          for Argo CD.
   --charts-repo-url URL   Git URL of the vendored charts repository.
   --charts-revision REV   Revision of the charts repository (default: main).
   --deploy-repo-url URL   Git URL of this deployment repository.
   --deploy-revision REV   Revision of the deployment repository (default: main).
   --charts-dir PATH       Local charts repo checkout (default: ../mini-platform).
+  --policy-dir PATH       Local gateway policy checkout, for --local-source
+                          (default: ../gateway-policy).
   --no-gpu                Start Minikube without NVIDIA GPU passthrough.
   --rotate-secrets        Rewrite Vault application credentials on an existing
                           initialized Vault instance.
@@ -629,6 +638,11 @@ while [[ $# -gt 0 ]]; do
       CHARTS_DIR="$2"
       shift
       ;;
+    --policy-dir)
+      [[ $# -ge 2 ]] || fail "--policy-dir requires a value"
+      POLICY_DIR="$2"
+      shift
+      ;;
     --no-gpu)
       GPU=false
       ;;
@@ -726,6 +740,11 @@ if [[ "$SOURCE_MODE" == local ]]; then
   CHARTS_REVISION="$(require_clean_checkout "$CHARTS_DIR" "charts repo")"
   DEPLOY_REPO_URL="git://git-source.gitops-source.svc.cluster.local:9418/mini-platform-deployment"
   CHARTS_REPO_URL="git://git-source.gitops-source.svc.cluster.local:9418/mini-platform"
+  POLICY_REVISION="$(python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["policyRevision"])' \
+    "$ROOT/minikube/gitops/mini-platform/values.yaml")"
+  git -C "$POLICY_DIR" cat-file -e "$POLICY_REVISION^{commit}" 2>/dev/null ||
+    fail "--local-source needs the gateway policy at $POLICY_REVISION; fetch it in $POLICY_DIR (--policy-dir)"
+  POLICY_REPO_URL="git://git-source.gitops-source.svc.cluster.local:9418/gateway-policy"
 fi
 
 if [[ "$RESET" == true ]]; then
@@ -857,7 +876,7 @@ spec:
             - -ec
             - |
               while [ ! -d /repos/mini-platform/.git ] || [ ! -d /repos/mini-platform-deployment/.git ]; do sleep 2; done
-              exec git daemon --reuseaddr --export-all --base-path=/repos --listen=0.0.0.0 --port=9418 /repos/mini-platform /repos/mini-platform-deployment
+              exec git daemon --reuseaddr --export-all --base-path=/repos --listen=0.0.0.0 --port=9418 /repos/mini-platform /repos/mini-platform-deployment /repos/gateway-policy
           ports:
             - name: git
               containerPort: 9418
@@ -894,6 +913,10 @@ EOF
   kubectl -n gitops-source wait --for=condition=Ready "pod/$git_pod" --timeout=300s
   kubectl -n gitops-source cp "$CHARTS_DIR/." "$git_pod:/repos/mini-platform"
   kubectl -n gitops-source cp "$ROOT/." "$git_pod:/repos/mini-platform-deployment"
+  kubectl -n gitops-source cp "$POLICY_DIR/." "$git_pod:/repos/gateway-policy"
+  # Argo CD fetches the pinned commit, which need not be a branch tip.
+  kubectl -n gitops-source exec "$git_pod" -- \
+    git -C /repos/gateway-policy config uploadpack.allowReachableSHA1InWant true
   source_ready=false
   for _ in {1..30}; do
     if kubectl -n gitops-source exec "$git_pod" -- \
@@ -924,7 +947,8 @@ kubectl apply -f minikube/gitops/root-application.yaml
 # stale paths or missing multi-repo parameters.
 source_patch="$(jq -cn \
   --arg charts_repo "$CHARTS_REPO_URL" --arg charts_rev "$CHARTS_REVISION" \
-  --arg deploy_repo "$DEPLOY_REPO_URL" --arg deploy_rev "$DEPLOY_REVISION" '[
+  --arg deploy_repo "$DEPLOY_REPO_URL" --arg deploy_rev "$DEPLOY_REVISION" \
+  --arg policy_repo "$POLICY_REPO_URL" '[
   {
     "op":"replace",
     "path":"/spec/source",
@@ -938,7 +962,7 @@ source_patch="$(jq -cn \
           {"name":"chartsRevision","value":$charts_rev},
           {"name":"deployRepo","value":$deploy_repo},
           {"name":"deployRevision","value":$deploy_rev}
-        ]
+        ] + (if $policy_repo == "" then [] else [{"name":"policyRepo","value":$policy_repo}] end)
       }
     }
   }
