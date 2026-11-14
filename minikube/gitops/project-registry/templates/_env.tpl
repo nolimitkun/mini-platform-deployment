@@ -2,6 +2,8 @@
 - {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: {{ .Values.databaseSecret }}, key: DATABASE_URL}}}
 - {name: POLICY_REPO, value: {{ .Values.policy.repo | quote }}}
 - {name: POLICY_REPO_FALLBACKS, value: {{ .Values.policy.fallbackRepos | default "" | quote }}}
+- {name: KAGENT_WIRING_REPO, value: {{ .Values.kagentWiring.repo | quote }}}
+- {name: KAGENT_WIRING_REF, value: {{ .Values.kagentWiring.ref | quote }}}
 - {name: S3_ENDPOINT, value: {{ .Values.minio.url | quote }}}
 - {name: S3_BUCKET, value: {{ .Values.minio.bucket | quote }}}
 - {name: AWS_REGION, value: {{ .Values.minio.region | quote }}}

@@ -360,8 +360,9 @@ scope.
 To register an agent: wire its runtime to the key here (for kagent, the three
 places above) and merge, then request the agent in the project registry. Once
 it is published, run the Vault bootstrap (`SEED_MISSING_ONLY=true` creates the
-new key). The registry checks an agent against the policy's rules; this repo's
-CI checks that the seed's kagent agents are wired to their keys.
+new key). The registry checks a proposed agent against the policy's rules and,
+for a kagent agent, against the wiring on this repo's `main`, so the wiring
+merges first; this repo's CI checks the seed's kagent agents the same way.
 
 ## Policy
 
