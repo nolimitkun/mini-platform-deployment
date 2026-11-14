@@ -1,18 +1,28 @@
 vaultSecrets:
-  # kagent's API key for the model gateway, and its Grafana basic-auth pair for
-  # the Grafana MCP server. Both are mirrors — the gateway and Grafana each
-  # already own the underlying credential — written under the key names each
-  # consumer expects.
-  - kagent-agentgateway
+  # kagent's API key for the model gateway (project kagent's key, a copy out of the
+  # project registry's key map, under the name its OpenAI client reads), and its
+  # Grafana basic-auth pair for the Grafana MCP server (a mirror of Grafana's own).
+  - name: kagent-agentgateway
+    gatewayKey: kagent
+    field: OPENAI_API_KEY
   - kagent-grafana
-  # Each registered agent's own gateway key (agents/kagent-*.yaml), so OPA
-  # knows which agent is calling and applies its scope. kagent-agentgateway
-  # stays for default-model-config, which agents created in the UI use: they
-  # get the kagent project's scope until they are registered.
-  - kagent-k8s-agent-agentgateway
-  - kagent-helm-agent-agentgateway
-  - kagent-promql-agent-agentgateway
-  - kagent-observability-agent-agentgateway
+  # Each registered agent's own gateway key (its agent record's key and secret),
+  # so OPA knows which agent is calling and applies its scope. The project
+  # registry checks a new agent's record against these entries.
+  # kagent-agentgateway stays for default-model-config, which agents created in
+  # the UI use: they get the kagent project's scope until they are registered.
+  - name: kagent-k8s-agent-agentgateway
+    gatewayKey: kagent-k8s-agent
+    field: OPENAI_API_KEY
+  - name: kagent-helm-agent-agentgateway
+    gatewayKey: kagent-helm-agent
+    field: OPENAI_API_KEY
+  - name: kagent-promql-agent-agentgateway
+    gatewayKey: kagent-promql-agent
+    field: OPENAI_API_KEY
+  - name: kagent-observability-agent-agentgateway
+    gatewayKey: kagent-observability-agent
+    field: OPENAI_API_KEY
 
 routes:
   - name: kagent

@@ -71,6 +71,9 @@ serviceAccounts: []
 # ==============================================================================
 vault:
   mount: mini-platform
+  # The project registry's map of every gateway API key by key id (its
+  # registry/keys.py); a vaultSecrets entry with gatewayKey copies one key out of it.
+  gatewayKeys: agentgateway-client-keys
   vaultAuthRef: default
   refreshAfter: 1m
   # Backs the VaultAuth rendered into each `externalVaultSecrets` namespace.
