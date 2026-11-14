@@ -16,7 +16,7 @@ deployRepo: https://github.com/nolimitkun/mini-platform-deployment.git
 # policy's commit. A branch name, not a commit. To try a branch on the cluster,
 # set it here for the test, and back to main before the merge.
 policy:
-  ref: main
+  ref: feat/registry-owns-project-data   # TEMPORARY: branch test, back to main before merge
   dir: policies/gateway
   # how often the branch is checked (seconds)
   poll: "60"
