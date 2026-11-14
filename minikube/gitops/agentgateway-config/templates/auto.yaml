@@ -1,6 +1,6 @@
 {{- $v := .Values }}
 {{- if $v.auto.enabled }}
-{{- $catalog := .Files.Get "files/catalog.json" | fromJson }}
+{{- $catalog := .Values.catalog | default dict }}
 {{- /* model "auto": the platform picks the model for the caller's project.
      Each auto model is a virtual model whose callout asks OPA's REST API
      (policies/gateway/select.rego) and routes to the model it names. OPA

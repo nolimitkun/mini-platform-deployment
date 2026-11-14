@@ -4,7 +4,7 @@ Every model call and every shared MCP tool call on the platform goes through one
 gateway, [agentgateway](https://agentgateway.dev). Before routing a request, the
 gateway asks OPA whether this client may use this model or tool. OPA's policy is
 Rego in this repo; each project's data lives in the
-[project registry](project-registry.md). The registry publishes both as signed
+[project registry](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md). The registry publishes both as signed
 bundles, each change after an approval. OPA loads the two bundles together and
 verifies both signatures. agentregistry is the catalog
 where people find the tools.
@@ -49,7 +49,7 @@ flowchart LR
 | agentgateway controller | `agentgateway`, `agentgateway-crds` | Creates the GatewayClass `agentgateway`. For each Gateway, it runs a proxy Deployment, Service and ServiceAccount named after the Gateway |
 | Gateway config | `agentgateway-config` (`minikube/gitops/agentgateway-config`) | The `agentgateway-proxy` Gateway, one `AgentgatewayModel` per model, the `auto` virtual models, passthrough routes to Google's APIs, the merged MCP endpoint, and policies for API keys, OPA, the semantic router, rate limits, the model list, metrics labels and tracing |
 | OPA | `opa-policy` (`minikube/gitops/opa-policy`) | `opa-envoy`, answering ext_authz over gRPC on `opa:9191` |
-| Project registry | `project-registry`, `project-registry-postgresql` | Publishes both of OPA's bundles, signed with Vault Transit, to MinIO (`opa-bundles/`). Projects, agents and exceptions are change requests with approvals (`gateway-projects`). A new commit of `policies/gateway` on `main` is a policy change request, tested and replayed, published once approved (`gateway-policy`). A portal at `registry.test/portal/`, and a daily export of the records to Git as a PR ([project-registry.md](project-registry.md)) |
+| Project registry | `project-registry`, `project-registry-postgresql` | Publishes both of OPA's bundles, signed with Vault Transit, to MinIO (`opa-bundles/`). Projects, agents and exceptions are change requests with approvals (`gateway-projects`). A new commit of `policies/gateway` on `main` is a policy change request, tested and replayed, published once approved (`gateway-policy`). A portal at `registry.test/portal/`, and a daily export of the records to Git as a PR ([its design](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)) |
 | Rate-limit service | `rate-limit` (`minikube/gitops/rate-limit`) | Counts each project's requests, tokens and spend in Redis; the limits come from OPA with each request (see "Rate limits and budgets") |
 | vLLM Semantic Router | `semantic-router` | Classifies `auto` prompts into task classes for the gateway, over ext_proc (see "The semantic router") |
 | agentregistry | `agentregistry`, `agentregistry-postgresql`, `agentregistry-catalog` | The catalog of MCP servers (and later agents), at `agentregistry.test` behind the Keycloak login. Its entries live in `minikube/gitops/agentregistry-catalog/files/catalog.yaml` |
@@ -74,12 +74,16 @@ Outside the cluster, the same endpoints are at `http://agentgateway.test`.
 The names are the ones LiteLLM used, so no client had to rename a model.
 
 Every model and Google API is declared once, in the model catalog
-[`catalog/models.yaml`](../catalog/models.yaml), with its placement and provider
-settings. `scripts/gen-catalog.py` validates the catalog and generates two files
-from it:
+[`catalog/models.yaml`](https://github.com/nolimitkun/gateway-policy/blob/main/catalog/models.yaml) of the gateway policy
+([nolimitkun/gateway-policy](https://github.com/nolimitkun/gateway-policy)), with
+its placement and provider settings. Its `scripts/gen-catalog.py` validates the
+catalog and generates two files from it:
 
-- `minikube/gitops/agentgateway-config/files/catalog.json`, which the gateway
-  chart turns into `AgentgatewayModel` objects and Google API routes.
+- `generated/agentgateway-catalog.yaml`, a values file (`catalog:`) that the
+  gateway chart here turns into `AgentgatewayModel` objects and Google API
+  routes. The root app adds it to `agentgateway-config` from the policy repo at
+  the commit pinned in `minikube/gitops/mini-platform/values.yaml`
+  (`policyRevision`, `policyValueFiles`).
 - `policies/gateway/catalog/data.json`, which OPA reads as `data.catalog` for
   placements.
 
@@ -88,13 +92,15 @@ route.
 
 To add a model or a Google API:
 
-1. Add it to `catalog/models.yaml`.
-2. Run `python3 scripts/gen-catalog.py` and commit the generated files with it.
-   CI (`validate-gitops.sh`) fails if they are out of date.
-
-The policy change goes live once its change request in the project registry is
-approved (see "Changing a policy"). The gateway change goes live on the next
-Argo CD sync.
+1. In gateway-policy: add it to `catalog/models.yaml`, run
+   `python3 scripts/gen-catalog.py`, and merge. The project registry files the
+   commit as a policy change; once it is approved, OPA knows the model's
+   placement (see "Changing a policy").
+2. Here: move `policyRevision` to that commit (with the model's serving
+   release, for a self-hosted one). CI checks this repo's wiring against the
+   policy at the pin (`scripts/check-policy-wiring.py`, and the semantic
+   router's decisions if a task class changed). The routes go live on the next
+   Argo CD sync.
 
 ### Self-hosted models (KServe)
 
@@ -172,18 +178,19 @@ curl -s http://agentgateway.test/google/tts/v1/text:synthesize \
 ## Projects and keys
 
 > **The projects, agents and exceptions live in the
-> [project registry](project-registry.md)**, not in this repo: change them in
+> [project registry](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)**, not in this repo: change them in
 > its portal at `http://registry.test/portal/` or through its API (a change
-> request, approved by policy, published within about a minute). This repo has
-> their format ([`projects/schema.json`](../projects/schema.json),
-> [`agents/schema.json`](../agents/schema.json)), the renderer
-> (`scripts/gen-projects.py`), and the seed a new cluster's registry starts
+> request, approved by policy, published within about a minute). The gateway
+> policy ([nolimitkun/gateway-policy](https://github.com/nolimitkun/gateway-policy)) has
+> their format ([`projects/schema.json`](https://github.com/nolimitkun/gateway-policy/blob/main/projects/schema.json),
+> [`agents/schema.json`](https://github.com/nolimitkun/gateway-policy/blob/main/agents/schema.json)), the renderer
+> (`scripts/gen-projects.py`); this repo has the seed a new cluster's registry starts
 > with (`minikube/gitops/project-registry/files/seed.yaml`). The API key ids for
 > Vault, agentregistry's agent catalog and the data for a replay all come from
 > the registry.
 
 Every API key belongs to a **project**. A project record, in the format of
-[`projects/schema.json`](../projects/schema.json):
+[`projects/schema.json`](https://github.com/nolimitkun/gateway-policy/blob/main/projects/schema.json):
 
 ```yaml
 project: holmes
@@ -204,8 +211,8 @@ deployments: false              # optional; true: may call KServe deployment pat
                                 # (needs onprem placement; see "Self-hosted models")
 ```
 
-`scripts/gen-projects.py` validates the records, including rules across them
-(the registry runs it on every change, at the active policy commit):
+The policy's `scripts/gen-projects.py` validates the records, including rules
+across them (the registry runs it on every change, at the active policy commit):
 
 - the record's name is the project id
 - placement stays within the data class
@@ -224,7 +231,7 @@ publishes:
 | `exceptions/<id>/data.json`, one per project with an exception | OPA, as `data.exceptions.<id>` |
 | `agents/<id>/data.json`, one per agent | OPA, as `data.agents.<id>` |
 
-To see it locally: `python3 scripts/render-records.py minikube/gitops/project-registry/files/seed.yaml --out /tmp/gateway-projects`.
+To see it locally: `python3 "$(scripts/policy-checkout.sh)/scripts/render-records.py" minikube/gitops/project-registry/files/seed.yaml --out /tmp/gateway-projects`.
 The rate-limit config (`minikube/gitops/rate-limit/files/config.yaml`) and the
 alert rules (`app-resources/alerts/agentgateway-projects.yml`) list no project
 and are edited by hand.
@@ -251,9 +258,9 @@ jsonschema:
 - `mini-platform/agentgateway-client-keys` holds the raw keys under the same
   ids.
 
-To add a project, write its file and run `python3 scripts/gen-projects.py`.
-Then merge, and run the bootstrap with `SEED_MISSING_ONLY=true` to create its
-keys.
+To add a project, request it in the project registry's portal. Once it is
+published, run the bootstrap with `SEED_MISSING_ONLY=true` to create its keys
+(it reads the key ids from the registry).
 
 To rotate a key:
 
@@ -295,7 +302,7 @@ kagent-k8s-agent (project kagent)`.
 
 ### Tool risk and autonomy
 
-`catalog/tools.yaml` lists every tool behind `/mcp` (189 today: Grafana MCP and
+The policy's `catalog/tools.yaml` (gateway-policy) lists every tool behind `/mcp` (189 today: Grafana MCP and
 kagent-tools) with the most it can do:
 
 | Risk | Meaning | read-only agent | supervised agent | autonomous agent |
@@ -318,7 +325,7 @@ Grafana's `alerting_manage_routing` claims read-only though it can change
 routing. A tool that can do several things is classed by the worst one.
 
 Each entry also has a `fingerprint`, a hash of the description and input
-schema the server announced when it was classified. `scripts/tools-drift.py`
+schema the server announced when it was classified. The policy repo's `scripts/tools-drift.py`
 lists the live tools through the gateway and reports tools that are new,
 removed or changed since; run it after upgrading kagent or Grafana MCP, and
 before trusting a changed tool, re-check its risk. `gen-catalog.py` puts the
@@ -350,11 +357,16 @@ kagent's agents still call their MCP servers directly, not through the gateway
 created in kagent's UI use until they are registered: they get the project's
 scope.
 
-To register an agent: add the file, wire its runtime to the key (for kagent,
-the three places above), run `scripts/gen-projects.py`, merge, run the Vault
-bootstrap (`SEED_MISSING_ONLY=true` creates the new key), then sync.
+To register an agent: wire its runtime to the key here (for kagent, the three
+places above) and merge, then request the agent in the project registry. Once
+it is published, run the Vault bootstrap (`SEED_MISSING_ONLY=true` creates the
+new key). The registry checks an agent against the policy's rules; this repo's
+CI checks that the seed's kagent agents are wired to their keys.
 
 ## Policy
+
+> The paths in this section (`policies/gateway/...`, `catalog/...`) are in the
+> gateway policy's repository, [nolimitkun/gateway-policy](https://github.com/nolimitkun/gateway-policy).
 
 `policies/gateway/authz.rego` decides each request from:
 
@@ -560,27 +572,26 @@ leaves Vault:
 
 | Bundle | Built from | By | Roots (`.manifest`) | Changes when |
 |--------|------------|----|---------------------|--------------|
-| `gateway-policy` | `policies/gateway` in Git | the project registry's publisher, once the commit's policy change is approved | `gateway`, `catalog`, `system`, `portal` | the Rego, the data classes, the model catalog or the approval rules change |
+| `gateway-policy` | `policies/gateway` in [gateway-policy](https://github.com/nolimitkun/gateway-policy) | the project registry's publisher, once the commit's policy change is approved | `gateway`, `catalog`, `system`, `portal` | the Rego, the data classes, the model catalog or the approval rules change |
 | `gateway-projects` | the project registry's records | its publisher (`project-registry`) | `projects`, `exceptions`, `agents` | an approved change is published |
 
 Each bundle activates on its own, so a project change swaps only
 `gateway-projects` and never touches the Rego. The roots must not overlap: OPA
-refuses to activate two bundles that claim the same root, and
-`validate-gitops.sh` builds both and loads them together to catch that in CI.
+refuses to activate two bundles that claim the same root, and the policy repo's
+CI (`scripts/validate.sh`) builds both and loads them together to catch that.
 OPA verifies each bundle's signature (`keys` and `signing` in the opa-policy
 chart; the public key comes from Vault, `opa-bundle-signing`) and refuses one
 that doesn't verify, keeping the last good one. A bundle written to MinIO by
 anyone else, or changed there, is not loaded.
 
-To change the policy:
+To change the policy (in [gateway-policy](https://github.com/nolimitkun/gateway-policy)):
 
-1. Edit the Rego, the data or the catalog, regenerate with
-   `scripts/gen-catalog.py`, and test with project data rendered from the seed:
-   `python3 scripts/render-records.py minikube/gitops/project-registry/files/seed.yaml --out /tmp/gp && opa test policies/gateway /tmp/gp`.
-   CI runs the same, plus `gen-catalog.py --check`, `opa check`, `opa fmt`, the
-   two-bundle load and `promtool` (`scripts/validate-gitops.sh`).
+1. Edit the Rego, the data classes or the catalog, regenerate with
+   `scripts/gen-catalog.py`, and run `scripts/validate.sh` (what its CI runs:
+   the catalog, the test records rendered, `opa check`, `opa fmt`, `opa test`,
+   the two-bundle load).
 2. Replay recent traffic against the change with
-   `python3 scripts/policy-replay.py`. It reads OPA's decisions from Loki,
+   `python3 scripts/policy-replay.py` there. It reads OPA's decisions from Loki,
    evaluates each logged request with the policy in your checkout and the
    project data active now (from the registry), and lists
    every request whose verdict would flip. It needs the cluster, so CI doesn't
@@ -733,7 +744,7 @@ curl -s http://agentgateway.test/v1/chat/completions -H "Authorization: Bearer $
 
 ## Scaling to many projects
 
-[multi-project-policy.md](multi-project-policy.md) is the design record for
+[The policy's design record](https://github.com/nolimitkun/gateway-policy/blob/main/docs/design.md) (gateway-policy) covers
 hundreds of projects with several keys each: the decisions behind projects, the
 catalog, `auto` selection with the vLLM Semantic Router, rankings, rate limits
 and budgets, what changed while building them, and the spikes behind each

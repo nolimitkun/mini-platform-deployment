@@ -10,10 +10,10 @@
 #     chart lints and renders against each per-application resources file
 #   - rendered manifests pass kubeconform (CRDs are allowed to be unknown)
 #   - shellcheck on scripts/
-#   - catalog/models.yaml is valid and the files generated from it are current;
-#     the registry's seed renders (project and agent schemas, cross-file rules)
-#   - opa check and fmt on every policy bundle under policies/, opa test over
-#     all of them, and a build of each loaded together (disjoint roots)
+#   - against the gateway policy at policyRevision (its own CI tests the Rego):
+#     agentgateway-config renders with its catalog, the MCP targets and semantic
+#     router decisions match it, and the registry's seed renders with the kagent
+#     agents wired to their keys
 #   - promtool on Prometheus's rendered prometheus.yml and on the alert rules
 #     under minikube/gitops/app-resources/alerts/
 #
@@ -22,8 +22,9 @@
 # when absent those checks are skipped, not failed.
 #
 # Tools used if present: helm (required), python3 with PyYAML and jsonschema
-# (required), kubeconform (optional), shellcheck (optional), opa (optional),
-# promtool (optional).
+# (required), git (required, to fetch the gateway policy; GATEWAY_POLICY_DIR uses a
+# local checkout instead), kubeconform (optional), shellcheck (optional), promtool
+# (optional).
 # Missing optional tools are reported and skipped, not failed.
 set -euo pipefail
 
@@ -149,58 +150,33 @@ else
   skip "shellcheck not installed"
 fi
 
-echo "==> model catalog (catalog/models.yaml)"
-if python3 scripts/gen-catalog.py --check; then
-  ok "catalog valid, generated files current"
-else
-  bad "catalog (run: python3 scripts/gen-catalog.py)"
-fi
-
-echo "==> project data (the registry's seed, rendered)"
-# The records live in the project registry; this repo has their schema and the
-# renderer. CI renders the seed (the platform's own projects, which a new
-# cluster starts with) to check both, and tests the Rego with it below.
-seed_dir="$(mktemp -d)/gateway-projects"
-if python3 scripts/render-records.py minikube/gitops/project-registry/files/seed.yaml --out "$seed_dir"; then
-  ok "seed renders (schema, cross-file rules)"
-else
-  bad "seed (python3 scripts/render-records.py minikube/gitops/project-registry/files/seed.yaml --out /tmp/x)"
-fi
-
-echo "==> opa (policies/)"
-if have opa; then
-  # Two bundles, loaded together by OPA: the Rego in policies/gateway, and the
-  # per-project data the project registry publishes. Here the data is the seed
-  # rendered above (policies/gateway-projects holds only its .manifest).
-  if opa check --strict policies/gateway >/dev/null; then ok "opa check policies/gateway"; else bad "opa check policies/gateway"; fi
-  if [[ -z "$(opa fmt --list policies/gateway)" ]]; then ok "opa fmt policies/gateway"; else bad "opa fmt policies/gateway (run: opa fmt -w policies/gateway)"; fi
-  dirs=(policies/gateway "$seed_dir")
-  if opa test "${dirs[@]}" >/dev/null; then ok "opa test ${dirs[*]}"; else bad "opa test ${dirs[*]}"; opa test "${dirs[@]}" || true; fi
-  # Build each bundle as the builders do (tests left out, roots from its .manifest)
-  # and activate them together, as OPA does: data outside a bundle's roots, or
-  # two bundles claiming the same root, fails here instead of in the cluster.
-  bundle_tmp="$(mktemp -d)"
-  bundle_args=()
-  built=true
-  for dir in "${dirs[@]}"; do
-    out="$bundle_tmp/$(basename "$dir").tar.gz"
-    if err="$(opa build -b "$dir" --ignore '*_test.rego' -o "$out" 2>&1)"; then
-      bundle_args+=(-b "$out")
-    else
-      built=false
-      bad "opa build $dir"; echo "$err"
-    fi
-  done
-  if [[ "$built" == true ]]; then
-    if err="$(opa eval "${bundle_args[@]}" --fail 'true' 2>&1)"; then
-      ok "bundles load together (roots disjoint)"
-    else
-      bad "bundles load together"; echo "$err"
-    fi
+echo "==> gateway policy (nolimitkun/gateway-policy at policyRevision)"
+# The Rego, the catalog and the record schemas are in their own repo, with their
+# own CI. Here: this repo's wiring against them, at the commit it pins.
+if policy_dir="$(scripts/policy-checkout.sh)"; then
+  ok "checkout $policy_dir"
+  catalog_values="$policy_dir/generated/agentgateway-catalog.yaml"
+  render "agentgateway-config (with the policy's catalog)" agentgateway-config \
+    agentgateway-config minikube/gitops/agentgateway-config --namespace mini-platform \
+    -f minikube/gitops/agentgateway-config/values.yaml -f "$catalog_values"
+  if python3 scripts/check-policy-wiring.py "$policy_dir"; then
+    ok "MCP targets and semantic router decisions match the catalog"
+  else
+    bad "wiring (scripts/check-policy-wiring.py)"
   fi
-  rm -rf "$bundle_tmp"
+  # The registry's seed (the platform's own projects, which a new cluster starts
+  # with) must render with the policy's renderer, and each kagent agent in it be
+  # wired to its own key in this repo's kagent values.
+  if KAGENT_VALUES="$PWD/minikube/values/kagent-values.yaml" \
+     KAGENT_RESOURCES="$PWD/minikube/values/kagent-resources.yaml" \
+     python3 "$policy_dir/scripts/render-records.py" minikube/gitops/project-registry/files/seed.yaml \
+       --out "$(mktemp -d)/gateway-projects"; then
+    ok "seed renders; kagent agents wired to their keys"
+  else
+    bad "seed (render-records.py, with KAGENT_VALUES and KAGENT_RESOURCES)"
+  fi
 else
-  skip "opa not installed (policy tests skipped)"
+  bad "checkout of the gateway policy (scripts/policy-checkout.sh)"
 fi
 
 echo "==> promtool (Prometheus config and alert rules)"

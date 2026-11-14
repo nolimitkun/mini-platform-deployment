@@ -7,6 +7,14 @@ chartsRepo: https://github.com/nolimitkun/mini-platform.git
 chartsRevision: main
 deployRepo: https://github.com/nolimitkun/mini-platform-deployment.git
 deployRevision: main
+# The gateway policy (nolimitkun/gateway-policy): the Rego, which the project
+# registry publishes to OPA after an approval, and the model catalog. An
+# application lists the generated values files it takes from there
+# (policyValueFiles), at this commit: a new model's routes appear when this pin
+# moves, after its placement is approved there. CI checks this repo's wiring
+# against the policy at this commit (scripts/validate-gitops.sh).
+policyRepo: https://github.com/nolimitkun/gateway-policy.git
+policyRevision: 625a7bb516e46aa1f9c3e8f7a0828664935545cc
 
 argoNamespace: argocd
 destination:
@@ -295,7 +303,7 @@ applications:
     resourcesFile: minikube/values/opa-policy-resources.yaml
     releaseName: opa-policy
     wave: "0"
-  # The project registry (docs/project-registry.md): projects, agents and
+  # The project registry (nolimitkun/project-registry docs/design.md): projects, agents and
   # exceptions as change requests with approvals decided by policy, published
   # as the signed gateway-projects bundle. Its own database first.
   project-registry-postgresql:
@@ -358,6 +366,8 @@ applications:
   agentgateway-config:
     chartPath: minikube/gitops/agentgateway-config
     valuesFile: minikube/gitops/agentgateway-config/values.yaml
+    # the models, Google APIs and task classes (catalog/models.yaml there)
+    policyValueFiles: [generated/agentgateway-catalog.yaml]
     resourcesFile: minikube/values/agentgateway-resources.yaml
     releaseName: agentgateway-config
     wave: "1"

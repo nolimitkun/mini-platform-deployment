@@ -1,7 +1,7 @@
 {{- $v := .Values }}
-{{- /* Google APIs come from the repo's catalog/models.yaml, through
-     files/catalog.json (scripts/gen-catalog.py). */}}
-{{- $catalog := .Files.Get "files/catalog.json" | fromJson }}
+{{- /* Google APIs come from the gateway policy's catalog/models.yaml, through
+     its generated/agentgateway-catalog.yaml (values: catalog). */}}
+{{- $catalog := .Values.catalog | default dict }}
 {{- range $name, $api := $catalog.googleApis }}
 {{- $host := $api.host }}
 ---

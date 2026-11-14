@@ -12,6 +12,7 @@ spec:
   sourceRepos:
     - {{ $chartsRepo | quote }}
     - {{ $deployRepo | quote }}
+    - {{ .Values.policyRepo | quote }}
   destinations:
     - namespace: {{ .Values.destination.namespace }}
       server: {{ .Values.destination.server }}

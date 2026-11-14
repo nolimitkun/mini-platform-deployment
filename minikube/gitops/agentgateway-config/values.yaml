@@ -40,9 +40,11 @@ gcp:
 kserve:
   servingKeySecret: model-serving-key
 
-# Models and Google API routes are not here: they come from the repo's model
-# catalog, catalog/models.yaml, which scripts/gen-catalog.py renders into this
-# chart's files/catalog.json and into the gateway policy's data.
+# Models and Google API routes are not here: they come from the gateway policy's
+# catalog (nolimitkun/gateway-policy, catalog/models.yaml), as the values file
+# its gen-catalog.py generates (generated/agentgateway-catalog.yaml: catalog),
+# which the root app adds at policyRevision. OPA reads the same catalog.
+catalog: {}
 
 # Model "auto" and "auto-<task>" (templates/auto.yaml): virtual models that ask
 # OPA's REST API which model the caller's project gets (policies/gateway/select.rego).
@@ -65,7 +67,7 @@ semanticRouter:
   port: 50051
 
 # Per-project rate limits and spend caps (templates/ratelimit.yaml), kept by
-# the rate-limit app. domain must match scripts/gen-projects.py RATELIMIT_DOMAIN.
+# the rate-limit app. domain must match minikube/gitops/rate-limit/files/config.yaml.
 rateLimit:
   enabled: true
   service: rate-limit

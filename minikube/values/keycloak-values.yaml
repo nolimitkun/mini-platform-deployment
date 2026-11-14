@@ -139,7 +139,7 @@ keycloakConfigCli:
           path: /platform-users
           realmRoles:
             - platform-viewer
-        # Approval roles in the project registry (docs/project-registry.md
+        # Approval roles in the project registry (nolimitkun/project-registry docs/design.md
         # "Approval rules are policy"); platform-admins is the platform team.
         - name: security-reviewers
           path: /security-reviewers

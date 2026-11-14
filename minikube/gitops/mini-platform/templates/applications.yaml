@@ -56,6 +56,9 @@ spec:
         releaseName: {{ default $name $app.releaseName | quote }}
         valueFiles:
           - {{ printf "$deploy/%s" $app.valuesFile | quote }}
+{{- range $app.policyValueFiles }}
+          - {{ printf "$policy/%s" . | quote }}
+{{- end }}
 {{- with $app.resourcesFile }}
 {{- /*
   A second manifest-producing source, so the release's ingress route and the
@@ -74,6 +77,11 @@ spec:
     - repoURL: {{ $deployRepo | quote }}
       targetRevision: {{ $deployRevision | quote }}
       ref: deploy
+{{- if $app.policyValueFiles }}
+    - repoURL: {{ required "Set policyRepo for policyValueFiles." $.Values.policyRepo | quote }}
+      targetRevision: {{ required "Set policyRevision for policyValueFiles." $.Values.policyRevision | quote }}
+      ref: policy
+{{- end }}
   destination:
     server: {{ $.Values.destination.server }}
     namespace: {{ default $.Values.destination.namespace $app.namespace }}
