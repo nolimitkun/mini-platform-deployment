@@ -740,8 +740,8 @@ if [[ "$SOURCE_MODE" == local ]]; then
   CHARTS_REVISION="$(require_clean_checkout "$CHARTS_DIR" "charts repo")"
   DEPLOY_REPO_URL="git://git-source.gitops-source.svc.cluster.local:9418/mini-platform-deployment"
   CHARTS_REPO_URL="git://git-source.gitops-source.svc.cluster.local:9418/mini-platform"
-  POLICY_REVISION="$(python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["policyRevision"])' \
-    "$ROOT/minikube/gitops/mini-platform/values.yaml")"
+  POLICY_REVISION="$(awk '$1 == "policyRevision:" { print $2 }' "$ROOT/minikube/gitops/mini-platform/values.yaml")"
+  [[ -n "$POLICY_REVISION" ]] || fail "policyRevision not found in minikube/gitops/mini-platform/values.yaml"
   git -C "$POLICY_DIR" cat-file -e "$POLICY_REVISION^{commit}" 2>/dev/null ||
     fail "--local-source needs the gateway policy at $POLICY_REVISION; fetch it in $POLICY_DIR (--policy-dir)"
   POLICY_REPO_URL="git://git-source.gitops-source.svc.cluster.local:9418/gateway-policy"
