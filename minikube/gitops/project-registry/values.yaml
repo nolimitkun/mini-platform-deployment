@@ -17,7 +17,7 @@ policy:
   # Where the policy lived before (its commits until 2026-11-14): the active
   # commit, or an older one a rollback activates, may only be there.
   fallbackRepos: https://github.com/nolimitkun/mini-platform-deployment.git
-  ref: main
+  ref: feat/gateway-models-chart   # TEMPORARY: branch test, back to main before merge
   dir: policies/gateway
   # how often the branch is checked (seconds)
   poll: "60"
@@ -27,7 +27,7 @@ policy:
 # in kagent-resources.yaml): the registry checks it against this branch.
 kagentWiring:
   repo: https://github.com/nolimitkun/mini-platform-deployment.git
-  ref: main
+  ref: feat/gateway-models-chart   # TEMPORARY: branch test, back to main before merge
 
 # The gateway's model routes: once a policy commit is active, the publisher
 # packages its charts/gateway-models with the catalog and publishes it to this
