@@ -34,30 +34,17 @@ gcp:
   audience: //iam.googleapis.com/projects/311800512343/locations/global/workloadIdentityPools/onprem-k8s/providers/minikube
   serviceAccount: litellm-stt@mini-cloud-499820.iam.gserviceaccount.com
 
-# Releases of the model onboarding pipeline (catalog provider KServe): the
-# Secret, in each serving namespace, with the vLLM key the gateway sends
-# (model-serving chart, servingKeySecret).
-kserve:
-  servingKeySecret: model-serving-key
+# The KServe serving namespaces (model-serving creates them): the gateway's
+# listener admits routes from them, KServe's own path route of each
+# LLMInferenceService and the model routes to releases, which sit next to the
+# InferencePool they target. CI checks they are the catalog's servingNamespaces.
+servingNamespaces:
+  - model-hprd
+  - model-prod
 
-# Models and Google API routes are not here: they come from the gateway policy's
-# catalog (nolimitkun/gateway-policy, catalog/models.yaml), as the values file
-# its gen-catalog.py generates (generated/agentgateway-catalog.yaml: catalog),
-# which the root app adds at policyRevision. OPA reads the same catalog.
-catalog: {}
-
-# Model "auto" and "auto-<task>" (templates/auto.yaml): virtual models that ask
-# OPA's REST API which model the caller's project gets (policies/gateway/select.rego).
-auto:
-  enabled: true
-  opaService: opa
-  opaPort: 8181
-  # Per-project cache of OPA's answer, e.g. 1m. Off by default: a cache hit
-  # skips OPA, so after a policy change removes the cached model the gateway
-  # would keep routing to it until the entry expires, and ext_authz only ever
-  # sees "auto", not the model behind it. Uncached, the callout adds about a
-  # millisecond.
-  cacheTTL: ""
+# The models, the auto models and the Google API routes are not here: they are
+# the gateway-models application, a chart the project registry publishes from
+# the approved policy (minikube/values/gateway-models-values.yaml).
 
 # vLLM Semantic Router (semantic-router app, templates/vsr.yaml): rewrites
 # "auto" to auto-<task> for projects whose routing is semantic to make use of.

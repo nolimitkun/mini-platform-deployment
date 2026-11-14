@@ -3,12 +3,14 @@
 
     python3 scripts/check-policy-wiring.py POLICY_DIR
 
-POLICY_DIR is a checkout of nolimitkun/gateway-policy (scripts/policy-checkout.sh).
+POLICY_DIR is a checkout of nolimitkun/gateway-policy (scripts/policy-checkout.sh, main).
 The policy's catalog names things this repo deploys, so both must agree:
   - the gateway's MCP targets (agentgateway-config values mcp.targets) are the
     catalog's (catalog/tools.yaml targets): every tool name starts with one;
   - the vLLM Semantic Router's decisions (semantic-router-values.yaml) route to
-    exactly the catalog's task classes, auto-<task>, and so does its default.
+    exactly the catalog's task classes, auto-<task>, and so does its default;
+  - the gateway admits routes from the catalog's serving namespaces
+    (agentgateway-config values servingNamespaces).
 """
 import sys
 from pathlib import Path
@@ -26,7 +28,11 @@ def main() -> int:
     tools = yaml.safe_load((policy / "catalog" / "tools.yaml").read_text()) or {}
     errors = []
 
-    targets = set(((yaml.safe_load(GATEWAY_VALUES.read_text()) or {}).get("mcp") or {}).get("targets") or {})
+    gateway = yaml.safe_load(GATEWAY_VALUES.read_text()) or {}
+    if set(gateway.get("servingNamespaces") or []) != set(catalog.get("servingNamespaces") or []):
+        errors.append(f"{GATEWAY_VALUES.relative_to(ROOT)}: servingNamespaces {gateway.get('servingNamespaces')} are not "
+                      f"the catalog's {catalog.get('servingNamespaces')}")
+    targets = set((gateway.get("mcp") or {}).get("targets") or {})
     if targets != set(tools.get("targets") or []):
         errors.append(f"{GATEWAY_VALUES.relative_to(ROOT)}: mcp.targets {sorted(targets)} are not the policy "
                       f"catalog's targets {sorted(tools.get('targets') or [])} (catalog/tools.yaml)")

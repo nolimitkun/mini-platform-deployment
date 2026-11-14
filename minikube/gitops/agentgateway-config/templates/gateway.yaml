@@ -102,14 +102,13 @@ spec:
       port: 80
       protocol: HTTP
       allowedRoutes:
-        # This namespace, plus the KServe serving namespaces (catalog/models.yaml,
+        # This namespace, plus the KServe serving namespaces (values
         # servingNamespaces): KServe's own path route of each
         # LLMInferenceService, which the onboarding pipeline uses, and the
         # catalog's model routes to releases (provider KServe), which have to
         # sit next to the InferencePool they target.
         namespaces:
-          {{- $catalog := .Values.catalog | default dict }}
-          {{- if $catalog.servingNamespaces }}
+          {{- if .Values.servingNamespaces }}
           from: Selector
           selector:
             matchExpressions:
@@ -117,7 +116,7 @@ spec:
                 operator: In
                 values:
                   - {{ .Release.Namespace }}
-                  {{- range $catalog.servingNamespaces }}
+                  {{- range .Values.servingNamespaces }}
                   - {{ . }}
                   {{- end }}
           {{- else }}

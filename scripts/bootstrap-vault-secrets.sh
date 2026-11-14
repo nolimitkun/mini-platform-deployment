@@ -344,7 +344,7 @@ registry_lines() {
     kubectl -n mini-platform exec deploy/project-registry -- python -c \
       "import sys, urllib.request; sys.stdout.write(urllib.request.urlopen('http://127.0.0.1:8080/internal/$1', timeout=120).read().decode())"
   else
-    # the renderer of the gateway policy this repo pins (policyRevision)
+    # the gateway policy's renderer (its main branch)
     python3 "$("$(dirname "$0")/policy-checkout.sh")/scripts/render-records.py" \
       "$(dirname "$0")/../minikube/gitops/project-registry/files/seed.yaml" "--$1"
   fi

@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # Prints the path of a checkout of the gateway policy (nolimitkun/gateway-policy) at
-# the commit this repo pins (policyRevision in minikube/gitops/mini-platform/values.yaml).
-# GATEWAY_POLICY_DIR, if set, is used as it is instead (a local checkout).
+# the head of its main branch, for CI's wiring checks and the Vault bootstrap's
+# renderer. (Nothing here pins the policy: the project registry publishes what is
+# approved, the gateway's routes included.) GATEWAY_POLICY_DIR, if set, is used as
+# it is instead (a local checkout), and GATEWAY_POLICY_REF picks another branch.
 # The checkout is cached under ${XDG_CACHE_HOME:-~/.cache}/gateway-policy/<commit>.
 set -euo pipefail
 if [[ -n "${GATEWAY_POLICY_DIR:-}" ]]; then
   echo "$GATEWAY_POLICY_DIR"
   exit 0
 fi
-root="$(cd "$(dirname "$0")/.." && pwd)"
-values="$root/minikube/gitops/mini-platform/values.yaml"
-repo="$(awk '$1 == "policyRepo:" { print $2 }' "$values")"
-rev="$(awk '$1 == "policyRevision:" { print $2 }' "$values")"
-[[ -n "$repo" && -n "$rev" ]] || { echo "policyRepo or policyRevision not found in $values" >&2; exit 1; }
+repo="${GATEWAY_POLICY_REPO:-https://github.com/nolimitkun/gateway-policy.git}"
+ref="${GATEWAY_POLICY_REF:-main}"
+rev="$(git ls-remote "$repo" "refs/heads/$ref" | cut -f1)"
+[[ -n "$rev" ]] || { echo "no branch $ref in $repo" >&2; exit 1; }
 dir="${XDG_CACHE_HOME:-$HOME/.cache}/gateway-policy/$rev"
 if [[ ! -d "$dir/.git" ]]; then
   tmp="$(mktemp -d)"
