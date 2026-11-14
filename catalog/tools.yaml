@@ -1,5 +1,5 @@
 # Every MCP tool behind the gateway's /mcp, with the most it can do. OPA holds
-# a registered agent (agents/*.yaml) to its autonomy with this:
+# a registered agent (an agent record in the project registry) to its autonomy with this:
 #
 #   read          only reads             read-only, supervised and autonomous agents
 #   write         changes something it   autonomous agents; a supervised agent

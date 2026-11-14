@@ -219,7 +219,7 @@ test_only_models_listing_gets_the_header if {
 	not d.headers["x-allowed-models"]
 }
 
-# Agents (agents/*.yaml): a key in the project's agent_keys gets the agent's
+# Agents (the registry's agent records): a key in the project's agent_keys gets the agent's
 # scope. "kagent-k8s-agent" is limited to DeepSeek; the project's own key
 # "kagent" still has everything kagent may use.
 test_agent_key_narrows_models if {

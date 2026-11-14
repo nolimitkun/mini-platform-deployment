@@ -14,7 +14,7 @@ placements(project_id) := {p |
 }
 
 # Catalog models in one of the project's placements that its models.allow
-# patterns match, plus its named exceptions (projects/_exceptions.yaml).
+# patterns match, plus its named exceptions (the registry's exceptions).
 allowed(project_id) := by_rule(project_id) | by_exception(project_id)
 
 by_rule(project_id) := {m |
@@ -27,8 +27,8 @@ by_rule(project_id) := {m |
 	glob.match(pattern, null, m)
 }
 
-# What a key may use: an agent's key (projects' agent_keys, from
-# agents/*.yaml) gets its project's models narrowed by the agent's patterns;
+# What a key may use: an agent's key (projects' agent_keys, from the
+# registry's agents) gets its project's models narrowed by the agent's patterns;
 # any other key of the project gets the project's. A key can only ever narrow
 # its project, never widen it.
 scoped(project_id, key_id) := agent_allowed(project_id, agent_id) if {

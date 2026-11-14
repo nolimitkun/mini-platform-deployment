@@ -171,20 +171,19 @@ curl -s http://agentgateway.test/google/tts/v1/text:synthesize \
 
 ## Projects and keys
 
-> **Project registry (phase 2 PoC).** Since the registry imported them, the
-> projects, agents and exceptions OPA sees come from the
-> [project registry](project-registry.md), not from Git: change them there, in
+> **The projects, agents and exceptions live in the
+> [project registry](project-registry.md)**, not in this repo: change them in
 > its portal at `http://registry.test/portal/` or through its API (a change
-> request, approved by policy, published within about a minute).
-> `projects/*.yaml` and `agents/*.yaml` were the import's source and are no
-> longer read by OPA. They still drive what isn't in the registry yet: the API
-> keys in Vault (`bootstrap-vault-secrets.sh`) and the agentregistry catalog;
-> a daily job brings them up to date from the registry as a pull request
-> (["Keeping Git's copy current"](project-registry.md#keeping-gits-copy-current)).
-> Below is the record format both use.
+> request, approved by policy, published within about a minute). This repo has
+> their format ([`projects/schema.json`](../projects/schema.json),
+> [`agents/schema.json`](../agents/schema.json)), the renderer
+> (`scripts/gen-projects.py`), and the seed a new cluster's registry starts
+> with (`minikube/gitops/project-registry/files/seed.yaml`). The API key ids for
+> Vault, agentregistry's agent catalog and the data for a replay all come from
+> the registry.
 
-Every API key belongs to a **project**. Each project is one file,
-`projects/<id>.yaml`, checked against [`projects/schema.json`](../projects/schema.json):
+Every API key belongs to a **project**. A project record, in the format of
+[`projects/schema.json`](../projects/schema.json):
 
 ```yaml
 project: holmes
@@ -205,24 +204,30 @@ deployments: false              # optional; true: may call KServe deployment pat
                                 # (needs onprem placement; see "Self-hosted models")
 ```
 
-`scripts/gen-projects.py` validates the files, including rules across files:
+`scripts/gen-projects.py` validates the records, including rules across them
+(the registry runs it on every change, at the active policy commit):
 
-- the file name is the project id
+- the record's name is the project id
 - placement stays within the data class
 - every `models.allow` pattern matches a catalog model
 - a `fixed:<model>` routing names a model the project may use
 - key ids are `<project>` or `<project>-<suffix>`, and unique
-- exceptions (`projects/_exceptions.yaml`) name existing projects and models
+- exceptions name existing projects and models
 - `deployments: true` only with `onprem` in the placement
 
-It then generates these files. CI fails if any is out of date:
+It then renders the `gateway-projects` bundle, which the registry signs and
+publishes:
 
-| File | Read by |
+| File in the bundle | Read by |
 |------|---------|
-| `policies/gateway-projects/projects/<id>/data.json`, one per project | OPA, as `data.projects.<id>` |
-| `policies/gateway-projects/exceptions/<id>/data.json`, one per project with an exception | OPA, as `data.exceptions.<id>` |
-| `minikube/gitops/rate-limit/files/config.yaml` | the rate-limit service |
-| `minikube/gitops/app-resources/alerts/agentgateway-projects.yml` | Prometheus, as alert rules |
+| `projects/<id>/data.json`, one per project | OPA, as `data.projects.<id>` |
+| `exceptions/<id>/data.json`, one per project with an exception | OPA, as `data.exceptions.<id>` |
+| `agents/<id>/data.json`, one per agent | OPA, as `data.agents.<id>` |
+
+To see it locally: `python3 scripts/render-records.py minikube/gitops/project-registry/files/seed.yaml --out /tmp/gateway-projects`.
+The rate-limit config (`minikube/gitops/rate-limit/files/config.yaml`) and the
+alert rules (`app-resources/alerts/agentgateway-projects.yml`) list no project
+and are edited by hand.
 
 Today's projects are the four former clients and the onboarding pipeline, each
 with one key whose id is the project id:
@@ -353,7 +358,8 @@ bootstrap (`SEED_MISSING_ONLY=true` creates the new key), then sync.
 
 `policies/gateway/authz.rego` decides each request from:
 
-- `data.projects` and `data.exceptions`, generated from `projects/`
+- `data.projects`, `data.exceptions` and `data.agents`, the project registry's
+  records rendered by `scripts/gen-projects.py` (the `gateway-projects` bundle)
 - `data.catalog`, generated from `catalog/models.yaml`
 - `data.gateway.classes` in `policies/gateway/data.json`, which maps each data
   class to the placements it may use
@@ -367,10 +373,10 @@ The rules:
 
   A project may use a model if the model's placement is in the project's
   placement (capped by its class) and the name matches `models.allow`.
-- **Exceptions** (`projects/_exceptions.yaml`, owned by the platform team). A
+- **Exceptions** (records in the project registry, approved by security). A
   project can get named models outside its class, each with an owner and a
   reason. Today kagent and Holmes have one for DeepSeek.
-- **Keys.** The key's id must be listed in its project's file.
+- **Keys.** The key's id must be listed in its project's record.
 - **Google APIs.** Allowed when the API's placement (`gcp`) is in the project's
   placement.
 - **MCP.** A project with `mcp_tools` may open sessions and list tools. Each
@@ -569,13 +575,14 @@ anyone else, or changed there, is not loaded.
 To change the policy:
 
 1. Edit the Rego, the data or the catalog, regenerate with
-   `scripts/gen-catalog.py`, and run
-   `opa test policies/gateway policies/gateway-projects`. CI runs the
-   generators' `--check`, `opa check`, `opa fmt`, `opa test`, the two-bundle
-   load and `promtool` too (`scripts/validate-gitops.sh`).
+   `scripts/gen-catalog.py`, and test with project data rendered from the seed:
+   `python3 scripts/render-records.py minikube/gitops/project-registry/files/seed.yaml --out /tmp/gp && opa test policies/gateway /tmp/gp`.
+   CI runs the same, plus `gen-catalog.py --check`, `opa check`, `opa fmt`, the
+   two-bundle load and `promtool` (`scripts/validate-gitops.sh`).
 2. Replay recent traffic against the change with
    `python3 scripts/policy-replay.py`. It reads OPA's decisions from Loki,
-   evaluates each logged request with the policy in your checkout and lists
+   evaluates each logged request with the policy in your checkout and the
+   project data active now (from the registry), and lists
    every request whose verdict would flip. It needs the cluster, so CI doesn't
    run it.
 3. Merge to `main`. Within a minute the project registry files the commit as a

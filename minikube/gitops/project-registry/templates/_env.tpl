@@ -24,6 +24,7 @@ securityContext:
 volumes:
   - {name: work, emptyDir: {}}
   - {name: tmp, emptyDir: {}}
+  - {name: seed, configMap: {name: project-registry-seed}}
 {{- end -}}
 {{- define "registry.container" -}}
 image: {{ .Values.image }}
@@ -34,4 +35,5 @@ securityContext:
 volumeMounts:
   - {name: work, mountPath: /work}
   - {name: tmp, mountPath: /tmp}
+  - {name: seed, mountPath: /seed, readOnly: true}
 {{- end -}}

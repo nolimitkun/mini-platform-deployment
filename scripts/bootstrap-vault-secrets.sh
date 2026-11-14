@@ -316,17 +316,47 @@ kv_put mini-platform/holmes-api \
 
 
 # agentgateway, the platform's model and tool gateway (docs/agentgateway.md).
-# API keys belong to projects: each projects/<id>.yaml lists its key ids, and
-# scripts/gen-projects.py --keys prints them. agentgateway reads
-# agentgateway-api-keys, one entry per key id whose JSON value carries the key
+# API keys belong to projects, which live in the project registry: its
+# cluster-internal /internal/keys lists every key id with its project. Before the
+# registry runs (a new cluster), the seed it will import is rendered instead.
+# Where the key ids come from is decided once, before anything below writes the
+# gateway keys (which is what tells a new cluster from an existing one).
+if [[ "$(kubectl -n mini-platform get deploy project-registry -o jsonpath='{.status.readyReplicas}' 2>/dev/null)" -ge 1 ]] 2>/dev/null; then
+  registry_source=registry
+elif [[ "${KEY_IDS_FROM_SEED:-false}" == true ]] \
+     || ! vault_cli kv get mini-platform/agentgateway-api-keys >/dev/null 2>&1; then
+  # A new cluster: no gateway keys yet, and the registry isn't up. Its seed is what
+  # it will import, so the keys made from it are the ones its projects list.
+  registry_source=seed
+  echo "new cluster, project registry not running yet: using its seed for the key ids" >&2
+else
+  # An existing cluster: the seed is not the live key list (keys were added since),
+  # and the maps below are rewritten from it. Refuse rather than drop keys.
+  echo "ERROR: the project registry is not running; the gateway keys exist, so the seed" >&2
+  echo "  would drop keys added since. Start the registry and run this again (or, on a new" >&2
+  echo "  cluster whose first run stopped half way, KEY_IDS_FROM_SEED=true)." >&2
+  exit 1
+fi
+registry_lines() {
+  # $1: keys or mirrors. Asked inside the registry's pod: the endpoint refuses
+  # requests through the ingress.
+  if [[ "$registry_source" == registry ]]; then
+    kubectl -n mini-platform exec deploy/project-registry -- python -c \
+      "import sys, urllib.request; sys.stdout.write(urllib.request.urlopen('http://127.0.0.1:8080/internal/$1', timeout=120).read().decode())"
+  else
+    python3 "$(dirname "$0")/render-records.py" "$(dirname "$0")/../minikube/gitops/project-registry/files/seed.yaml" "--$1"
+  fi
+}
+# agentgateway reads agentgateway-api-keys, one entry per key id whose JSON value carries the key
 # and the {project, key_id} the OPA policy keys on (policies/gateway); the raw
 # keys are in agentgateway-client-keys under the same key ids. Both are written
 # from the same values, reused on a SEED_MISSING_ONLY pass so a client never
-# holds a key the gateway does not. A key id removed from its project file is
+# holds a key the gateway does not. A key id removed from its project in the registry is
 # dropped from both maps here, and OPA refuses it as soon as the new policy
 # bundle is live.
-agw_keys="$(python3 "$(dirname "$0")/gen-projects.py" --keys)" \
-  || { echo "ERROR: projects/ is invalid (python3 scripts/gen-projects.py)." >&2; exit 1; }
+if ! agw_keys="$(registry_lines keys)" || [[ -z "$agw_keys" ]]; then
+  echo "ERROR: no API key ids from the project registry (or its seed)." >&2; exit 1
+fi
 agw_raw=() agw_json=()
 while read -r key_id project; do
   key="$(reuse_or_generate mini-platform/agentgateway-client-keys "$key_id")"
@@ -352,19 +382,19 @@ kv_put mini-platform/kagent-agentgateway \
 kv_put mini-platform/open-webui-agentgateway \
   OPENAI_API_KEY="$(kv_field mini-platform/agentgateway-client-keys open-webui)"
 
-# Registered agents (agents/*.yaml) read their own key from the secret their
-# file names, e.g. kagent-k8s-agent-agentgateway OPENAI_API_KEY, or Holmes's
+# Registered agents (the registry's agent records) read their own key from the
+# secret their record names, e.g. kagent-k8s-agent-agentgateway OPENAI_API_KEY, or Holmes's
 # holmes-agentgateway AGENTGATEWAY_API_KEY (anything but OPENAI_API_KEY, see
 # holmes-values.yaml).
-agw_mirrors="$(python3 "$(dirname "$0")/gen-projects.py" --mirrors)" \
-  || { echo "ERROR: agents/ is invalid (python3 scripts/gen-projects.py)." >&2; exit 1; }
+agw_mirrors="$(registry_lines mirrors)" \
+  || { echo "ERROR: no agent key mirrors from the project registry (or its seed)." >&2; exit 1; }
 while read -r secret field key_id; do
   [[ -n "$secret" ]] || continue
   kv_put "mini-platform/$secret" \
     "$field=$(kv_field mini-platform/agentgateway-client-keys "$key_id")"
 done <<< "$agw_mirrors"
 
-# The model onboarding pipeline's gateway key (projects/model-onboarding.yaml),
+# The model onboarding pipeline's gateway key (its project, model-onboarding),
 # under the field name the workflow reads (model-serving-resources.yaml mirrors
 # it into the pipeline's namespace as gateway-key).
 kv_put mini-platform/model-onboarding-agentgateway \
@@ -420,16 +450,6 @@ kv_put mini-platform/project-registry-db \
 kv_put mini-platform/keycloak-registry-users \
   SSO_SECURITY_REVIEWER_PASSWORD="$(rand_b64)" \
   SSO_COST_OWNER_PASSWORD="$(rand_b64)"
-
-# The project registry's daily export to Git opens a PR with this token: a
-# fine-grained GitHub token for the deployment repo only (Contents and Pull
-# requests, read and write), created by a person and stored with
-#   vault kv put mini-platform/registry-git GITHUB_TOKEN=...
-# Seeded empty, so the secret exists and the job just says it has no token;
-# never overwritten (not even by --rotate-secrets): only a person sets it.
-if ! vault_cli kv get mini-platform/registry-git >/dev/null 2>&1; then
-  vault_cli kv put mini-platform/registry-git GITHUB_TOKEN=""
-fi
 
 # MinIO accounts for the OPA policy bundles: the project registry writes them,
 # OPA reads them.

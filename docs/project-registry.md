@@ -297,7 +297,9 @@ GET    /changes/{id}                  the diff, approvals needed and given, repl
 POST   /changes/{id}/approve|reject   (body: {"comment": ...})
 POST   /changes/{id}/withdraw         its author or the platform team, before it is published
 GET    /publications                  published revisions, newest first
-GET    /export                        every record, in the files' format (registry-export.py)
+GET    /export                        every record (the format of the seed and the snapshots)
+GET    /internal/keys|mirrors         API key ids, for the Vault bootstrap (cluster-internal)
+GET    /internal/bundles/{bundle}     the active bundle, for policy-replay.py (cluster-internal)
 GET    /metrics                       project_budget_usd, for Prometheus (cluster-internal)
 POST   /rollback/{revision}           platform team only
 POST   /opa/status                    OPA's status reports (cluster-internal)
@@ -362,32 +364,28 @@ imported project's owner group is `project-owners` (`platform-user`), so a
 change `platform-admin` proposes is approved by an owner who isn't its author;
 `cost-owner` and `security-reviewer` hold the other two roles.
 
-### Keeping Git's copy current
+### Where the records are, and their copies
 
-`projects/*.yaml` and `agents/*.yaml` are the registry's mirror in Git. They
-are still read for what the registry doesn't do yet: the API key ids the Vault
-bootstrap creates keys for, the agentregistry catalog, and a recovery copy. After
-changes in the registry:
+The projects, agents and exceptions live only in the registry's database. This
+repo has their format and the renderer, not a copy: no `projects/*.yaml`, no
+generated `policies/gateway-projects/` data, no export pull requests.
 
-```bash
-REGISTRY_TOKEN=$TOKEN python3 scripts/registry-export.py --url http://127.0.0.1:8080
-git diff --stat                        # review, then open a PR
-```
-
-**Daily, in the cluster:** the CronJob `project-registry-git-export` (03:00 UTC)
-does the same from the registry's database. It clones this repo, runs
-`registry-export.py --from-file`, and if anything changed it force-pushes the
-`registry-export` branch and opens a PR, or updates the open one. Nothing merges
-by itself. Its token is a fine-grained GitHub token for this repo only (Contents
-and Pull requests, read and write), stored with
-`vault kv put mini-platform/registry-git GITHUB_TOKEN=...`; without one the job
-does nothing. To run it now: `kubectl -n mini-platform create job --from=cronjob/project-registry-git-export export-now`.
-
-The script rewrites only the files whose record changed (the others keep their
-comments), deletes the files of removed records, and runs `gen-projects.py`, so
-the generated files match. A new key id still needs the Vault bootstrap
-(`SEED_MISSING_ONLY=true`) to create its key, until callers move to OAuth
-clients.
+- **Copies:** the CronJob `project-registry-snapshot` (03:00 UTC) writes every
+  record to `registry-snapshots/<time>.json` and `latest.json` in the bundle
+  store, and every published data bundle revision is kept. Neither is a backup
+  of the database (approvals, audit log). To take one now:
+  `kubectl -n mini-platform create job --from=cronjob/project-registry-snapshot snapshot-now`.
+- **An empty registry** (the import job, `registry/importer.py`) loads the
+  latest snapshot, or on a new cluster the seed,
+  `minikube/gitops/project-registry/files/seed.yaml`: the platform's own
+  projects. The seed is read only then; it is not kept current.
+- **What reads the records,** from the registry: the Vault bootstrap gets the API
+  key ids from `/internal/keys` and `/internal/mirrors` (cluster-internal); the
+  publisher applies the registered agents to agentregistry after each publish
+  and every hour; `scripts/policy-replay.py` gets the active data bundle from
+  `/internal/bundles/gateway-projects`. A new key id still needs the bootstrap
+  (`SEED_MISSING_ONLY=true`) to create its key, until callers move to OAuth
+  clients.
 
 ### Rotating the signing key
 
@@ -487,9 +485,9 @@ week of shadow running:
   it published.
 - The limits moved to OPA one deployment after the registry, so OPA already
   returned them when the gateway started reading them.
-- `projects/` is not read-only yet. The daily export
-  (`project-registry-git-export`) brings it up to date as a pull request;
-  until that is merged, it lags behind the registry.
+- `projects/` was then removed from Git: the registry is the records' only
+  home, with daily snapshots in the bundle store, and a seed for a new
+  cluster.
 - Step 6 is the next round.
 
 ## Proof of concept
@@ -546,10 +544,10 @@ week of shadow running:
   Vault role (`bundle-signer`) can only sign. `opa build` computes the file
   hashes with a throwaway key, and the token is then re-signed through Transit
   (`registry/bundles.py`). OPA verifies both bundles.
-- **The import** (`registry/importer.py`, a PostSync hook): the first load from
-  `projects/*.yaml` and `agents/*.yaml`. It activates only if the registry's
-  render equals the commit's `policies/gateway-projects` byte for byte. It
-  did: 5 projects, 5 agents, 2 exceptions.
+- **The import** (`registry/importer.py`, a PostSync hook): the first load of an
+  empty registry, from its latest snapshot or the seed. The first import, from
+  `projects/*.yaml` when they were still in Git, rendered byte for byte what
+  Git had: 5 projects, 5 agents, 2 exceptions. The seed is those records.
 - **Limits from OPA**: the allow decision carries `limits` as dynamic metadata.
   Every descriptor's `limitOverride` reads it, defaulting to 0. The rate-limit
   config is down to the domain and a default entry.
@@ -564,8 +562,9 @@ week of shadow running:
   - publications of both bundles, with rollback.
 - **The budget metric** `project_budget_usd` and one budget alert rule for all
   projects.
-- **The export to Git**: `scripts/registry-export.py`, by hand or daily by the
-  CronJob `project-registry-git-export`, as one pull request.
+- **Copies of the records**: a daily snapshot into the bundle store (the
+  CronJob `project-registry-snapshot`). It replaced a daily export to Git as a
+  pull request, and the GitHub token that came with it.
 - **Key rotation**: a pinned Transit key version; the publisher re-signs the
   active bundles for a new key. Done on the cluster, version 1 to 2 (see
   "Rotating the signing key").
@@ -619,8 +618,8 @@ on the cluster, every publish so far changed nothing for other projects.
   with JWTs");
 - a portal page richer than the PoC's (one page: lists, a JSON merge patch
   editor, approvals; a Backstage plugin later);
-- API keys in Vault are still provisioned from the exported files, by the
-  bootstrap, after the export PR is merged;
+- API keys in Vault are still created by the bootstrap, run by a person after a
+  new key id (it reads the ids from the registry);
 - copies of the bundles to other sites;
 - the model choices as the intersection of the catalog and the model
   registry's `prod` versions.

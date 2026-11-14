@@ -145,8 +145,7 @@ keycloakConfigCli:
           path: /security-reviewers
         - name: cost-owners
           path: /cost-owners
-        # Owners of the projects imported from projects/*.yaml (project
-        # registry), so a change the platform team proposes can be approved by
+        # Owners of the projects the project registry starts with (its seed), so a change the platform team proposes can be approved by
         # an owner who isn't its author.
         - name: project-owners
           path: /project-owners

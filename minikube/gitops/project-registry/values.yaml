@@ -1,6 +1,6 @@
 # The registry API, the publisher and the one-off import, all one image
 # (github.com/nolimitkun/project-registry). Design: docs/project-registry.md.
-image: ghcr.io/nolimitkun/project-registry:sha-e3d68070a2e27b931c2c87286d5f1d9c09241c7b
+image: ghcr.io/nolimitkun/project-registry:sha-01dc33612e59c48c40e5e6e4fd8c654e85fa45db
 
 # DATABASE_URL, from Vault (project-registry-db), for project-registry-postgresql.
 databaseSecret: project-registry-db
@@ -18,7 +18,6 @@ deployRepo: https://github.com/nolimitkun/mini-platform-deployment.git
 policy:
   ref: main
   dir: policies/gateway
-  testDirs: policies/gateway,policies/gateway-projects
   # how often the branch is checked (seconds)
   poll: "60"
 
@@ -64,20 +63,19 @@ replay:
 # Approved changes are batched: at most one publish this often (seconds).
 publishInterval: "30"
 
-# The daily export to Git: the registry's records written to projects/ and
-# agents/ by this repo's scripts/registry-export.py, as a pull request on the
-# `registry-export` branch (one PR at a time, never merged by itself). Its token
-# is in Vault (registry-git, GITHUB_TOKEN): a fine-grained token for this repo
-# only, Contents and Pull requests read and write. Empty: the job does nothing.
-gitExport:
+# The records live only in the registry. Their copies: a daily snapshot into the
+# bundle store (registry-snapshots/), what an empty registry imports, and the
+# signed bundle revisions. Not a backup of the database (approvals, audit log).
+snapshot:
   schedule: "0 3 * * *"
-  repoSlug: nolimitkun/mini-platform-deployment
-  base: main
-  branch: registry-export
-  secret: registry-git
 
-# First load from projects/*.yaml (an Argo CD PostSync hook; does nothing once
-# the registry has records): every imported project's owner group.
+# The registry applies its registered agents to agentregistry's catalog after
+# each publish and every hour (agentregistry-catalog has the static entries).
+agentregistryUrl: http://agentregistry.mini-platform.svc.cluster.local:12121
+
+# First load of an empty registry (an Argo CD PostSync hook; does nothing once
+# it has records): its latest snapshot, or else files/seed.yaml on a new
+# cluster. Every imported project's owner group:
 import:
   # project-owners (Keycloak): not platform-admins, so the platform team can
   # propose changes and an owner who isn't its author approves them.
