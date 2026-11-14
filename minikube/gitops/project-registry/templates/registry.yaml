@@ -105,15 +105,24 @@ spec:
             - {name: OPA_URL, value: {{ .Values.opaUrl | quote }}}
             - {name: POLICY_REF, value: {{ .Values.policy.ref | quote }}}
             - {name: POLICY_DIR, value: {{ .Values.policy.dir | quote }}}
-            - {name: POLICY_TEST_DIRS, value: {{ .Values.policy.testDirs | quote }}}
             - {name: POLICY_POLL, value: {{ .Values.policy.poll | quote }}}
+            - {name: AGENTREGISTRY_URL, value: {{ .Values.agentregistryUrl | quote }}}
           resources:
             requests: {cpu: 50m, memory: 128Mi}
             limits: {memory: 1Gi}
 ---
-# First load from projects/*.yaml, then the first signed gateway-projects
-# bundle, if the render matches Git byte for byte. Does nothing once the
-# registry has records, so it can run on every sync.
+# The seed (files/seed.yaml), for the import job of a new cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: project-registry-seed
+data:
+  seed.yaml: |
+{{ .Files.Get "files/seed.yaml" | indent 4 }}
+---
+# First load of an empty registry: its latest snapshot in the bundle store, or
+# else the seed; then the first signed gateway-projects bundle. Does nothing
+# once the registry has records, so it can run on every sync.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -130,17 +139,19 @@ spec:
       containers:
         - name: import
           {{- include "registry.container" . | nindent 10 }}
-          command: [python, -m, registry.importer, --owner-group, {{ .Values.import.ownerGroup | quote }}]
+          command: [python, -m, registry.importer, --owner-group, {{ .Values.import.ownerGroup | quote }}, --seed, /seed/seed.yaml]
           env:
             {{- include "registry.env" . | nindent 12 }}
 ---
+# The daily snapshot of the records into the bundle store (registry-snapshots/),
+# what an empty registry imports.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: project-registry-git-export
-  labels: {app.kubernetes.io/name: project-registry-git-export}
+  name: project-registry-snapshot
+  labels: {app.kubernetes.io/name: project-registry-snapshot}
 spec:
-  schedule: {{ .Values.gitExport.schedule | quote }}
+  schedule: {{ .Values.snapshot.schedule | quote }}
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 3
@@ -150,20 +161,16 @@ spec:
       activeDeadlineSeconds: 600
       template:
         metadata:
-          labels: {app.kubernetes.io/name: project-registry-git-export}
+          labels: {app.kubernetes.io/name: project-registry-snapshot}
         spec:
           restartPolicy: Never
           {{- include "registry.pod" . | nindent 10 }}
           containers:
-            - name: export
+            - name: snapshot
               {{- include "registry.container" . | nindent 14 }}
-              command: [python, -m, registry.gitexport]
+              command: [python, -m, registry.snapshot]
               env:
-                - {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: {{ .Values.databaseSecret }}, key: DATABASE_URL}}}
-                - {name: GITHUB_TOKEN, valueFrom: {secretKeyRef: {name: {{ .Values.gitExport.secret }}, key: GITHUB_TOKEN, optional: true}}}
-                - {name: DEPLOY_REPO_SLUG, value: {{ .Values.gitExport.repoSlug | quote }}}
-                - {name: DEPLOY_BRANCH, value: {{ .Values.gitExport.base | quote }}}
-                - {name: EXPORT_BRANCH, value: {{ .Values.gitExport.branch | quote }}}
+                {{- include "registry.env" . | nindent 16 }}
               resources:
                 requests: {cpu: 50m, memory: 128Mi}
                 limits: {memory: 512Mi}

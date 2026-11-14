@@ -8,8 +8,9 @@ rotating a key, changing a limit), use [agentgateway.md](agentgateway.md).
 > **Since the phase 2 proof of concept** ([project-registry.md](project-registry.md)),
 > three things below describe how it was, not how it is: OPA Control Plane no
 > longer builds the bundles (the project registry's publisher builds and signs
-> both, each change after an approval); project data comes from the
-> registry, not from `projects/*.yaml`; and the rate-limit config no longer
+> both, each change after an approval); project data lives only in the
+> registry, and `projects/*.yaml` are gone from Git (their schema and
+> `gen-projects.py` remain); and the rate-limit config no longer
 > lists projects, because each project's limits travel with OPA's decision.
 > The table "How long changes take" has the current delays.
 

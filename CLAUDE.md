@@ -79,11 +79,12 @@ This is exactly what CI (`.github/workflows/validate.yaml`) runs. It:
   source parameters) and the `app-resources` chart once per `resourcesFile`,
 - runs `kubeconform` over the rendered manifests,
 - `shellcheck`s `scripts/*.sh`,
-- runs `gen-catalog.py --check` and `gen-projects.py --check`, so generated files
-  can't drift from `catalog/models.yaml` and `projects/*.yaml`,
-- runs `opa check --strict` and `opa fmt` on every bundle under `policies/`,
-  `opa test` over all of them, then builds each bundle and loads them together
-  (their `.manifest` roots must not overlap), and
+- runs `gen-catalog.py --check`, so generated files can't drift from
+  `catalog/models.yaml`, and renders the project registry's seed
+  (`render-records.py`: the project and agent schemas, the cross-file rules),
+- runs `opa check --strict` and `opa fmt` on `policies/gateway`, `opa test` over
+  it with the rendered seed as project data, then builds both bundles and loads
+  them together (their `.manifest` roots must not overlap), and
 - runs `promtool` on the rendered Prometheus config and the alert rules.
 
 `helm` is required; `kubeconform`, `shellcheck`, `opa` and `promtool` are
@@ -116,21 +117,24 @@ from Loki against a change. Models and Google APIs are declared
 once in `catalog/models.yaml`; `scripts/gen-catalog.py` generates the gateway chart's
 `files/catalog.json` and the policy's `catalog/data.json` from it (CI checks they are
 current). API keys belong to projects (data class, placement, allowed models, key ids,
-MCP tools). The project registry is where projects, agents and exceptions change now;
-`projects/*.yaml` and `agents/*.yaml` are the snapshot it imported, in the same format,
-and still the source of what the registry doesn't cover yet: the API keys the Vault
-bootstrap creates (it reads the key ids from them) and the agentregistry catalog;
-`scripts/registry-export.py` writes the registry's records back to them (by hand,
-or daily by the CronJob `project-registry-git-export`, which opens one PR on the
-`registry-export` branch with the token in Vault `registry-git`). The registry's
-portal is `registry.test/portal/` (Keycloak login with PKCE). The budget
+MCP tools). Projects, agents and exceptions live ONLY in the project registry: change
+them in its portal (`registry.test/portal/`, Keycloak login with PKCE) or API, never
+in this repo, which has no copy. This repo keeps their format (`projects/schema.json`,
+`agents/schema.json`), the renderer, and the seed a new cluster's registry imports
+(`minikube/gitops/project-registry/files/seed.yaml`, also what CI tests the Rego
+with). What used to read project files reads the registry: the Vault bootstrap gets the
+key ids from its cluster-internal `/internal/keys` (or renders the seed before the
+registry runs), the registry applies agentregistry's agent catalog itself, and
+`policy-replay.py` takes the active data bundle from it. A daily CronJob
+(`project-registry-snapshot`) copies the records into the bundle store, which an
+empty registry imports. The budget
 alert is one rule joining spend with the registry's `project_budget_usd`; who may
 submit and who must approve a change are both Rego (`portal.may_submit`,
-`portal.required_approvals`). `scripts/gen-projects.py` validates that format against
-`projects/schema.json` and renders `data.projects` (one file per project under
-`policies/gateway-projects`); the registry's publisher runs the same script on its
-records, so the two can't disagree on the rules. Agents
-(`agents/*.yaml`) belong to a project and narrow it: own keys, models, MCP tools,
+`portal.required_approvals`). `scripts/gen-projects.py` validates the records against
+`projects/schema.json` and renders `data.projects` (one file per project in the
+`gateway-projects` bundle); the registry runs it on every change, at the active
+policy commit (`render-records.py` does the same for a records file). Agents
+(the registry's agent records) belong to a project and narrow it: own keys, models, MCP tools,
 owner, autonomy; gen-projects.py adds them to the policy data (`data.agents`,
 each project's `agent_keys`) and to agentregistry, and checks a kagent agent is
 wired to its own ModelConfig and secret. `catalog/tools.yaml` classes every MCP

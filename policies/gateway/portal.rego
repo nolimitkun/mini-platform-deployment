@@ -4,8 +4,8 @@
 #
 #   input.change   {kind: project | agent | exception | policy, object_id,
 #                   op: create | update | delete, before, after}
-#                   before / after: the record as in projects/*.yaml, agents/*.yaml,
-#                   or one entry of _exceptions.yaml; for a policy change (a commit
+#                   before / after: the record (projects/schema.json, agents/schema.json,
+#                   or an exception entry); for a policy change (a commit
 #                   of policies/gateway), {commit} and {commit, subject, author, ref}
 #   input.requester  who submitted it
 #

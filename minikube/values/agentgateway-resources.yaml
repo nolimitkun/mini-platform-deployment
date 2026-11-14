@@ -1,6 +1,6 @@
 vaultSecrets:
   # One entry per key id: {"key": ..., "metadata": {"project": ..., "key_id": ...}}
-  # (projects/*.yaml). The clients' own copies of their keys are mirrored from
+  # (key ids from the project registry). The clients' own copies of their keys are mirrored from
   # agentgateway-client-keys onto each client's release.
   - agentgateway-api-keys
   # DeepSeek's key, sent as the Authorization header to api.deepseek.com.

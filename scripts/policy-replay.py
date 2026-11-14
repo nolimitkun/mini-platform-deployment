@@ -6,18 +6,20 @@
     python3 scripts/policy-replay.py --loki http://localhost:3100   (no port-forward)
 
 Reads OPA's decision log from Loki (OPA logs every decision to stdout, Alloy
-ships it), evaluates each logged input with the Rego and data in
-policies/gateway and policies/gateway-projects as they are now, and compares
-the verdict with the one OPA gave. Run it before merging a policy or project
-change: every flipped verdict is a request that would now be treated
-differently. Exit code 1 if any verdict flips.
+ships it), evaluates each logged input with the Rego in policies/gateway as it
+is now and the project data OPA has now (the active gateway-projects bundle,
+from the project registry, or --data), and compares the verdict with the one
+OPA gave. Run it before merging a policy change: every flipped verdict is a
+request that would now be treated differently. Exit code 1 if any verdict
+flips. (The registry replays every policy change again before its approval.)
 
 Decisions logged before log_mask.rego kept the model and MCP tool name (the
 whole body was dropped then) can't be replayed and are skipped, as are
 decisions for other rules than --rule.
 
-Needs kubectl access to the cluster (it port-forwards svc/loki) unless --loki
-is given, and opa on PATH.
+Needs kubectl access to the cluster (it port-forwards svc/loki, and asks the
+project registry's pod for the data bundle) unless --loki and --data are given,
+and opa on PATH.
 """
 
 import argparse
@@ -34,7 +36,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-BUNDLES = [ROOT / "policies" / "gateway", ROOT / "policies" / "gateway-projects"]
+POLICY = ROOT / "policies" / "gateway"
 NAMESPACE = "mini-platform"
 QUERY = '{namespace="%s", container="opa"} |= "decision_id"' % NAMESPACE
 
@@ -79,19 +81,35 @@ def fetch(url, since, limit):
                 continue
 
 
-def evaluate(inputs, rule):
-    """One opa eval for all inputs: data.replay is the list of inputs."""
-    query = f"[d | some x in data.replay; d := data.{rule.replace('/', '.')} with input as x]"
+def active_data_bundle(dest):
+    """The active gateway-projects bundle, from the project registry (its cluster-internal
+    /internal/bundles endpoint, asked inside its pod)."""
+    out = subprocess.run(
+        ["kubectl", "-n", NAMESPACE, "exec", "deploy/project-registry", "--", "python", "-c",
+         "import sys, urllib.request; sys.stdout.buffer.write(urllib.request.urlopen("
+         "'http://127.0.0.1:8080/internal/bundles/gateway-projects', timeout=60).read())"],
+        capture_output=True)
+    if out.returncode != 0 or out.stdout[:2] != b"\x1f\x8b":
+        sys.exit(f"could not get the data bundle from the project registry: {out.stderr.decode()[-500:]}")
+    dest.write_bytes(out.stdout)
+    return dest
+
+
+def evaluate(inputs, rule, data):
+    """One opa eval for all inputs: data.replay is the list of inputs. One result per
+    input, in order; an undefined decision counts as a denial."""
+    query = (f"[ds | some x in data.replay; "
+             f"ds := [d | d := data.{rule.replace('/', '.')} with input as x]]")
     with tempfile.TemporaryDirectory() as tmp:
         replay = Path(tmp) / "replay.json"
         replay.write_text(json.dumps({"replay": inputs}))
-        args = ["opa", "eval", "--format", "json", "-d", str(replay)]
-        for b in BUNDLES:
-            args += ["-d", str(b)]
+        args = ["opa", "eval", "--format", "json", "-d", str(replay), "-d", str(POLICY),
+                "-b" if data.is_file() else "-d", str(data)]
         out = subprocess.run(args + [query], capture_output=True, text=True)
     if out.returncode != 0:
         sys.exit(f"opa eval failed:\n{out.stdout}{out.stderr}")
-    return json.loads(out.stdout)["result"][0]["expressions"][0]["value"]
+    results = json.loads(out.stdout)["result"][0]["expressions"][0]["value"]
+    return [ds[0] if ds else {"allowed": False} for ds in results]
 
 
 def describe(event):
@@ -110,6 +128,9 @@ def main():
     parser.add_argument("--rule", default="gateway/authz/decision", help="decision path to replay")
     parser.add_argument("--loki", help="Loki base URL; default: kubectl port-forward svc/loki")
     parser.add_argument("--show", type=int, default=10, help="flipped decisions to print per direction")
+    parser.add_argument("--data", type=Path,
+                        help="project data: a bundle (.tar.gz) or a directory (render-records.py --out); "
+                             "default: the active one, from the project registry")
     args = parser.parse_args()
     if not shutil.which("opa"):
         sys.exit("opa not found on PATH")
@@ -131,7 +152,9 @@ def main():
     if not replayable:
         return 0
 
-    now = evaluate([e["input"] for e in replayable], args.rule)
+    with tempfile.TemporaryDirectory() as tmp:
+        data = args.data or active_data_bundle(Path(tmp) / "gateway-projects.tar.gz")
+        now = evaluate([e["input"] for e in replayable], args.rule, data)
     now_denied, now_allowed, changed = [], [], 0
     for e, new in zip(replayable, now):
         before, after = bool(e["result"].get("allowed")), bool(new.get("allowed"))

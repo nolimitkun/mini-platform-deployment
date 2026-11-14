@@ -26,3 +26,12 @@ logs/
 *.yaml~
 
 .env
+
+# The project registry's records live only in the registry (docs/project-registry.md).
+# A local run of gen-projects.py or render-records.py writes these; never commit them.
+/projects/*.yaml
+/agents/*.yaml
+/policies/gateway-projects/projects/
+/policies/gateway-projects/exceptions/
+/policies/gateway-projects/agents/
+/minikube/gitops/agentregistry-catalog/files/agents.yaml

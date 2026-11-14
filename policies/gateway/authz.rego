@@ -4,8 +4,8 @@
 # approved, publishes it to MinIO, where the OPA next to the gateway picks it
 # up and verifies its signature.
 #
-# Every API key belongs to a project (projects/*.yaml, generated into
-# data.projects by scripts/gen-projects.py). A project has a data class, which
+# Every API key belongs to a project (the project registry's records, rendered
+# into data.projects by scripts/gen-projects.py). A project has a data class, which
 # caps the placements it may use (mini-cloud docs/gcp/ai-inference.md); each
 # model or Google API has one placement (data.catalog, from catalog/models.yaml).
 # Anything not explicitly allowed is denied.
@@ -32,7 +32,7 @@ project := data.projects[project_id]
 # revokes it as soon as OPA loads the new bundle.
 authenticated if key_id in project.keys
 
-# The registered agent the key belongs to (agents/*.yaml), if any. Its calls
+# The registered agent the key belongs to (the registry's agents), if any. Its calls
 # get the agent's scope: fewer models and tools than the project, never more.
 agent_id := project.agent_keys[key_id]
 

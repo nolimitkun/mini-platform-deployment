@@ -1,7 +1,7 @@
 {{- $v := .Values }}
 # Every request needs a project API key (Authorization: Bearer <key>). The
 # entries carry {"project": ..., "key_id": ...} metadata, which the OPA policy
-# keys on (projects/*.yaml, scripts/bootstrap-vault-secrets.sh).
+# keys on (the project registry's projects, scripts/bootstrap-vault-secrets.sh).
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:

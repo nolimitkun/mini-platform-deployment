@@ -10,8 +10,8 @@
 #     chart lints and renders against each per-application resources file
 #   - rendered manifests pass kubeconform (CRDs are allowed to be unknown)
 #   - shellcheck on scripts/
-#   - catalog/models.yaml and projects/*.yaml are valid and the files generated
-#     from them are current
+#   - catalog/models.yaml is valid and the files generated from it are current;
+#     the registry's seed renders (project and agent schemas, cross-file rules)
 #   - opa check and fmt on every policy bundle under policies/, opa test over
 #     all of them, and a build of each loaded together (disjoint roots)
 #   - promtool on Prometheus's rendered prometheus.yml and on the alert rules
@@ -156,26 +156,25 @@ else
   bad "catalog (run: python3 scripts/gen-catalog.py)"
 fi
 
-echo "==> projects (projects/*.yaml)"
-if python3 scripts/gen-projects.py --check; then
-  ok "projects valid, generated files current"
+echo "==> project data (the registry's seed, rendered)"
+# The records live in the project registry; this repo has their schema and the
+# renderer. CI renders the seed (the platform's own projects, which a new
+# cluster starts with) to check both, and tests the Rego with it below.
+seed_dir="$(mktemp -d)/gateway-projects"
+if python3 scripts/render-records.py minikube/gitops/project-registry/files/seed.yaml --out "$seed_dir"; then
+  ok "seed renders (schema, cross-file rules)"
 else
-  bad "projects (run: python3 scripts/gen-projects.py)"
+  bad "seed (python3 scripts/render-records.py minikube/gitops/project-registry/files/seed.yaml --out /tmp/x)"
 fi
 
 echo "==> opa (policies/)"
 if have opa; then
-  # Every directory under policies/ is one bundle (opa-policy values.yaml
-  # bundles), and OPA loads them together: the Rego in gateway, the
-  # per-project data in gateway-projects (the project registry publishes it;
-  # this directory is the snapshot the import came from). The tests need both.
-  dirs=()
-  for dir in policies/*/; do
-    dir="${dir%/}"
-    dirs+=("$dir")
-    if opa check --strict "$dir" >/dev/null; then ok "opa check $dir"; else bad "opa check $dir"; fi
-    if [[ -z "$(opa fmt --list "$dir")" ]]; then ok "opa fmt $dir"; else bad "opa fmt $dir (run: opa fmt -w $dir)"; fi
-  done
+  # Two bundles, loaded together by OPA: the Rego in policies/gateway, and the
+  # per-project data the project registry publishes. Here the data is the seed
+  # rendered above (policies/gateway-projects holds only its .manifest).
+  if opa check --strict policies/gateway >/dev/null; then ok "opa check policies/gateway"; else bad "opa check policies/gateway"; fi
+  if [[ -z "$(opa fmt --list policies/gateway)" ]]; then ok "opa fmt policies/gateway"; else bad "opa fmt policies/gateway (run: opa fmt -w policies/gateway)"; fi
+  dirs=(policies/gateway "$seed_dir")
   if opa test "${dirs[@]}" >/dev/null; then ok "opa test ${dirs[*]}"; else bad "opa test ${dirs[*]}"; opa test "${dirs[@]}" || true; fi
   # Build each bundle as the builders do (tests left out, roots from its .manifest)
   # and activate them together, as OPA does: data outside a bundle's roots, or

@@ -1,8 +1,8 @@
 # envoyproxy/ratelimit: the global rate-limit service agentgateway asks on
-# every request (agentgateway-config templates/ratelimit.yaml). Its limits are
-# generated from projects/*.yaml into files/config.yaml by
-# scripts/gen-projects.py; counters live in the shared Redis, so they hold
-# across gateway replicas and restarts.
+# every request (agentgateway-config templates/ratelimit.yaml). Each project's
+# limits come from OPA with the request (limitOverride); files/config.yaml lists
+# no project. Counters live in the shared Redis, so they hold across gateway
+# replicas and restarts.
 image: envoyproxy/ratelimit:5ae0682e
 replicas: 1
 grpcPort: 8081
