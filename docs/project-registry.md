@@ -570,7 +570,8 @@ week of shadow running:
 | Replay | 1,800–1,860 logged decisions replayed per publish; 0 changed for other projects |
 | Bad signature | A `gateway-projects` bundle with `admin` edited to 1/min, uploaded straight to MinIO: OPA refuses it (`data.json: digest mismatch`) and keeps the signed one; `admin` keeps its real limit |
 | Registry down | API and publisher at 0 pods: the gateway keeps serving models and chat, and OPA's status reports fail quietly |
-| Policy build | A failing `opa test` publishes nothing (tested in the repo); on the cluster the first build replaced OCP's unsigned bundle, which OPA refused for its missing signature |
+| Policy build (first round) | A failing `opa test` publishes nothing (tested in the repo); on the cluster the first build replaced OCP's unsigned bundle, which OPA refused for its missing signature |
+| Policy changes through the registry | On deploy the registry adopted the active policy commit, then filed the branch's head as a policy change: 1,326 decisions replayed, 0 changed. A newer commit superseded it (`withdrawn`, "superseded by …"). After the approval the change was active everywhere in 15 s, without republishing the unchanged records; the gateway kept answering 200. Rollback to the previous commit and forward again worked through the API; security may not roll back (403). A change approved under the new `portal.rego` needed the platform team and security |
 | Key rotation (v1 → v2) | A gateway call every second throughout: 101 of 101 answered. The new OPA pod became ready once both builders had re-signed (about 50 s) |
 | Submit rights, withdraw | Security and the cost owner can't propose changes to a project (403); a change nobody could approve was withdrawn by its author |
 | Portal login | Authorization code with PKCE, run by script through the ingress: a token the registry accepts, CORS allowed for `registry.test`, refresh works; a wrong verifier is refused |
