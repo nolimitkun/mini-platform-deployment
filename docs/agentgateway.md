@@ -317,7 +317,6 @@ keys: [kagent-k8s-agent]     # its own gateway keys
 models:
   allow: [deepseek-v4-pro]   # narrows the project's models
 mcp_tools: []                # narrows the project's MCP tools; absent = none
-secret: {name: kagent-k8s-agent-agentgateway, field: OPENAI_API_KEY}
 ```
 
 An agent can only narrow its project. A call with one of its keys gets:
@@ -367,8 +366,9 @@ map (key id → agent) and writes `data.agents.<id>` into the `gateway-projects`
 bundle, so registering, changing or removing an agent touches only its own
 files. It also checks the wiring a kagent agent needs: a `modelConfigRef` in
 `kagent-values.yaml` naming a ModelConfig in `kagent-resources.yaml`
-`extraObjects` that reads the agent's secret, listed in `vaultSecrets` as a copy
-of one of the agent's keys with the record's field. Every agent appears in
+`extraObjects` whose `apiKeySecret` and `apiKeySecretKey` are a `vaultSecrets` copy
+of one of the agent's keys (`gatewayKey`, `field`). Where an agent's key goes is
+said only here; its record says which keys it has. Every agent appears in
 agentregistry as an `Agent` (`agentregistry-catalog/files/agents.yaml`, generated).
 
 Registered today:

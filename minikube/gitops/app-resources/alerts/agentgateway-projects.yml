@@ -27,3 +27,18 @@ groups:
     annotations:
       summary: '{{ $labels.backend }} is throttling the gateway (429 from the provider)'
       description: '{{ $value | printf "%.0f" }} calls got 429 from the provider in 15 minutes. For Vertex models, check the project''s quota in the GCP console.'
+  - alert: ProjectRegistryOutputStale
+    # An output of the registry's publisher (data, policy, chart, keys, activation,
+    # agentregistry) that hasn't finished a round lately, or has failed and never
+    # finished one. agentregistry runs hourly; the others every few seconds to a minute.
+    expr: |
+      (time() - registry_output_last_success_timestamp_seconds{output!="agentregistry"} > 900)
+      or (time() - registry_output_last_success_timestamp_seconds{output="agentregistry"} > 7200)
+      or (time() - registry_output_last_failure_timestamp_seconds
+          unless on (output) registry_output_last_success_timestamp_seconds)
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: 'The project registry''s {{ $labels.output }} output is not keeping up'
+      description: 'No successful round for {{ $value | humanizeDuration }}. Its last error is in the publisher''s log (kubectl -n mini-platform logs deploy/project-registry-publisher) and in the registry''s publisher_health table.'
