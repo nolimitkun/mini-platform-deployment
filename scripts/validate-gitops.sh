@@ -10,11 +10,11 @@
 #     chart lints and renders against each per-application resources file
 #   - rendered manifests pass kubeconform (CRDs are allowed to be unknown)
 #   - shellcheck on scripts/
-#   - against the gateway policy's main (its own CI tests the Rego): the
-#     gateway-models chart renders with this repo's values, agentgateway-config
-#     renders, the MCP targets, serving namespaces and semantic router decisions
-#     match the catalog, and the registry's seed renders with the kagent agents
-#     wired to their keys
+#   - with the gateway policy's main (its own CI tests the Rego): the registry's
+#     seed renders (projects and catalog, the kagent agents wired to their keys),
+#     the gateway-models chart renders with the seed's catalog and this repo's
+#     values, agentgateway-config renders, and the MCP targets, serving namespaces
+#     and semantic router decisions match the seed's catalog
 #   - promtool on Prometheus's rendered prometheus.yml and on the alert rules
 #     under minikube/gitops/app-resources/alerts/
 #
@@ -183,29 +183,30 @@ echo "==> gateway policy (nolimitkun/gateway-policy, main)"
 # side of them, against the policy's main branch.
 if policy_dir="$(scripts/policy-checkout.sh)"; then
   ok "checkout $policy_dir"
-  # gateway-models as Argo CD installs it: the registry's chart (here: the policy's,
-  # with its catalog as the registry sets it) and this repo's values.
-  render "gateway-models (the policy's chart, this repo's values)" gateway-models \
-    gateway-models "$policy_dir/charts/gateway-models" --namespace mini-platform \
-    -f "$policy_dir/generated/agentgateway-catalog.yaml" -f minikube/values/gateway-models-values.yaml
-  render "agentgateway-config" agentgateway-config \
-    agentgateway-config minikube/gitops/agentgateway-config --namespace mini-platform \
-    -f minikube/gitops/agentgateway-config/values.yaml
-  if python3 scripts/check-policy-wiring.py "$policy_dir"; then
-    ok "MCP targets, serving namespaces and semantic router decisions match the catalog"
-  else
-    bad "wiring (scripts/check-policy-wiring.py)"
-  fi
-  # The registry's seed (the platform's own projects, which a new cluster starts
-  # with) must render with the policy's renderer, and each kagent agent in it be
+  # The registry's seed (the platform's own projects and catalog, which a new cluster
+  # starts with) must render with the policy's renderer, and each kagent agent in it be
   # wired to its own key in this repo's kagent values.
+  seed_out="$(mktemp -d)"
   if KAGENT_VALUES="$PWD/minikube/values/kagent-values.yaml" \
      KAGENT_RESOURCES="$PWD/minikube/values/kagent-resources.yaml" \
      python3 "$policy_dir/scripts/render-records.py" minikube/gitops/project-registry/files/seed.yaml \
-       --out "$(mktemp -d)/gateway-projects"; then
-    ok "seed renders; kagent agents wired to their keys"
+       --out "$seed_out/gateway-projects" --catalog-values "$seed_out/catalog.yaml"; then
+    ok "seed renders (projects, catalog); kagent agents wired to their keys"
   else
     bad "seed (render-records.py, with KAGENT_VALUES and KAGENT_RESOURCES)"
+  fi
+  # gateway-models as Argo CD installs it: the registry's chart (the policy's, with the
+  # seed's catalog rendered as the registry renders its own) and this repo's values.
+  render "gateway-models (the policy's chart, the seed's catalog, this repo's values)" gateway-models \
+    gateway-models "$policy_dir/charts/gateway-models" --namespace mini-platform \
+    -f "$seed_out/catalog.yaml" -f minikube/values/gateway-models-values.yaml
+  render "agentgateway-config" agentgateway-config \
+    agentgateway-config minikube/gitops/agentgateway-config --namespace mini-platform \
+    -f minikube/gitops/agentgateway-config/values.yaml
+  if python3 scripts/check-policy-wiring.py; then
+    ok "MCP targets, serving namespaces and semantic router decisions match the seed's catalog"
+  else
+    bad "wiring (scripts/check-policy-wiring.py)"
   fi
 else
   bad "checkout of the gateway policy (scripts/policy-checkout.sh)"
