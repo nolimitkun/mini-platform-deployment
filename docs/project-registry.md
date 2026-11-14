@@ -503,7 +503,10 @@ week of shadow running:
   is replayed under both mixed pairs too (old policy with new data, new policy
   with old data); if either decides a request differently from both the old
   and the new pair, the commit is filed as `failed`. Such a change is staged:
-  first a policy that reads both formats, then the format change.
+  first a policy that reads both formats, then the format change. If either
+  bundle is published while the change waits, it is checked again before it
+  goes live: an unsafe result fails it, and an outcome the approvers didn't see
+  sends it back to them.
 
   This replaces the first round's policy build, a CronJob that activated every
   commit on `main` within a minute. OPA Control Plane is removed too.
