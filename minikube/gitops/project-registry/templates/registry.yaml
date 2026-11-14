@@ -103,7 +103,6 @@ spec:
             - {name: REPLAY_LIMIT, value: {{ .Values.replay.limit | quote }}}
             - {name: MIN_INTERVAL, value: {{ .Values.publishInterval | quote }}}
             - {name: OPA_URL, value: {{ .Values.opaUrl | quote }}}
-            - {name: POLICY_REPO, value: {{ .Values.policy.repo | quote }}}
             - {name: POLICY_REF, value: {{ .Values.policy.ref | quote }}}
             - {name: POLICY_DIR, value: {{ .Values.policy.dir | quote }}}
             - {name: POLICY_TEST_DIRS, value: {{ .Values.policy.testDirs | quote }}}

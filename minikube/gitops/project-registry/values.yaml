@@ -12,10 +12,10 @@ deployRepo: https://github.com/nolimitkun/mini-platform-deployment.git
 # The policy the publisher follows: every new commit of this branch becomes a
 # policy change request (kind policy), tested, built, signed and replayed, and
 # OPA loads it once it is approved (docs/project-registry.md "Policy changes").
-# A branch name, not a commit. To try a branch on the cluster, set it here for
-# the test, and back to main before the merge.
+# The repository is deployRepo: the records render with gen-projects.py at the
+# policy's commit. A branch name, not a commit. To try a branch on the cluster,
+# set it here for the test, and back to main before the merge.
 policy:
-  repo: https://github.com/nolimitkun/mini-platform-deployment.git
   ref: main
   dir: policies/gateway
   testDirs: policies/gateway,policies/gateway-projects

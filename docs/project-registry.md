@@ -498,7 +498,12 @@ week of shadow running:
   (if they differ), and then the policy. It is `active` once every ready OPA
   pod reports the commit. A rollback moves one bundle, so it is refused
   when the records would not render the same at the target commit (a data
-  format change in between); a revert commit then republishes both.
+  format change in between); a revert commit then republishes both. Each OPA
+  loads the two bundles on its own, so a commit that changes the data format
+  is replayed under both mixed pairs too (old policy with new data, new policy
+  with old data); if either decides a request differently from both the old
+  and the new pair, the commit is filed as `failed`. Such a change is staged:
+  first a policy that reads both formats, then the format change.
 
   This replaces the first round's policy build, a CronJob that activated every
   commit on `main` within a minute. OPA Control Plane is removed too.
