@@ -3,9 +3,11 @@
 Every model call and every shared MCP tool call on the platform goes through one
 gateway, [agentgateway](https://agentgateway.dev). Before routing a request, the
 gateway asks OPA whether this client may use this model or tool. OPA's policy is
-Rego in this repo; each project's data lives in the
-[project registry](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md). The registry publishes both as signed
-bundles, each change after an approval. OPA loads the two bundles together and
+Rego in [gateway-policy](https://github.com/nolimitkun/gateway-policy); each
+project's data, the model and tool catalog, and the gateway's API keys live in the
+[project registry](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md). The registry publishes the policy and the data as signed
+bundles, each change after an approval, the model routes as a chart Argo CD
+installs, and the keys to Vault. OPA loads the two bundles together and
 verifies both signatures. agentregistry is the catalog
 where people find the tools.
 
@@ -25,8 +27,9 @@ flowchart LR
   end
   opa[OPA<br/>opa-envoy]
   registry[project registry<br/>+ publisher]
-  git[(policies/ in Git)]
-  minio[(MinIO<br/>opa-bundles)]
+  git[(gateway-policy in Git)]
+  minio[(MinIO<br/>opa-bundles,<br/>gateway-models chart)]
+  vault[(Vault<br/>key maps)]
   clients --> keys --> authz --> route
   authz <-->|gRPC :9191| opa
   gw <-->|ext_proc, auto only| vsr[vLLM Semantic Router]
@@ -34,6 +37,9 @@ flowchart LR
   git -->|new commit: a policy change| registry
   registry -->|gateway-policy, gateway-projects<br/>signed, once approved| minio
   minio --> opa
+  minio -->|Argo CD: model routes| route
+  registry -->|API keys| vault
+  vault -->|VSO| keys
   opa -.->|status: loaded revisions| registry
   route --> vllm[vLLM<br/>on-prem GPU]
   route -->|VPN + PSC, keyless| gcp[Vertex AI Gemini<br/>Speech, TTS]
@@ -50,7 +56,7 @@ flowchart LR
 | Gateway config | `agentgateway-config` (`minikube/gitops/agentgateway-config`) | The `agentgateway-proxy` Gateway, the merged MCP endpoint, and policies for API keys, OPA, the semantic router, rate limits, the model list, metrics labels and tracing |
 | Model routes | `gateway-models` (a chart from the project registry's Helm repository in MinIO) | One `AgentgatewayModel` per model, the `auto` virtual models and the passthrough routes to Google's APIs, from the approved policy's catalog (gateway-policy's `charts/gateway-models`) |
 | OPA | `opa-policy` (`minikube/gitops/opa-policy`) | `opa-envoy`, answering ext_authz over gRPC on `opa:9191` |
-| Project registry | `project-registry`, `project-registry-postgresql` | Publishes both of OPA's bundles, signed with Vault Transit, to MinIO (`opa-bundles/`). Projects, agents and exceptions are change requests with approvals (`gateway-projects`). A new commit of `policies/gateway` on `main` is a policy change request, tested and replayed, published once approved (`gateway-policy`). A portal at `registry.test/portal/`, and a daily export of the records to Git as a PR ([its design](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)) |
+| Project registry | `project-registry`, `project-registry-postgresql` | Publishes both of OPA's bundles, signed with Vault Transit, to MinIO (`opa-bundles/`). Projects, agents, exceptions and the catalog (models, Google APIs, MCP tools, settings) are change requests with approvals (`gateway-projects`). A new gateway-policy commit on `main` that changes a bundle is a policy change request, tested and replayed, published once approved (`gateway-policy`). It also publishes the `gateway-models` chart and writes the gateway's API keys to Vault. A portal at `registry.test/portal/`, and a daily snapshot of the records to the bundle store ([its design](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)) |
 | Rate-limit service | `rate-limit` (`minikube/gitops/rate-limit`) | Counts each project's requests, tokens and spend in Redis; the limits come from OPA with each request (see "Rate limits and budgets") |
 | vLLM Semantic Router | `semantic-router` | Classifies `auto` prompts into task classes for the gateway, over ext_proc (see "The semantic router") |
 | agentregistry | `agentregistry`, `agentregistry-postgresql`, `agentregistry-catalog` | The catalog of MCP servers (and later agents), at `agentregistry.test` behind the Keycloak login. Its entries live in `minikube/gitops/agentregistry-catalog/files/catalog.yaml` |
@@ -297,7 +303,8 @@ To rotate a key:
 ## Agents
 
 A project is a budget and a data class; an agent is one thing acting inside
-it. `agents/<id>.yaml` registers an agent (schema `agents/schema.json`):
+it. An `agent` record in the project registry registers an agent (schema
+`agents/schema.json` in gateway-policy), for example:
 
 ```yaml
 agent: kagent-k8s-agent
@@ -598,8 +605,8 @@ leaves Vault:
 
 | Bundle | Built from | By | Roots (`.manifest`) | Changes when |
 |--------|------------|----|---------------------|--------------|
-| `gateway-policy` | `policies/gateway` in [gateway-policy](https://github.com/nolimitkun/gateway-policy) | the project registry's publisher, once the commit's policy change is approved | `gateway`, `catalog`, `system`, `portal` | the Rego, the data classes, the model catalog or the approval rules change |
-| `gateway-projects` | the project registry's records | its publisher (`project-registry`) | `projects`, `exceptions`, `agents` | an approved change is published |
+| `gateway-policy` | `policies/gateway` in [gateway-policy](https://github.com/nolimitkun/gateway-policy) | the project registry's publisher, once the commit's policy change is approved | `gateway`, `system`, `portal` | the Rego, the data classes or the approval rules change |
+| `gateway-projects` | the project registry's records | its publisher (`project-registry`) | `projects`, `exceptions`, `agents`, `registry` (the catalog) | an approved change is published |
 
 Each bundle activates on its own, so a project change swaps only
 `gateway-projects` and never touches the Rego. The roots must not overlap: OPA
