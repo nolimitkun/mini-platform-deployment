@@ -365,7 +365,9 @@ applications:
     chartVersion: "*"
     valuesFile: minikube/values/gateway-models-values.yaml
     releaseName: gateway-models
-    wave: "1"
+    # Before agentgateway-config, which had these objects until 2026-11-14 (an
+    # existing cluster upgrades as README "Upgrading to gateway-models" says).
+    wave: "0"
   agentgateway-config:
     chartPath: minikube/gitops/agentgateway-config
     valuesFile: minikube/gitops/agentgateway-config/values.yaml

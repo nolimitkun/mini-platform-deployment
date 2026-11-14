@@ -255,6 +255,23 @@ after committing later changes to refresh the source. (The gateway's model
 routes come from the project registry's Helm repository in MinIO, and the
 registry follows the gateway policy's `main` on GitHub.)
 
+**Upgrading to gateway-models (a cluster deployed before 2026-11-14).** The model,
+`auto` and Google API routes moved from `agentgateway-config` to the `gateway-models`
+application. Argo CD doesn't wait for one child application before the next, so
+`agentgateway-config` could prune them before `gateway-models` adopts them. Upgrade in
+this order:
+
+1. Turn off auto-sync of `mini-platform-agentgateway-config` (Argo CD UI, or
+   `kubectl -n argocd patch app mini-platform-agentgateway-config --type json -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]'`).
+2. Make sure the project registry has published a chart: the bucket `gateway-models`
+   has an `index.yaml` once a policy commit with `charts/gateway-models` is active.
+3. Sync the root app at the new commit, and wait until `mini-platform-gateway-models`
+   is Synced (it adopts the existing objects; they are not recreated).
+4. Sync the root app again: it restores `agentgateway-config`'s auto-sync, which now
+   prunes nothing of the routes.
+
+A new cluster needs none of this.
+
 **Rootless Docker on Linux.** If Minikube uses rootless Docker on a remote host,
 ensure the user's Docker service keeps running without an active login (user
 lingering). Otherwise the cluster stops when the SSH session exits — the script
