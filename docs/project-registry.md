@@ -23,12 +23,15 @@ step, for 1,000 projects or more on several sites, edited through a portal.
   replay of past decisions before publishing, and signed bundles.
 - **Decisions don't depend on the registry.** If the registry is down, no
   request decision changes.
-- **No OPA Control Plane.** CI builds and signs the policy bundle, and the
-  publisher builds and signs the data bundle. OCP is retired (see
+- **One path for every change.** The registry's publisher builds and signs
+  both bundles: the policy from Git once its policy change is approved, the
+  project data once a project change is. A merge to `main` alone doesn't change
+  what OPA loads. OPA Control Plane is retired (see
   [Why OCP goes](#why-ocp-goes)).
 
 **Out of scope:** the Rego policy, the model catalog (`catalog/models.yaml`)
-and the project schema stay in Git, reviewed by the platform team.
+and the project schema stay in Git, reviewed by the platform team in pull
+requests. The registry decides only when a merged commit reaches OPA.
 
 ## Architecture
 
@@ -39,12 +42,11 @@ flowchart LR
   api --> pg[(Postgres<br/>projects, changes,<br/>approvals, audit log)]
   api -->|diff| opap[OPA: required approvals]
   api --> kc
-  pg -->|outbox| pub[Publisher<br/>render, replay,<br/>build and sign]
-  git[Git: Rego, catalog, schema] -->|merge| ci[CI<br/>opa test, replay,<br/>build and sign]
+  pg -->|outbox| pub[Publisher<br/>check, replay,<br/>build and sign]
+  git[Git main: Rego, catalog, schema<br/>reviewed in pull requests] -->|new commit:<br/>a policy change| pub
+  pub -->|policy changes| pg
   vt[Vault Transit<br/>signing key] -.-> pub
-  vt -.-> ci
-  pub -->|gateway-projects| s3[(Object store<br/>versioned bundles,<br/>copied to each site)]
-  ci -->|gateway-policy| s3
+  pub -->|gateway-policy,<br/>gateway-projects| s3[(Object store<br/>versioned bundles,<br/>copied to each site)]
   s3 --> opa[OPA, N per site<br/>verifies signatures]
   opa -->|status: bundle revisions| api
   gw[agentgateway] -->|ext_authz| opa
@@ -92,11 +94,13 @@ header would also have to be stripped before the upstream call.
 
 | Bundle | Roots | Built by | When |
 |--------|-------|----------|------|
-| `gateway-policy` | `gateway`, `catalog`, `system` | CI, on merge to `main` | a few times a week |
+| `gateway-policy` | `gateway`, `catalog`, `system`, `portal` | the publisher, from a commit on `main` | when that commit's policy change is approved (a few times a week) |
 | `gateway-projects` | `projects`, `exceptions`, `agents` | the publisher | on every approved change |
 
-- **Signing:** both builders run `opa build --signing-key`. The key lives in
-  Vault Transit and is never exported, and each builder can only sign.
+- **Signing:** the publisher signs both. The key lives in Vault Transit and
+  is never exported, and the publisher's Vault role can only sign with it.
+  `opa build` hashes the files with a throwaway key, and the token is signed
+  again through Transit (`registry/bundles.py`).
 - **Verification:** OPA verifies each bundle with the public key in its
   `keys` config and refuses a bundle without a valid signature. A bundle that
   fails verification leaves the last good one active (`persist: true`).
@@ -224,10 +228,31 @@ The publisher:
    `latest`.
 5. **Waits for OPA** to report the revision, then marks the change `active`.
 
-CI does the same for the policy bundle on merge: `opa test`, a replay with
-the active data bundle, then build, sign and upload. A policy change is
-expected to change decisions, so CI attaches the replay diff to the pull
-request for review instead of stopping on it.
+**A policy change** goes through the same publisher. Its source is Git, not
+the portal: the pull request is reviewed and tested there (CI: `opa test`,
+the two-bundle load), and merging it changes nothing yet. Every minute the
+publisher checks `main`. For a new commit it:
+
+1. runs `opa test`, and builds and signs the bundle without activating it;
+2. renders the records with that commit's `gen-projects.py`;
+3. replays recent decisions under the active bundles and under the new pair.
+   A policy change is expected to change decisions, so the replay is a
+   report for the approvers, not a stop. Two mixed pairs are replayed too
+   when the data format changes, because each OPA loads the two bundles on
+   its own: the old policy with the new data, and the new policy with the
+   old. If either decides a request differently from both full pairs, the
+   commit is refused, and the change is staged (first a policy that reads
+   both formats);
+4. files a change request of kind `policy`, shown in the portal with the
+   commit, a link to its diff and the replay.
+
+`portal.rego` decides its approvals: the platform team and security. Once
+approved, the publisher activates the records rendered at the commit, if
+they differ, then the policy. If either bundle moved while the change waited,
+it is checked again first: an unsafe result fails it, and an outcome the
+approvers didn't see sends it back to them. A newer commit supersedes a
+change still waiting, and a commit whose test fails is filed as `failed`.
+Before merging, `scripts/policy-replay.py` gives the replay from a checkout.
 
 **Order of operations:**
 
@@ -409,8 +434,8 @@ Before phase 2, OCP built both bundles from Git and uploaded them to MinIO. In p
 
 | OCP did | Phase 2 | Why not OCP |
 |----------------|---------|-------------|
-| Builds bundles from Git | CI builds `gateway-policy`; the publisher builds `gateway-projects` from Postgres | project data no longer comes from Git |
-| Uploads to the object store | CI and the publisher upload | one upload needs no service |
+| Builds bundles from Git | the publisher builds `gateway-policy` from an approved commit, and `gateway-projects` from Postgres | project data no longer comes from Git, and a commit needs an approval first |
+| Uploads to the object store | the publisher uploads both | one upload needs no service |
 | Pulls HTTP data sources on a timer | the publisher pushes on approved changes | a timer leaves no place for checks before publishing |
 
 And phase 2 needs three things OCP 0.10 doesn't do:
@@ -425,18 +450,18 @@ Retiring OCP also removes:
 
 - its single replica and SQLite state;
 - the manual override of `ocp.repo` and `ocp.reference` that deploying a
-  branch to the cluster needs today. While that override is in place the
-  root app's auto-sync has to stay off. With CI builds, a branch build goes
-  to its own prefix in the object store instead.
+  branch to the cluster needed. To try a branch now, point the registry's
+  `policy.ref` at it: its commits become policy changes like those of `main`.
 
 Distributing bundles through an OCI registry later is `opa build` plus
 `oras push`, so it doesn't need OCP either.
 
 ## Migration from `projects/*.yaml`
 
-1. **Policy bundle to CI.** CI builds, signs and uploads `gateway-policy`,
-   and OPA verifies signatures on that bundle. OCP keeps building
-   `gateway-projects` only.
+1. **Policy bundle out of OCP.** A build outside OCP signs and uploads
+   `gateway-policy`, and OPA verifies signatures on that bundle. OCP keeps
+   building `gateway-projects` only. (In the proof of concept, first a
+   CronJob, now the registry's policy change requests.)
 2. **Import.** Load `projects/*.yaml` into Postgres.
 3. **Shadow run.** The publisher renders next to `gen-projects.py`, and every
    CI run compares the two; the output must match byte for byte. Cut over
@@ -458,8 +483,9 @@ week of shadow running:
   it published.
 - The limits moved to OPA one deployment after the registry, so OPA already
   returned them when the gateway started reading them.
-- `projects/` is not read-only yet and nothing exports to it. Since the
-  import, it is a stale snapshot for anything the registry changes.
+- `projects/` is not read-only yet. The daily export
+  (`project-registry-git-export`) brings it up to date as a pull request;
+  until that is merged, it lags behind the registry.
 - Step 6 is the next round.
 
 ## Proof of concept
@@ -509,7 +535,9 @@ week of shadow running:
   sends it back to them.
 
   This replaces the first round's policy build, a CronJob that activated every
-  commit on `main` within a minute. OPA Control Plane is removed too.
+  commit on `main` within a minute, without an approval or a replay. The build
+  runs in the cluster because GitHub Actions can't reach its Vault or MinIO.
+  OPA Control Plane is removed too.
 - **Signing**: one RSA key in Vault Transit, not exportable. The publisher's
   Vault role (`bundle-signer`) can only sign. `opa build` computes the file
   hashes with a throwaway key, and the token is then re-signed through Transit
@@ -540,14 +568,6 @@ week of shadow running:
 
 ### Where it differs from this design
 
-- **The registry publishes the policy too, after an approval.** The design has
-  CI build and publish `gateway-policy` on merge. Here the registry's publisher
-  does it, because GitHub Actions can't reach this cluster's Vault or MinIO.
-  A merge to `main` alone no longer changes what OPA loads: the commit becomes
-  a change request, with its replay attached, and waits for the platform team
-  and security. Both bundles thus go through one path: one state machine, one
-  audit log, activation tracking and rollback. GitHub's CI still runs
-  `opa test` and the other checks on the pull request.
 - **The replay compares the active and the candidate data bundle.** Both are
   evaluated against the logged inputs, under the active policy. Comparing with
   the logged verdicts, as first written, would blame a project change for
@@ -562,10 +582,6 @@ week of shadow running:
   (`portal.may_submit`), as is who approves.
 - **Callers still use API keys.** The OAuth clients, and the check that a JWT
   call and an API key call get the same decision, are the next round.
-- **The policy replay comes after the merge.** The design's CI attaches it to
-  the pull request; here it is on the policy change request in the registry,
-  before the approval. Before merging, `scripts/policy-replay.py` gives the same
-  answer from a checkout.
 - **Store layout.** No `latest` pointer: each build is kept under
   `<bundle>/revisions/<revision>/`, and activating one copies it to
   `<bundle>/bundle.tar.gz` (what OPA pulls) and records it in
