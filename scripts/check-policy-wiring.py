@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check this repo's wiring against the gateway policy at the pinned commit.
+"""Check this repo's wiring against the gateway policy (its main branch).
 
     python3 scripts/check-policy-wiring.py POLICY_DIR
 

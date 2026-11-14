@@ -79,9 +79,10 @@ This is exactly what CI (`.github/workflows/validate.yaml`) runs. It:
   source parameters) and the `app-resources` chart once per `resourcesFile`,
 - runs `kubeconform` over the rendered manifests,
 - `shellcheck`s `scripts/*.sh`,
-- fetches gateway-policy at `policyRevision` (`policy-checkout.sh`), renders
-  `agentgateway-config` with its catalog, checks the MCP targets and semantic
-  router decisions against it (`check-policy-wiring.py`), and renders the
+- fetches gateway-policy's `main` (`policy-checkout.sh`), renders `gateway-models`
+  (the policy's chart with this repo's values) and `agentgateway-config`, checks the
+  MCP targets, serving namespaces and semantic router decisions against the catalog
+  (`check-policy-wiring.py`), and renders the
   registry's seed with its renderer and the kagent wiring check (the Rego's own
   tests run in gateway-policy's CI), and
 - runs `promtool` on the rendered Prometheus config and the alert rules.
@@ -113,19 +114,22 @@ Three repos split this, and neither of the other two is in this one:
   sign, replay; `skipped` if neither bundle changes), live without an Argo CD sync once the
   platform team and security approve it. To try a policy branch on the cluster, point
   `policy.ref` in the project-registry values at it for the test.
-- **This repo** pins gateway-policy at `policyRevision` (`minikube/gitops/mini-platform/
-  values.yaml`). `agentgateway-config` takes the catalog's generated values file
-  (`generated/agentgateway-catalog.yaml`) from there at that commit (Argo CD multi-source,
-  `policyValueFiles`), so a new model's routes appear when the pin moves, after its
-  placement is approved as a policy change. `scripts/policy-checkout.sh` fetches the pinned
-  commit; `validate-gitops.sh` renders the gateway with its catalog and checks this repo's
-  wiring against it (`scripts/check-policy-wiring.py`: MCP targets, semantic router
-  decisions), and that the registry's seed renders with the kagent agents wired to their
-  keys. This repo keeps the seed a new cluster's registry imports
+- **The gateway's model routes** (an AgentgatewayModel per model, the `auto` models, the
+  Google API routes) are gateway-policy's `charts/gateway-models`: once a policy commit is
+  approved and active, the registry packages it with the catalog and publishes it to its
+  Helm repository in MinIO (bucket `gateway-models`), and the Argo CD application
+  `gateway-models` (a `helmRepo` app, `chartVersion: "*"`) installs the newest version
+  with `minikube/values/gateway-models-values.yaml`. `agentgateway-config` has the
+  listener, auth, ext_authz, rate limits and MCP, no catalog. Nothing here pins the policy.
+- **This repo**: `scripts/policy-checkout.sh` fetches gateway-policy's `main`;
+  `validate-gitops.sh` renders `gateway-models` (its chart, this repo's values) and checks
+  this repo's wiring against the policy (`scripts/check-policy-wiring.py`: MCP targets,
+  serving namespaces, semantic router decisions), and that the registry's seed renders
+  with the kagent agents wired to their keys. This repo keeps the seed a new cluster's registry imports
   (`minikube/gitops/project-registry/files/seed.yaml`), not the records.
 
 What reads the records reads the registry: the Vault bootstrap gets the key ids from its
-cluster-internal `/internal/keys` (or renders the seed with the pinned policy's
+cluster-internal `/internal/keys` (or renders the seed with the policy's
 `render-records.py` on a new cluster), the registry applies agentregistry's agent catalog
 itself, and `policy-replay.py` takes the active data bundle from it. A daily CronJob
 (`project-registry-snapshot`) copies the records into the bundle store, which an empty

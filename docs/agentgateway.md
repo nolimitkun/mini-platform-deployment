@@ -47,7 +47,8 @@ flowchart LR
 | Piece | Argo CD app | What it does |
 |-------|-------------|--------------|
 | agentgateway controller | `agentgateway`, `agentgateway-crds` | Creates the GatewayClass `agentgateway`. For each Gateway, it runs a proxy Deployment, Service and ServiceAccount named after the Gateway |
-| Gateway config | `agentgateway-config` (`minikube/gitops/agentgateway-config`) | The `agentgateway-proxy` Gateway, one `AgentgatewayModel` per model, the `auto` virtual models, passthrough routes to Google's APIs, the merged MCP endpoint, and policies for API keys, OPA, the semantic router, rate limits, the model list, metrics labels and tracing |
+| Gateway config | `agentgateway-config` (`minikube/gitops/agentgateway-config`) | The `agentgateway-proxy` Gateway, the merged MCP endpoint, and policies for API keys, OPA, the semantic router, rate limits, the model list, metrics labels and tracing |
+| Model routes | `gateway-models` (a chart from the project registry's Helm repository in MinIO) | One `AgentgatewayModel` per model, the `auto` virtual models and the passthrough routes to Google's APIs, from the approved policy's catalog (gateway-policy's `charts/gateway-models`) |
 | OPA | `opa-policy` (`minikube/gitops/opa-policy`) | `opa-envoy`, answering ext_authz over gRPC on `opa:9191` |
 | Project registry | `project-registry`, `project-registry-postgresql` | Publishes both of OPA's bundles, signed with Vault Transit, to MinIO (`opa-bundles/`). Projects, agents and exceptions are change requests with approvals (`gateway-projects`). A new commit of `policies/gateway` on `main` is a policy change request, tested and replayed, published once approved (`gateway-policy`). A portal at `registry.test/portal/`, and a daily export of the records to Git as a PR ([its design](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)) |
 | Rate-limit service | `rate-limit` (`minikube/gitops/rate-limit`) | Counts each project's requests, tokens and spend in Redis; the limits come from OPA with each request (see "Rate limits and budgets") |
@@ -79,11 +80,13 @@ Every model and Google API is declared once, in the model catalog
 its placement and provider settings. Its `scripts/gen-catalog.py` validates the
 catalog and generates two files from it:
 
-- `generated/agentgateway-catalog.yaml`, a values file (`catalog:`) that the
-  gateway chart here turns into `AgentgatewayModel` objects and Google API
-  routes. The root app adds it to `agentgateway-config` from the policy repo at
-  the commit pinned in `minikube/gitops/mini-platform/values.yaml`
-  (`policyRevision`, `policyValueFiles`).
+- `generated/agentgateway-catalog.yaml`, the values of the policy's
+  `charts/gateway-models`: an `AgentgatewayModel` per model, the `auto` models
+  and the Google API routes. Once a policy commit is approved and active, the
+  project registry packages that chart with this catalog and publishes it to
+  its Helm repository in MinIO (bucket `gateway-models`); the Argo CD
+  application `gateway-models` here installs the newest version, with the
+  gateway's own values (`minikube/values/gateway-models-values.yaml`).
 - `policies/gateway/catalog/data.json`, which OPA reads as `data.catalog` for
   placements.
 
@@ -92,15 +95,18 @@ route.
 
 To add a model or a Google API:
 
-1. In gateway-policy: add it to `catalog/models.yaml`, run
+1. For a self-hosted model, its serving release first (the onboarding
+   pipeline, `model-serving`).
+2. In gateway-policy: add it to `catalog/models.yaml`, run
    `python3 scripts/gen-catalog.py`, and merge. The project registry files the
    commit as a policy change; once it is approved, OPA knows the model's
-   placement (see "Changing a policy").
-2. Here: move `policyRevision` to that commit (with the model's serving
-   release, for a self-hosted one). CI checks this repo's wiring against the
-   policy at the pin (`scripts/check-policy-wiring.py`, and the semantic
-   router's decisions if a task class changed). The routes go live on the next
-   Argo CD sync.
+   placement and the registry publishes the routes (a new `gateway-models`
+   version), which Argo CD installs within about three minutes. Until then a
+   call gets 404 (no route) or 403 (not allowed yet): both fail closed.
+
+Nothing here changes for a new model. This repo's CI checks its own side against
+the policy's `main` (`scripts/check-policy-wiring.py`: MCP targets, serving
+namespaces, the semantic router's decisions).
 
 ### Self-hosted models (KServe)
 
