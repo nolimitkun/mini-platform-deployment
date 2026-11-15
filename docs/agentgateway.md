@@ -15,7 +15,7 @@ agentgateway replaces LiteLLM, which this platform used before.
 
 ```mermaid
 flowchart LR
-  subgraph clients[Clients, one API key each]
+  subgraph clients[Clients: a key per project,<br/>and per registered agent]
     owui[Open WebUI]
     kagent[kagent]
     holmes[HolmesGPT]
@@ -34,6 +34,7 @@ flowchart LR
   vault[(Vault<br/>key maps)]
   clients --> keys --> authz --> route
   authz <-->|gRPC :9191| opa
+  route <-->|callout :8181, auto only| opa
   gw <-->|ext_proc, auto only| vsr[vLLM Semantic Router]
   gw <-->|limits from OPA| rl[rate-limit service<br/>Redis]
   people --> registry
@@ -259,7 +260,10 @@ alert rules (`app-resources/alerts/agentgateway-projects.yml`) list no project
 and are edited by hand.
 
 Today's projects are the four former clients and the onboarding pipeline, each
-with one key whose id is the project id:
+with one key whose id is the project id. kagent's four registered agents
+(`kagent-k8s-agent`, `kagent-helm-agent`, `kagent-promql-agent`,
+`kagent-observability-agent`) also have a key each, so OPA applies the agent's
+scope:
 
 | Project | Data class | Routing for `auto` | Mirror (env name the client reads) |
 |---------|------------|--------------------|------------------------------------|
@@ -504,7 +508,9 @@ approved, without restarting the service. The current window's count
 carries over: lowering a limit below what was already counted refuses the next
 call at once, and the budget counted so far in the 30-day window stays.
 
-Today every project has both a request limit and a budget:
+Today every project but `model-onboarding` has both a request limit and a
+budget. `model-onboarding` has neither, so its requests per minute are
+unlimited; it calls only on-prem models, which cost nothing.
 
 | Project | Requests per minute | USD per 30 days |
 |---|---|---|
@@ -519,18 +525,19 @@ limits and budgets are cost control, and OPA still decides access.
 ### Model selection for `auto`
 
 `policies/gateway/select.rego` answers which model a project gets when it lets
-the platform choose. It takes `{"project": ..., "task": ...}`, with `task`
-optional, at `/v1/data/gateway/select/result`, and returns `{"model": ...,
-"routing": ...}`.
+the platform choose. It takes `{"project": ..., "key_id": ..., "task": ...}`,
+with `key_id` and `task` optional, at `/v1/data/gateway/select/result`, and
+returns `{"model": ..., "routing": ...}`.
 
-It only ever picks from `lib.allowed(project)`, the same set authorization
-uses (`policies/gateway/lib.rego`). An unknown project, or one with no allowed
+It only ever picks from `lib.scoped(project, key_id)`, the same set
+authorization uses (`policies/gateway/lib.rego`): the project's allowed models,
+narrowed to a registered agent's own when the key is an agent's. An unknown project, or one with no allowed
 model, gets no result. The project's `routing` decides the order:
 
 | `routing` | Order |
 |-----------|-------|
 | `cheapest` (default) | Blended price, `(3 × input + output) / 4`, from the catalog's `price` |
-| `fastest` | Median model request duration over the last 6 hours (`rankings.rego`), fastest first. Models with fewer than 3 requests in that window come last, in `cheapest` order |
+| `fastest` | Median model request duration over the last 6 hours (`rankings.rego`), fastest first. Models with fewer than 3 requests in that window come last, in `cheapest` order. A KServe model is measured under the name vLLM serves (its route replaces the catalog name), which `rankings.rego` maps back through the catalog |
 | `semantic` | The task class's list in the catalog's `tasks` (the vLLM Semantic Router supplies the class), then `cheapest` |
 | `fixed:<model>` | That model, then `cheapest` |
 
@@ -554,13 +561,14 @@ Catalog prices are the rates agentgateway v1.7.0's built-in price table bills
 in USD per million tokens, checked against its cost metrics. On-prem Qwen has
 no per-token charge, so `cheapest` picks it whenever a project may use it.
 
-Clients reach it through the gateway's virtual models
-(`agentgateway-config` `templates/auto.yaml`):
+Clients reach it through the gateway's virtual models (the registry's
+`gateway-models` chart, `policy/charts/gateway-models/templates/auto.yaml` in
+the project registry's repo):
 
 | `model` | Asks OPA with |
 |---------|---------------|
-| `auto` | the caller's project |
-| `auto-code`, `auto-reasoning`, `auto-general` (one per catalog task) | the project and that task class |
+| `auto` | the caller's project and key id |
+| `auto-code`, `auto-reasoning`, `auto-general` (one per catalog task) | the project, key id and that task class |
 
 Each one is an `AgentgatewayModel` whose `callout` posts to `opa:8181` on every
 request and routes the request to the model OPA names. A cache
