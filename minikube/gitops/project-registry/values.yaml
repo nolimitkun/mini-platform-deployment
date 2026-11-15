@@ -14,7 +14,7 @@ databaseSecret: project-registry-db
 # the cluster, set it here for the test, and back to main before the merge.
 policy:
   repo: https://github.com/nolimitkun/gateway-policy.git
-  ref: feat/settings-records   # TEMPORARY: branch test, back to main before merge
+  ref: main
   dir: policies/gateway
   # how often the branch is checked (seconds)
   poll: "60"
