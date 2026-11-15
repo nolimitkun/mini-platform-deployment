@@ -45,6 +45,8 @@ flowchart LR
   registry -->|API keys| vault
   vault -->|VSO| keys
   opa -.->|status: loaded revisions| registry
+  gw -->|access log, with project and key| loki[(Loki)]
+  loki -->|hourly: spend and usage ledger,<br/>Parquet in MinIO, the portal's Usage page| registry
   route --> vllm[vLLM<br/>on-prem GPU]
   route -->|VPN + PSC, keyless| gcp[Vertex AI Gemini<br/>Speech, TTS]
   route -->|internet| ds[DeepSeek]
