@@ -70,6 +70,8 @@ serviceAccount: project-registry
 # data.portal.required_approvals on the gateway's OPA (its policy bundle
 # carries the policy's policies/gateway/portal.rego).
 opaUrl: http://opa.mini-platform.svc.cluster.local:8181
+# The portal's status page reads the gateway's and the registry's alerts here.
+prometheusUrl: http://prometheus-server.mini-platform.svc.cluster.local
 
 # People log in to Keycloak; the registry checks their access tokens (signed by
 # the realm, issued to its client) and reads their groups.

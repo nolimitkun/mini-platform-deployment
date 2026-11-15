@@ -90,6 +90,7 @@ spec:
             - {name: KEYCLOAK_CLIENT_ID, value: {{ .Values.keycloak.clientId | quote }}}
             - {name: USAGE_BUCKET, value: {{ .Values.usage.bucket | quote }}}
             - {name: USAGE_REFERENCE_MODEL, value: {{ .Values.usage.referenceModel | quote }}}
+            - {name: PROMETHEUS_URL, value: {{ .Values.prometheusUrl | quote }}}
           ports:
             - {name: http, containerPort: 8080}
           readinessProbe:
