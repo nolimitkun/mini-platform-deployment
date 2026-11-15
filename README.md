@@ -1142,14 +1142,14 @@ also:
   its renderer (the projects, the kagent agents' wiring and the catalog), renders
   its `gateway-models` chart with that catalog, this repo's values and
   `agentgateway-config`, and checks the MCP targets, serving namespaces and the
-  semantic router's decisions against the seed's catalog settings; the Rego's tests run in the policy's own CI;
+  semantic router's decisions against the seed's catalog settings; the Rego's tests run in the project registry's CI, with its own tests on the same commit;
 - runs `promtool` on Prometheus's config and the alert rules.
 
 `kubeconform`, `shellcheck` and `promtool` are used if installed and
 skipped otherwise; CI installs them all.
 
 Policy changes are made in [the project registry's policy/](https://github.com/nolimitkun/project-registry/tree/main/policy),
-whose `scripts/policy-replay.py` replays recent gateway decisions against a
+whose `policy/scripts/policy-replay.py` replays recent gateway decisions against a
 change, and project changes in the project registry, which replays them itself
 (see [docs/agentgateway.md](docs/agentgateway.md)).
 

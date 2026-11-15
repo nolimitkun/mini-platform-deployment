@@ -106,8 +106,9 @@ To add a model or a Google API:
 1. For a self-hosted model, its serving release first (the onboarding
    pipeline, `model-serving`).
 2. In the project registry's portal: a change request that adds the `model` or
-   `google_api` record. The platform team proposes; the platform team, security
-   and the cost owner approve (`portal.rego`). Once it is approved, the registry
+   `google_api` record. The platform team proposes; the platform team approves
+   (a floor in `portal.rego`), and today's `approvals` setting adds security and,
+   for a model's price, the cost owner. Once it is approved, the registry
    publishes the data bundle (OPA knows the model's placement) and the routes (a
    new `gateway-models` version), which Argo CD installs within about three
    minutes. Until then a call gets 404 (no route) or 403 (not allowed yet): both
@@ -610,13 +611,14 @@ leaves Vault:
 
 | Bundle | Built from | By | Roots (`.manifest`) | Changes when |
 |--------|------------|----|---------------------|--------------|
-| `gateway-policy` | `policies/gateway` in [the project registry's policy/](https://github.com/nolimitkun/project-registry/tree/main/policy) | the project registry's publisher, once the commit's policy change is approved | `gateway`, `system`, `portal` | the Rego, the data classes or the approval rules change |
-| `gateway-projects` | the project registry's records | its publisher (`project-registry`) | `projects`, `exceptions`, `agents`, `registry` (the catalog) | an approved change is published |
+| `gateway-policy` | `policies/gateway` in [the project registry's policy/](https://github.com/nolimitkun/project-registry/tree/main/policy) | the project registry's publisher, once the commit's policy change is approved | `gateway`, `system`, `portal` | the Rego or the approval logic (triggers, floors) changes |
+| `gateway-projects` | the project registry's records | its publisher (`project-registry`) | `projects`, `exceptions`, `agents`, `registry` (the catalog and the settings: data classes, autonomy, approvals) | an approved change is published |
 
 Each bundle activates on its own, so a project change swaps only
 `gateway-projects` and never touches the Rego. The roots must not overlap: OPA
-refuses to activate two bundles that claim the same root, and the policy repo's
-CI (`scripts/validate.sh`) builds both and loads them together to catch that.
+refuses to activate two bundles that claim the same root, and the project
+registry's CI (`policy/scripts/validate.sh`) builds both and loads them together to
+catch that.
 OPA verifies each bundle's signature (`keys` and `signing` in the opa-policy
 chart; the public key comes from Vault, `opa-bundle-signing`) and refuses one
 that doesn't verify, keeping the last good one. A bundle written to MinIO by
@@ -624,12 +626,13 @@ anyone else, or changed there, is not loaded.
 
 To change the policy (in [the project registry's policy/](https://github.com/nolimitkun/project-registry/tree/main/policy)):
 
-1. Edit the Rego, the data classes or the chart, and run `scripts/validate.sh`
-   (what its CI runs: the test records rendered with the catalog, the chart,
-   `opa check`, `opa fmt`, `opa test`, the two-bundle load). The catalog itself
-   is not there: it changes in the registry.
+1. Edit the Rego or the chart, and run `policy/scripts/validate.sh` (what the
+   registry's CI runs, with its own tests on the same commit: the test records
+   rendered with the catalog and the settings, the chart, `opa check`, `opa fmt`,
+   `opa test`, the two-bundle load). The catalog and the settings (data classes,
+   autonomy, who approves what) are not there: they change in the registry's portal.
 2. Replay recent traffic against the change with
-   `python3 scripts/policy-replay.py` there. It reads OPA's decisions from Loki,
+   `python3 policy/scripts/policy-replay.py` there. It reads OPA's decisions from Loki,
    evaluates each logged request with the policy in your checkout and the
    project data active now (from the registry), and lists
    every request whose verdict would flip. It needs the cluster, so CI doesn't
@@ -639,13 +642,14 @@ To change the policy (in [the project registry's policy/](https://github.com/nol
    - it has run `opa test` again and built and signed the bundle, with the
      commit as its revision;
    - it has replayed recent decisions under the new policy;
-   - the request shows the commit, a link to its diff and the replay report.
+   - the request shows the commit, its diff file by file and the replay report.
 
    A failing test is filed as `failed`, and nothing is published. A newer
-   commit supersedes a request still waiting. A commit that changes neither
-   bundle (docs, another chart) is recorded as `skipped` and needs nobody.
-4. Approve it in the portal (`registry.test/portal/`, Changes). The policy
-   decides who approves (`portal.rego`): the platform team and security. Then
+   commit supersedes a request still waiting. A commit that changes nothing in
+   `policy/` (the registry's code only) is followed with no request; one that
+   changes only docs or CI there, and neither bundle, is recorded as `skipped`.
+4. Approve it in the portal (`registry.test/portal/`, Changes). A policy commit
+   always needs the platform team and security (floors in `portal.rego`). Then
    the publisher activates it, together with the project data rendered at that
    commit if it differs. OPA checks MinIO every 10–30 seconds and loads it; the
    change is `active` once every ready OPA pod has. No Argo CD sync is involved.
@@ -733,9 +737,9 @@ cluster enforces NetworkPolicy, so any pod can reach it there.
 - **Traces.** OTLP goes to Alloy, then to Tempo, under service name
   `agentgateway-proxy`. Langfuse gets the clients' own traces (kagent, Holmes,
   Open WebUI projects), not a per-call gateway project like LiteLLM's.
-- **Alerts.** Prometheus rules, generated with the rate-limit config by
-  `gen-projects.py` into `minikube/gitops/app-resources/alerts/`: three rules
-  whatever the number of projects. The budget forecast joins the spend with
+- **Alerts.** Prometheus rules in
+  `minikube/gitops/app-resources/alerts/agentgateway-projects.yml`, edited by hand:
+  four rules whatever the number of projects. The budget forecast joins the spend with
   `project_budget_usd`, which the project registry exports, so it uses each
   project's current budget. They show in Grafana under Alerting;
   Alertmanager has no receivers yet, so nothing is sent anywhere.
@@ -745,6 +749,7 @@ cluster enforces NetworkPolicy, so any pod can reach it there.
   | `GatewayProjectBudgetForecast` | The last 24 hours of spend, times 30, is over 80% of the project's 30-day budget, for 30 minutes |
   | `GatewayProjectRateLimited` | The gateway answered 429 to a project because of its own limit or budget (`reason="RateLimit"`) in the last 10 minutes |
   | `GatewayUpstreamThrottled` | A provider answered 429 five times or more in 15 minutes (`reason="Upstream"`), usually the Vertex quota |
+  | `ProjectRegistryOutputStale` | One of the registry publisher's outputs (data, policy, chart, keys, activation, agentregistry) has had no successful round for 15 minutes (2 hours for agentregistry), or fails and never succeeded (`registry_output_last_success_timestamp_seconds` on its `/metrics`) |
 
   The forecast uses one day because Prometheus keeps 15 days and the
   rate-limit service's 30-day count isn't in it. A project's very first 429s
