@@ -1,7 +1,7 @@
 # The gateway's model routes (the gateway-models application): a chart the project
 # registry publishes to its Helm repository in MinIO (bucket gateway-models) once
 # a policy change is approved, with the catalog as its values (the gateway policy's
-# charts/gateway-models, nolimitkun/gateway-policy). These are the gateway's own
+# policy/charts/gateway-models in nolimitkun/project-registry). These are the gateway's own
 # settings it needs; the models come with the chart.
 gatewayName: agentgateway-proxy
 

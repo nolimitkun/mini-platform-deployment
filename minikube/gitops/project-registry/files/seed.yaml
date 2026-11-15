@@ -7,7 +7,7 @@
 # test the policy with (scripts/validate-gitops.sh).
 #
 # Format: the registry's GET /export without "revision". Each project, agent and
-# exception has the format of gateway-policy's projects/schema.json and
+# exception has the format of the policy's projects/schema.json and
 # agents/schema.json; the catalog's records, of what its gen-catalog.py validates.
 agent:
   holmes:
