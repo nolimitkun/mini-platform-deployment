@@ -1,6 +1,6 @@
 # The registry API, the publisher and the one-off import, all one image
 # (github.com/nolimitkun/project-registry). Design: nolimitkun/project-registry docs/design.md.
-image: ghcr.io/nolimitkun/project-registry:sha-5c655fb92f660a6ef2b74105037b7fb7477934dc
+image: ghcr.io/nolimitkun/project-registry:sha-e2df8289f2a84fa39f5f8432d9aa7faa2b438d6b
 
 # DATABASE_URL, from Vault (project-registry-db), for project-registry-postgresql.
 databaseSecret: project-registry-db
@@ -92,6 +92,21 @@ publishInterval: "30"
 # signed bundle revisions. Not a backup of the database (approvals, audit log).
 snapshot:
   schedule: "0 3 * * *"
+
+# The gateway's spend and usage (the registry's registry/usage.py): hourly, the
+# gateway's access log lines from Loki (each with its project and key:
+# agentgateway-config policies.yaml) into Parquet in this bucket, shaped with
+# DuckDB; the portal's Usage page reads it through the API. Loki keeps about a
+# week, so a job that misses runs catches up within backfillHours.
+usage:
+  bucket: registry-usage
+  schedule: "7 * * * *"
+  lokiUrl: http://loki.mini-platform.svc.cluster.local:3100
+  lokiSelector: '{namespace="mini-platform", container="agentgateway"}'
+  lookbackHours: "3"
+  backfillHours: "168"
+  # On-prem tokens priced at this model's catalog price, on the Usage page.
+  referenceModel: gemini-3.5-flash
 
 # The registry applies its registered agents to agentregistry's catalog after
 # each publish and every hour (agentregistry-catalog has the static entries).

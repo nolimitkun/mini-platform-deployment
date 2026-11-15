@@ -83,6 +83,12 @@ buckets:
   - name: gateway-models
     policy: download
     purge: false
+  # The project registry's spend and usage ledger: the gateway's access log as
+  # Parquet (raw/, fact/, daily/, dims/). Who called what and what it cost, no
+  # prompts; private.
+  - name: registry-usage
+    policy: none
+    purge: false
   - name: models
     policy: none
     purge: false
@@ -99,9 +105,9 @@ buckets:
 policies:
   - name: opa-bundles-write
     statements:
-      - resources: ["arn:aws:s3:::opa-bundles/*", "arn:aws:s3:::gateway-models/*"]
+      - resources: ["arn:aws:s3:::opa-bundles/*", "arn:aws:s3:::gateway-models/*", "arn:aws:s3:::registry-usage/*"]
         actions: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
-      - resources: ["arn:aws:s3:::opa-bundles", "arn:aws:s3:::gateway-models"]
+      - resources: ["arn:aws:s3:::opa-bundles", "arn:aws:s3:::gateway-models", "arn:aws:s3:::registry-usage"]
         actions: ["s3:GetBucketLocation", "s3:ListBucket", "s3:ListBucketMultipartUploads"]
   - name: opa-bundles-read
     statements:

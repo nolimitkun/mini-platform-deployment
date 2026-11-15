@@ -757,6 +757,20 @@ cluster enforces NetworkPolicy, so any pod can reach it there.
 
   Cost uses agentgateway's own price table, the same prices as the
   registry's `model` records. Self-hosted models count as $0.
+- **Spend and usage ledger.** Prometheus keeps 15 days and labels by project
+  only. For months, keys and agents, the access log is the ledger: every line
+  carries the request's `project` and `key_id` (`policies.yaml`,
+  `frontend.accessLog`), with the model, tokens, the cost the gateway charged
+  (what budgets count), status and duration. Alloy ships it to Loki, which keeps
+  about a week. The project registry's hourly CronJob `project-registry-usage`
+  reads it from there into Parquet in the MinIO bucket `registry-usage` and
+  shapes it with DuckDB: one row per request, the model as the catalog names it,
+  joined with that day's projects, agents and budgets. The registry portal's
+  **Usage** page reads it: spend per day, each project's 30 days against its
+  budget, models and what `auto` chose, agents and keys, and a project's
+  dearest requests with their trace ids. A project's owners see that project,
+  and the platform team and cost owners see all. It runs about an hour behind;
+  the dashboards above are live.
 - **Traces.** OTLP goes to Alloy, then to Tempo, under service name
   `agentgateway-proxy`. Langfuse gets the clients' own traces (kagent, Holmes,
   Open WebUI projects), not a per-call gateway project like LiteLLM's.
@@ -774,7 +788,7 @@ cluster enforces NetworkPolicy, so any pod can reach it there.
   | `GatewayProjectRateLimited` | The gateway answered 429 to a project because of its own limit or budget (`reason="RateLimit"`) in the last 10 minutes |
   | `GatewayUpstreamThrottled` | A provider answered 429 five times or more in 15 minutes (`reason="Upstream"`), usually the Vertex quota |
   | `GatewayModelPriceDrift` | Over 6 hours, what the gateway charged for a model (its own price table, what budgets use) differs by over 10% from its tokens at the catalog price, for 30 minutes; a model the gateway's table doesn't know is charged $0 |
-  | `ProjectRegistryOutputStale` | One of the registry publisher's outputs (data, policy, chart, keys, activation, agentregistry) has had no successful round for 15 minutes (2 hours for agentregistry), or fails and never succeeded (`registry_output_last_success_timestamp_seconds` on its `/metrics`) |
+  | `ProjectRegistryOutputStale` | One of the registry publisher's outputs (data, policy, chart, keys, activation, agentregistry) or its hourly usage job has had no successful round for 15 minutes (2 hours for agentregistry and usage), or fails and never succeeded (`registry_output_last_success_timestamp_seconds` on its `/metrics`) |
 
   The forecast uses one day because Prometheus keeps 15 days and the
   rate-limit service's 30-day count isn't in it. A project's very first 429s
