@@ -20,6 +20,33 @@ groups:
     annotations:
       summary: 'The gateway refused calls from {{ $labels.project }}: request limit or budget reached'
       description: '{{ $value | printf "%.0f" }} calls got 429 in 10 minutes. The project''s limits and budget are in the project registry.'
+  # Price drift. Budgets are charged at agentgateway's built-in price table
+  # (llm.cost.total, ratelimit.yaml); auto and the portal use the catalog's
+  # prices, which the project registry exports as model_price_usd_per_million_tokens,
+  # labelled like the gateway's token metrics (a KServe model under its served
+  # name). The two recorded series are, per model over 6 hours, what the gateway
+  # charged and the same tokens at the catalog's price; a model the gateway's
+  # table doesn't know is charged $0 and so differs too. A model outside the
+  # catalog has no catalog cost and is left out.
+  - record: model:gateway_cost_usd:increase6h
+    expr: |
+      sum by (gen_ai_request_model) (increase(agentgateway_gen_ai_client_cost_usd_total{gateway="mini-platform/agentgateway-proxy"}[6h]))
+      or 0 * sum by (gen_ai_request_model) (increase(agentgateway_gen_ai_client_token_usage_sum{gateway="mini-platform/agentgateway-proxy"}[6h]))
+  - record: model:catalog_cost_usd:increase6h
+    expr: |
+      sum by (gen_ai_request_model) (
+        increase(agentgateway_gen_ai_client_token_usage_sum{gateway="mini-platform/agentgateway-proxy"}[6h])
+        * on (gen_ai_request_model, gen_ai_token_type) group_left
+        max by (gen_ai_request_model, gen_ai_token_type) (model_price_usd_per_million_tokens)
+      ) / 1e6
+  - alert: GatewayModelPriceDrift
+    expr: abs(model:gateway_cost_usd:increase6h - on (gen_ai_request_model) model:catalog_cost_usd:increase6h) > on (gen_ai_request_model) (0.1 * model:catalog_cost_usd:increase6h + 0.0001)
+    for: 30m
+    labels:
+      severity: warning
+    annotations:
+      summary: 'Budgets charge {{ $labels.gen_ai_request_model }} at a price other than the catalog''s'
+      description: The gateway's cost for this model over 6 hours differs from its tokens at the catalog price by {{ $value | printf "%.4f" }} USD. Budgets use the gateway's price table and auto uses the catalog's. Correct the model's price in the project registry, or, for a model the gateway's table doesn't know (charged $0), keep its budget in mind until agentgateway knows it.
   - alert: GatewayUpstreamThrottled
     expr: sum by (backend) (increase(agentgateway_requests_total{gateway="mini-platform/agentgateway-proxy",reason="Upstream",status="429"}[15m])) >= 5
     labels:

@@ -478,9 +478,20 @@ service as the descriptor's `limitOverride`. Three counters per project:
 
 Tokens and cost are only known once a call completes. So the call that crosses
 a limit still finishes, and the next one gets 429. The budget uses agentgateway's
-prices, the same as the catalog's, so on-prem Qwen costs nothing. Its window is
+built-in prices (no agentgateway resource takes our own), which match the
+catalog's, so on-prem Qwen costs nothing. Its window is
 the rate-limit service's "month": a fixed 30-day period counted from the Unix
 epoch, not a calendar month.
+
+The two price tables are kept honest by an alert, not by construction. The
+project registry exports each catalog price as `model_price_usd_per_million_tokens`
+(on its `/metrics`, labelled like the gateway's token metrics), and
+`GatewayModelPriceDrift` (`app-resources/alerts/agentgateway-projects.yml`)
+fires when, over 6 hours, what the gateway charged for a model differs by more
+than 10% from its tokens at the catalog price. A new model agentgateway's table
+doesn't know is charged $0, outside every budget, and fires it too. Measured on
+2026-11-15: one call to each priced model, and the gateway's cost was exactly
+the tokens at the catalog price for all five.
 
 A limit the project doesn't set is sent as unlimited (4,000,000,000: the
 override is a uint32, which also caps a budget at about $4,000 per 30 days in
@@ -743,9 +754,10 @@ cluster enforces NetworkPolicy, so any pod can reach it there.
   Open WebUI projects), not a per-call gateway project like LiteLLM's.
 - **Alerts.** Prometheus rules in
   `minikube/gitops/app-resources/alerts/agentgateway-projects.yml`, edited by hand:
-  four rules whatever the number of projects. The budget forecast joins the spend with
-  `project_budget_usd`, which the project registry exports, so it uses each
-  project's current budget. They show in Grafana under Alerting;
+  five alerts and two recording rules whatever the number of projects or models. The
+  budget forecast joins the spend with `project_budget_usd`, and the price drift alert
+  the tokens with `model_price_usd_per_million_tokens`, both exported by the project
+  registry, so they use each project's current budget and each model's current price. They show in Grafana under Alerting;
   Alertmanager has no receivers yet, so nothing is sent anywhere.
 
   | Alert | Fires when |
@@ -753,6 +765,7 @@ cluster enforces NetworkPolicy, so any pod can reach it there.
   | `GatewayProjectBudgetForecast` | The last 24 hours of spend, times 30, is over 80% of the project's 30-day budget, for 30 minutes |
   | `GatewayProjectRateLimited` | The gateway answered 429 to a project because of its own limit or budget (`reason="RateLimit"`) in the last 10 minutes |
   | `GatewayUpstreamThrottled` | A provider answered 429 five times or more in 15 minutes (`reason="Upstream"`), usually the Vertex quota |
+  | `GatewayModelPriceDrift` | Over 6 hours, what the gateway charged for a model (its own price table, what budgets use) differs by over 10% from its tokens at the catalog price, for 30 minutes; a model the gateway's table doesn't know is charged $0 |
   | `ProjectRegistryOutputStale` | One of the registry publisher's outputs (data, policy, chart, keys, activation, agentregistry) has had no successful round for 15 minutes (2 hours for agentregistry), or fails and never succeeded (`registry_output_last_success_timestamp_seconds` on its `/metrics`) |
 
   The forecast uses one day because Prometheus keeps 15 days and the
