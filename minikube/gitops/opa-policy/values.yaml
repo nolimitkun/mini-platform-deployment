@@ -1,6 +1,6 @@
 # Both bundles are built, signed and published by the project registry's
 # publisher (project-registry chart): the Rego in policies/gateway of
-# nolimitkun/gateway-policy, once its change is approved, and the project data.
+# the project registry's policy/, once its change is approved, and the project data.
 bundles:
   policy: gateway-policy
   projects: gateway-projects

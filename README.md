@@ -50,10 +50,10 @@ pipeline tuned, evaluated and deployed, its weights streamed from MinIO; see
 "Self-hosted models" in `docs/agentgateway.md`; the Gemini models
 on Vertex AI, `deepseek-v4-pro`), passes Google's speech APIs through, and merges
 the cluster's MCP servers into one endpoint. Before routing, it asks **OPA**,
-whose policy (the Rego in [gateway-policy](https://github.com/nolimitkun/gateway-policy): data class per project, placement
+whose policy (the Rego in [the project registry's policy/](https://github.com/nolimitkun/project-registry/tree/main/policy): data class per project, placement
 per model, allowed tools, the model behind `auto`) and per-project data come in
 two signed bundles, both published by the **project registry** once a change is
-approved: the Rego from gateway-policy, the project data from its own records
+approved: the Rego from its policy/ directory, the project data from its own records
 ([the project registry's design](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)). OPA verifies both. Each project's limits travel with OPA's decision, and a rate-limit service counts against them. **agentregistry** is the
 catalog of MCP servers and the registered agents. See [docs/agentgateway.md](docs/agentgateway.md).
 
@@ -113,7 +113,7 @@ Every browser-facing service authenticates against Keycloak — see
 | `scripts/check-local-deployment.sh` | Verifies local Argo CD sync/health, pod readiness, secret sync, and optional Open WebUI smoke test |
 | `scripts/set-repo.sh` | Repoints the charts/deploy repo URLs and revisions in one command |
 | `scripts/validate-gitops.sh` | Lints/renders the GitOps charts (and the gateway policy's `gateway-models` chart with this repo's values), shellchecks the scripts, checks this repo's wiring against the policy, and runs `promtool`; run in CI too |
-| `scripts/policy-checkout.sh` | Fetches the gateway policy ([nolimitkun/gateway-policy](https://github.com/nolimitkun/gateway-policy)) at the head of `main` |
+| `scripts/policy-checkout.sh` | Fetches the gateway policy ([project-registry's policy/](https://github.com/nolimitkun/project-registry/tree/main/policy)) at the head of `main` |
 | `scripts/check-policy-wiring.py` | Checks the gateway's MCP targets and the semantic router's decisions against the catalog settings in the project registry's seed |
 | `tools/` | Optional utility workloads (e.g. network diagnostics) |
 
@@ -1142,13 +1142,13 @@ also:
   its renderer (the projects, the kagent agents' wiring and the catalog), renders
   its `gateway-models` chart with that catalog, this repo's values and
   `agentgateway-config`, and checks the MCP targets, serving namespaces and the
-  semantic router's decisions against the seed's catalog settings; the Rego's tests run in gateway-policy's own CI;
+  semantic router's decisions against the seed's catalog settings; the Rego's tests run in the policy's own CI;
 - runs `promtool` on Prometheus's config and the alert rules.
 
 `kubeconform`, `shellcheck` and `promtool` are used if installed and
 skipped otherwise; CI installs them all.
 
-Policy changes are made in [gateway-policy](https://github.com/nolimitkun/gateway-policy),
+Policy changes are made in [the project registry's policy/](https://github.com/nolimitkun/project-registry/tree/main/policy),
 whose `scripts/policy-replay.py` replays recent gateway decisions against a
 change, and project changes in the project registry, which replays them itself
 (see [docs/agentgateway.md](docs/agentgateway.md)).

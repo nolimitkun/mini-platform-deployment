@@ -357,7 +357,7 @@ applications:
     wave: "0"
   # The gateway's model routes: one AgentgatewayModel per model, the auto models
   # and the Google API routes, from the approved policy's catalog. The project
-  # registry publishes the chart (gateway-policy's charts/gateway-models) to its
+  # registry publishes the chart (the policy's charts/gateway-models) to its
   # Helm repository in MinIO; this follows the newest version.
   gateway-models:
     helmRepo: http://minio.mini-platform.svc.cluster.local:9000/gateway-models

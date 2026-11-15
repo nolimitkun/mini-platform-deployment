@@ -177,7 +177,7 @@ else
   skip "shellcheck not installed"
 fi
 
-echo "==> gateway policy (nolimitkun/gateway-policy, main)"
+echo "==> gateway policy (nolimitkun/project-registry's policy/, main)"
 # The Rego, the catalog and the gateway-models chart are in their own repo, with
 # their own CI; the project registry publishes what is approved. Here: this repo's
 # side of them, against the policy's main branch.

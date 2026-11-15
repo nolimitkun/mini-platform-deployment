@@ -79,12 +79,12 @@ This is exactly what CI (`.github/workflows/validate.yaml`) runs. It:
   source parameters) and the `app-resources` chart once per `resourcesFile`,
 - runs `kubeconform` over the rendered manifests,
 - `shellcheck`s `scripts/*.sh`,
-- fetches gateway-policy's `main` (`policy-checkout.sh`), renders `gateway-models`
+- fetches the policy's `main` (`policy-checkout.sh`), renders `gateway-models`
   (the policy's chart with this repo's values) and `agentgateway-config`, checks the
   MCP targets, serving namespaces and semantic router decisions against the catalog
   (`check-policy-wiring.py`), and renders the
   registry's seed with its renderer and the kagent wiring check (the Rego's own
-  tests run in gateway-policy's CI), and
+  tests run in the policy's CI), and
 - runs `promtool` on the rendered Prometheus config and the alert rules.
 
 `helm` and `git` are required; `kubeconform`, `shellcheck` and `promtool` are
@@ -100,30 +100,31 @@ mini-cloud VPN, DeepSeek), passthrough routes to Google's speech APIs, and one M
 endpoint over the cluster's MCP servers. Every request carries a per-project API key
 and is decided by **OPA** (ext_authz, FailClosed) from two signed bundles in MinIO
 (disjoint `.manifest` roots, signed with a Vault Transit key that never leaves Vault).
-Three repos split this, and neither of the other two is in this one:
-- **nolimitkun/gateway-policy**: the Rego (`policies/gateway`, including who proposes and
-  which kinds of registry change need approval, `portal.rego`), the `gateway-models`
-  chart, the record schemas, and the scripts
-  (`gen-settings.py`, `gen-catalog.py`, `gen-projects.py`, `render-records.py`, `policy-replay.py`,
-  `tools-drift.py`). Its own CI tests the Rego. Change the policy there, never here.
+Two repos split this; the other is not in this one:
 - **nolimitkun/project-registry** (deployed here by `project-registry`, design in its
-  `docs/design.md`): holds the projects, agents and exceptions, the model and tool catalog, and the
-  policy's settings (data classes, autonomy, who approves what; reviewed in its portal)
-  (`model`, `google_api`, `tool`, `catalog` records; adding a model is a change request there), ONLY there (portal at
+  `docs/design.md`) has the service and, in its `policy/` directory, the gateway policy:
+  the Rego (`policies/gateway`, including who proposes and which kinds of registry change
+  need approval, `portal.rego`), the `gateway-models` chart, the record schemas, and the
+  scripts (`gen-settings.py`, `gen-catalog.py`, `gen-projects.py`, `render-records.py`,
+  `policy-replay.py`, `tools-drift.py`). Its CI tests the policy and the service on the
+  same commit. Change the policy there, never here. The registry holds the projects,
+  agents and exceptions, the model and tool catalog, and the policy's settings (data
+  classes, autonomy, who approves what; reviewed in its portal) ONLY there (portal at
   `registry.test/portal/`, Keycloak login with PKCE, or its API), and publishes both
   bundles, every change after policy-decided approvals. It files every new commit on
-  gateway-policy's `main` as a **policy change** (opa test with its live records, build,
-  sign, replay; `skipped` if neither bundle changes), live without an Argo CD sync once the
-  platform team and security approve it. To try a policy branch on the cluster, point
+  its `main` that changes `policy/` as a **policy change** (opa test with its live
+  records, build, sign, replay; the diff shown in the portal), live without an Argo CD
+  sync once the platform team and security approve it; a commit that changes only the
+  registry's code is followed with no request. To try a branch on the cluster, point
   `policy.ref` in the project-registry values at it for the test.
 - **The gateway's model routes** (an AgentgatewayModel per model, the `auto` models, the
-  Google API routes) are gateway-policy's `charts/gateway-models`: once a policy commit is
+  Google API routes) are the policy's `charts/gateway-models`: once a policy commit is
   approved and active, the registry packages it with the catalog and publishes it to its
   Helm repository in MinIO (bucket `gateway-models`), and the Argo CD application
   `gateway-models` (a `helmRepo` app, `chartVersion: "*"`) installs the newest version
   with `minikube/values/gateway-models-values.yaml`. `agentgateway-config` has the
   listener, auth, ext_authz, rate limits and MCP, no catalog. Nothing here pins the policy.
-- **This repo**: `scripts/policy-checkout.sh` fetches gateway-policy's `main`;
+- **This repo**: `scripts/policy-checkout.sh` fetches the policy's `main`;
   `validate-gitops.sh` renders `gateway-models` (its chart, this repo's values) and checks
   this repo's wiring against the policy (`scripts/check-policy-wiring.py`: MCP targets,
   serving namespaces, semantic router decisions), and that the registry's seed renders

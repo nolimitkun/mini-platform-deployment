@@ -3,7 +3,7 @@
 Every model call and every shared MCP tool call on the platform goes through one
 gateway, [agentgateway](https://agentgateway.dev). Before routing a request, the
 gateway asks OPA whether this client may use this model or tool. OPA's policy is
-Rego in [gateway-policy](https://github.com/nolimitkun/gateway-policy); each
+Rego in [the project registry's policy/](https://github.com/nolimitkun/project-registry/tree/main/policy); each
 project's data, the model and tool catalog, and the gateway's API keys live in the
 [project registry](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md). The registry publishes the policy and the data as signed
 bundles, each change after an approval, the model routes as a chart Argo CD
@@ -27,7 +27,7 @@ flowchart LR
   end
   opa[OPA<br/>opa-envoy]
   registry[project registry<br/>+ publisher]
-  git[(gateway-policy in Git)]
+  git[(registry repo: policy/ in Git)]
   minio[(MinIO<br/>opa-bundles,<br/>gateway-models chart)]
   vault[(Vault<br/>key maps)]
   clients --> keys --> authz --> route
@@ -54,7 +54,7 @@ flowchart LR
 |-------|-------------|--------------|
 | agentgateway controller | `agentgateway`, `agentgateway-crds` | Creates the GatewayClass `agentgateway`. For each Gateway, it runs a proxy Deployment, Service and ServiceAccount named after the Gateway |
 | Gateway config | `agentgateway-config` (`minikube/gitops/agentgateway-config`) | The `agentgateway-proxy` Gateway, the merged MCP endpoint, and policies for API keys, OPA, the semantic router, rate limits, the model list, metrics labels and tracing |
-| Model routes | `gateway-models` (a chart from the project registry's Helm repository in MinIO) | One `AgentgatewayModel` per model, the `auto` virtual models and the passthrough routes to Google's APIs, from the approved policy's catalog (gateway-policy's `charts/gateway-models`) |
+| Model routes | `gateway-models` (a chart from the project registry's Helm repository in MinIO) | One `AgentgatewayModel` per model, the `auto` virtual models and the passthrough routes to Google's APIs, from the approved policy's catalog (the policy's `charts/gateway-models`) |
 | OPA | `opa-policy` (`minikube/gitops/opa-policy`) | `opa-envoy`, answering ext_authz over gRPC on `opa:9191` |
 | Project registry | `project-registry`, `project-registry-postgresql` | Publishes both of OPA's bundles, signed with Vault Transit, to MinIO (`opa-bundles/`). Projects, agents, exceptions and the catalog (models, Google APIs, MCP tools, settings) are change requests with approvals (`gateway-projects`). A new gateway-policy commit on `main` that changes a bundle is a policy change request, tested and replayed, published once approved (`gateway-policy`). It also publishes the `gateway-models` chart and writes the gateway's API keys to Vault. A portal at `registry.test/portal/`, and a daily snapshot of the records to the bundle store ([its design](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)) |
 | Rate-limit service | `rate-limit` (`minikube/gitops/rate-limit`) | Counts each project's requests, tokens and spend in Redis; the limits come from OPA with each request (see "Rate limits and budgets") |
@@ -86,7 +86,7 @@ Every model and Google API is declared once, as a record in the
 records are the MCP tools (`tool`) and its settings (`catalog/settings`: the task
 classes behind `auto`, the serving namespaces, the MCP targets). The registry renders
 them with the gateway policy's `scripts/gen-catalog.py`
-([nolimitkun/gateway-policy](https://github.com/nolimitkun/gateway-policy)), which
+([project-registry's policy/](https://github.com/nolimitkun/project-registry/tree/main/policy)), which
 validates them, into two places:
 
 - the values of the policy's `charts/gateway-models`: an `AgentgatewayModel` per
@@ -113,7 +113,7 @@ To add a model or a Google API:
    minutes. Until then a call gets 404 (no route) or 403 (not allowed yet): both
    fail closed.
 
-Nothing here changes for a new model, and nothing in gateway-policy either. This
+Nothing here changes for a new model, and nothing in the policy either. This
 repo's registry seed (`minikube/gitops/project-registry/files/seed.yaml`) has the
 catalog a new cluster starts with; its CI checks this repo's side against the
 seed's catalog settings (`scripts/check-policy-wiring.py`: MCP targets, serving
@@ -198,16 +198,16 @@ curl -s http://agentgateway.test/google/tts/v1/text:synthesize \
 > [project registry](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)**, not in this repo: change them in
 > its portal at `http://registry.test/portal/` or through its API (a change
 > request, approved by policy, published within about a minute). The gateway
-> policy ([nolimitkun/gateway-policy](https://github.com/nolimitkun/gateway-policy)) has
-> their format ([`projects/schema.json`](https://github.com/nolimitkun/gateway-policy/blob/main/projects/schema.json),
-> [`agents/schema.json`](https://github.com/nolimitkun/gateway-policy/blob/main/agents/schema.json)), the renderer
+> policy ([project-registry's policy/](https://github.com/nolimitkun/project-registry/tree/main/policy)) has
+> their format ([`projects/schema.json`](https://github.com/nolimitkun/project-registry/blob/main/policy/projects/schema.json),
+> [`agents/schema.json`](https://github.com/nolimitkun/project-registry/blob/main/policy/agents/schema.json)), the renderer
 > (`scripts/gen-projects.py`); this repo has the seed a new cluster's registry starts
 > with (`minikube/gitops/project-registry/files/seed.yaml`). The API key ids for
 > Vault, agentregistry's agent catalog and the data for a replay all come from
 > the registry.
 
 Every API key belongs to a **project**. A project record, in the format of
-[`projects/schema.json`](https://github.com/nolimitkun/gateway-policy/blob/main/projects/schema.json):
+[`projects/schema.json`](https://github.com/nolimitkun/project-registry/blob/main/policy/projects/schema.json):
 
 ```yaml
 project: holmes
@@ -304,7 +304,7 @@ To rotate a key:
 
 A project is a budget and a data class; an agent is one thing acting inside
 it. An `agent` record in the project registry registers an agent (schema
-`agents/schema.json` in gateway-policy), for example:
+`agents/schema.json` in the registry's policy/), for example:
 
 ```yaml
 agent: kagent-k8s-agent
@@ -399,7 +399,7 @@ merges first; this repo's CI checks the seed's kagent agents the same way.
 ## Policy
 
 > The paths in this section (`policies/gateway/...`, `catalog/...`) are in the
-> gateway policy's repository, [nolimitkun/gateway-policy](https://github.com/nolimitkun/gateway-policy).
+> gateway policy's repository, [project-registry's policy/](https://github.com/nolimitkun/project-registry/tree/main/policy).
 
 `policies/gateway/authz.rego` decides each request from:
 
@@ -610,7 +610,7 @@ leaves Vault:
 
 | Bundle | Built from | By | Roots (`.manifest`) | Changes when |
 |--------|------------|----|---------------------|--------------|
-| `gateway-policy` | `policies/gateway` in [gateway-policy](https://github.com/nolimitkun/gateway-policy) | the project registry's publisher, once the commit's policy change is approved | `gateway`, `system`, `portal` | the Rego, the data classes or the approval rules change |
+| `gateway-policy` | `policies/gateway` in [the project registry's policy/](https://github.com/nolimitkun/project-registry/tree/main/policy) | the project registry's publisher, once the commit's policy change is approved | `gateway`, `system`, `portal` | the Rego, the data classes or the approval rules change |
 | `gateway-projects` | the project registry's records | its publisher (`project-registry`) | `projects`, `exceptions`, `agents`, `registry` (the catalog) | an approved change is published |
 
 Each bundle activates on its own, so a project change swaps only
@@ -622,7 +622,7 @@ chart; the public key comes from Vault, `opa-bundle-signing`) and refuses one
 that doesn't verify, keeping the last good one. A bundle written to MinIO by
 anyone else, or changed there, is not loaded.
 
-To change the policy (in [gateway-policy](https://github.com/nolimitkun/gateway-policy)):
+To change the policy (in [the project registry's policy/](https://github.com/nolimitkun/project-registry/tree/main/policy)):
 
 1. Edit the Rego, the data classes or the chart, and run `scripts/validate.sh`
    (what its CI runs: the test records rendered with the catalog, the chart,
@@ -782,7 +782,7 @@ curl -s http://agentgateway.test/v1/chat/completions -H "Authorization: Bearer $
 
 ## Scaling to many projects
 
-[The policy's design record](https://github.com/nolimitkun/gateway-policy/blob/main/docs/design.md) (gateway-policy) covers
+[The policy's design record](https://github.com/nolimitkun/project-registry/blob/main/policy/docs/design.md) (the registry's policy/) covers
 hundreds of projects with several keys each: the decisions behind projects, the
 catalog, `auto` selection with the vLLM Semantic Router, rankings, rate limits
 and budgets, what changed while building them, and the spikes behind each
