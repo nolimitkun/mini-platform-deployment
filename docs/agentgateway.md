@@ -28,16 +28,19 @@ flowchart LR
   opa[OPA<br/>opa-envoy]
   registry[project registry<br/>+ publisher]
   git[(registry repo: policy/ in Git)]
+  people[People: portal<br/>records, settings, approvals]
+  reg[agentregistry]
   minio[(MinIO<br/>opa-bundles,<br/>gateway-models chart)]
   vault[(Vault<br/>key maps)]
   clients --> keys --> authz --> route
   authz <-->|gRPC :9191| opa
   gw <-->|ext_proc, auto only| vsr[vLLM Semantic Router]
   gw <-->|limits from OPA| rl[rate-limit service<br/>Redis]
-  git -->|new commit: a policy change| registry
+  people --> registry
+  git -->|commit that changes policy/:<br/>a policy change| registry
   registry -->|gateway-policy, gateway-projects<br/>signed, once approved| minio
   minio --> opa
-  minio -->|Argo CD: model routes| route
+  minio -->|Argo CD, refreshed by the registry:<br/>model routes| route
   registry -->|API keys| vault
   vault -->|VSO| keys
   opa -.->|status: loaded revisions| registry
@@ -45,7 +48,8 @@ flowchart LR
   route -->|VPN + PSC, keyless| gcp[Vertex AI Gemini<br/>Speech, TTS]
   route -->|internet| ds[DeepSeek]
   route --> mcp[Grafana MCP<br/>kagent tools]
-  reg[agentregistry] -.->|catalog points at| gw
+  registry -->|registered agents| reg
+  reg -.->|catalog points at| gw
 ```
 
 ## The pieces
@@ -110,8 +114,8 @@ To add a model or a Google API:
    (a floor in `portal.rego`), and today's `approvals` setting adds security and,
    for a model's price, the cost owner. Once it is approved, the registry
    publishes the data bundle (OPA knows the model's placement) and the routes (a
-   new `gateway-models` version), which Argo CD installs within about three
-   minutes. Until then a call gets 404 (no route) or 403 (not allowed yet): both
+   new `gateway-models` version), and asks Argo CD to refresh it: the routes are
+   installed within seconds (about 2 s measured). Until then a call gets 404 (no route) or 403 (not allowed yet): both
    fail closed.
 
 Nothing here changes for a new model, and nothing in the policy either. This
@@ -198,7 +202,7 @@ curl -s http://agentgateway.test/google/tts/v1/text:synthesize \
 > **The projects, agents and exceptions live in the
 > [project registry](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)**, not in this repo: change them in
 > its portal at `http://registry.test/portal/` or through its API (a change
-> request, approved by policy, published within about a minute). The gateway
+> request, approved by policy, live within seconds of the approval). The gateway
 > policy ([project-registry's policy/](https://github.com/nolimitkun/project-registry/tree/main/policy)) has
 > their format ([`projects/schema.json`](https://github.com/nolimitkun/project-registry/blob/main/policy/projects/schema.json),
 > [`agents/schema.json`](https://github.com/nolimitkun/project-registry/blob/main/policy/agents/schema.json)), the renderer
@@ -484,8 +488,8 @@ micro-USD). Every override defaults to 0, so a request OPA allowed without
 limits is refused rather than unlimited. The service's config holds only the
 domain and a default entry and never changes with projects.
 
-A limit change goes live with the project data bundle, about a minute after
-it is approved, without restarting the service. The current window's count
+A limit change goes live with the project data bundle, about 6 s after it is
+approved, without restarting the service. The current window's count
 carries over: lowering a limit below what was already counted refuses the next
 call at once, and the budget counted so far in the 30-day window stays.
 
@@ -651,7 +655,7 @@ To change the policy (in [the project registry's policy/](https://github.com/nol
 4. Approve it in the portal (`registry.test/portal/`, Changes). A policy commit
    always needs the platform team and security (floors in `portal.rego`). Then
    the publisher activates it, together with the project data rendered at that
-   commit if it differs. OPA checks MinIO every 10–30 seconds and loads it; the
+   commit if it differs. OPA checks MinIO every 2–5 seconds and loads it; the
    change is `active` once every ready OPA pod has. No Argo CD sync is involved.
 5. Check what OPA has loaded with `kubectl -n mini-platform port-forward
    deploy/opa 8181` and `curl localhost:8181/v1/status`: each bundle's
