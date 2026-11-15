@@ -807,3 +807,27 @@ tool:
   kagent-tools_shell:
     fingerprint: a988eee4a8fb27d0
     risk: irreversible
+setting:
+  data_classes:
+    restricted: [onprem]
+    confidential: [onprem]
+    internal: [onprem, gcp]
+    public: [onprem, gcp, external]
+  autonomy:
+    read-only: [read]
+    supervised: [read]
+    autonomous: [read, write]
+  approvals:
+    project.create: [security]
+    project.limit_raised: [cost_owner]
+    project.budget_raised: [cost_owner]
+    project.data_class_changed: [security]
+    project.placement_widened: [security]
+    mcp_tools.wildcard_added: [security]
+    exception.set: [security]
+    agent.create_beyond_read_only: [security]
+    agent.autonomy_raised: [security]
+    catalog.route_changed: [security]
+    model.price_changed: [cost_owner]
+    tool.risk_lowered: [security]
+    catalog.access_changed: [security]
