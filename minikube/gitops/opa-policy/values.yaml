@@ -5,6 +5,11 @@ bundles:
   policy: gateway-policy
   projects: gateway-projects
 
+# How often OPA checks MinIO for a new bundle (seconds; a random delay in between).
+polling:
+  minDelaySeconds: 2
+  maxDelaySeconds: 5
+
 # Signing: an RSA key in Vault Transit that never leaves Vault. The builders may
 # only sign with it (Vault role bundle-signer); OPA verifies with its public key,
 # from Vault through VSO (opa-policy-resources.yaml).

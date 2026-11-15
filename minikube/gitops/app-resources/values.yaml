@@ -74,6 +74,9 @@ vault:
   # The project registry's map of every gateway API key by key id (its
   # registry/keys.py); a vaultSecrets entry with gatewayKey copies one key out of it.
   gatewayKeys: agentgateway-client-keys
+  # A new or revoked gateway key reaches its copies (and the gateway's own map, which
+  # lists refreshAfter) this soon; every other secret refreshes every refreshAfter.
+  gatewayKeysRefreshAfter: 15s
   vaultAuthRef: default
   refreshAfter: 1m
   # Backs the VaultAuth rendered into each `externalVaultSecrets` namespace.

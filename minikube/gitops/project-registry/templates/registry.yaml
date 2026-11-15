@@ -28,6 +28,36 @@ subjects:
   - kind: ServiceAccount
     name: {{ .Values.serviceAccount }}
 ---
+{{- with .Values.gatewayModels.argoApp }}
+{{- $app := splitList "/" . }}
+# The publisher may ask Argo CD to refresh the gateway-models Application, and nothing
+# else in Argo CD's namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: project-registry-refresh-gateway-models
+  namespace: {{ index $app 0 }}
+rules:
+  - apiGroups: [argoproj.io]
+    resources: [applications]
+    resourceNames: [{{ index $app 1 }}]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: project-registry-refresh-gateway-models
+  namespace: {{ index $app 0 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: project-registry-refresh-gateway-models
+subjects:
+  - kind: ServiceAccount
+    name: {{ $.Values.serviceAccount }}
+    namespace: {{ $.Release.Namespace }}
+---
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -108,6 +138,7 @@ spec:
             - {name: POLICY_POLL, value: {{ .Values.policy.poll | quote }}}
             - {name: AGENTREGISTRY_URL, value: {{ .Values.agentregistryUrl | quote }}}
             - {name: GATEWAY_MODELS_BUCKET, value: {{ .Values.gatewayModels.bucket | quote }}}
+            - {name: GATEWAY_MODELS_ARGO_APP, value: {{ .Values.gatewayModels.argoApp | default "" | quote }}}
             - {name: GATEWAY_KEYS_MOUNT, value: {{ .Values.gatewayKeys.mount | quote }}}
           resources:
             requests: {cpu: 50m, memory: 128Mi}

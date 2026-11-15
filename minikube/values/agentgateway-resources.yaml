@@ -2,7 +2,8 @@ vaultSecrets:
   # One entry per key id: {"key": ..., "metadata": {"project": ..., "key_id": ...}}
   # (key ids from the project registry). The clients' own copies of their keys are mirrored from
   # agentgateway-client-keys onto each client's release.
-  - agentgateway-api-keys
+  - name: agentgateway-api-keys
+    refreshAfter: 15s              # a new or revoked key reaches the gateway this soon
   # DeepSeek's key, sent as the Authorization header to api.deepseek.com.
   - agentgateway-deepseek
 
