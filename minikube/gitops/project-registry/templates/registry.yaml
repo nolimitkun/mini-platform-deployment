@@ -88,6 +88,8 @@ spec:
             - {name: KEYCLOAK_JWKS_URL, value: {{ .Values.keycloak.jwksUrl | quote }}}
             - {name: KEYCLOAK_ISSUER, value: {{ .Values.keycloak.issuer | quote }}}
             - {name: KEYCLOAK_CLIENT_ID, value: {{ .Values.keycloak.clientId | quote }}}
+            - {name: USAGE_BUCKET, value: {{ .Values.usage.bucket | quote }}}
+            - {name: USAGE_REFERENCE_MODEL, value: {{ .Values.usage.referenceModel | quote }}}
           ports:
             - {name: http, containerPort: 8080}
           readinessProbe:
@@ -207,3 +209,42 @@ spec:
               resources:
                 requests: {cpu: 50m, memory: 128Mi}
                 limits: {memory: 512Mi}
+---
+# The gateway's spend and usage: its access log (Loki) into Parquet (MinIO),
+# shaped with DuckDB, for the portal's Usage page (registry/usage.py). Records
+# its health as the publisher output "usage".
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: project-registry-usage
+  labels: {app.kubernetes.io/name: project-registry-usage}
+spec:
+  schedule: {{ .Values.usage.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels: {app.kubernetes.io/name: project-registry-usage}
+        spec:
+          restartPolicy: Never
+          {{- include "registry.pod" . | nindent 10 }}
+          containers:
+            - name: usage
+              {{- include "registry.container" . | nindent 14 }}
+              command: [python, -m, registry.usage]
+              env:
+                {{- include "registry.env" . | nindent 16 }}
+                - {name: USAGE_BUCKET, value: {{ .Values.usage.bucket | quote }}}
+                - {name: LOKI_URL, value: {{ .Values.usage.lokiUrl | quote }}}
+                - {name: USAGE_LOKI_SELECTOR, value: {{ .Values.usage.lokiSelector | quote }}}
+                - {name: USAGE_LOOKBACK_HOURS, value: {{ .Values.usage.lookbackHours | quote }}}
+                - {name: USAGE_BACKFILL_HOURS, value: {{ .Values.usage.backfillHours | quote }}}
+                - {name: USAGE_DUCKDB_MEMORY, value: "512MB"}
+              resources:
+                requests: {cpu: 100m, memory: 256Mi}
+                limits: {memory: 1Gi}

@@ -108,3 +108,16 @@ spec:
         add:
           - name: project
             expression: apiKey.project
+    # The same on every access log line, plus the key: the project registry's usage
+    # job reads these lines from Loki into its spend and usage ledger (Parquet in
+    # MinIO), per project and per key (a registered agent's key is the agent).
+    # Not on the metrics: a label per key is high cardinality, a log field isn't.
+    # A request without a valid key has neither (the expression fails, the pair is
+    # left out).
+    accessLog:
+      attributes:
+        add:
+          - name: project
+            expression: apiKey.project
+          - name: key_id
+            expression: apiKey.key_id

@@ -139,7 +139,10 @@ itself, and `policy-replay.py` takes the active data bundle from it. A daily Cro
 (`project-registry-snapshot`) copies the records into the bundle store, which an empty
 registry imports. Each project's rate limits travel with OPA's allow decision (dynamic
 metadata → `limitOverride`); the rate-limit config lists no project. The budget alert is
-one rule joining spend with the registry's `project_budget_usd`. OPA Control Plane was
+one rule joining spend with the registry's `project_budget_usd`. Its hourly CronJob
+`project-registry-usage` turns the gateway's access log (Loki; every line has the
+project and key) into a spend and usage ledger, Parquet in the MinIO bucket
+`registry-usage`, for the portal's Usage page. OPA Control Plane was
 removed. **agentregistry** is the catalog of MCP servers and agents; its static entries
 live in `minikube/gitops/agentregistry-catalog`.
 

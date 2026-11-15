@@ -56,11 +56,12 @@ groups:
       description: '{{ $value | printf "%.0f" }} calls got 429 from the provider in 15 minutes. For Vertex models, check the project''s quota in the GCP console.'
   - alert: ProjectRegistryOutputStale
     # An output of the registry's publisher (data, policy, chart, keys, activation,
-    # agentregistry) that hasn't finished a round lately, or has failed and never
-    # finished one. agentregistry runs hourly; the others every few seconds to a minute.
+    # agentregistry; and the hourly usage job) that hasn't finished a round lately, or
+    # has failed and never finished one. agentregistry and usage run hourly; the
+    # others every few seconds to a minute.
     expr: |
-      (time() - registry_output_last_success_timestamp_seconds{output!="agentregistry"} > 900)
-      or (time() - registry_output_last_success_timestamp_seconds{output="agentregistry"} > 7200)
+      (time() - registry_output_last_success_timestamp_seconds{output!~"agentregistry|usage"} > 900)
+      or (time() - registry_output_last_success_timestamp_seconds{output=~"agentregistry|usage"} > 7200)
       or (time() - registry_output_last_failure_timestamp_seconds
           unless on (output) registry_output_last_success_timestamp_seconds)
     for: 5m

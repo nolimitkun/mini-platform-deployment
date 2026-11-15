@@ -93,6 +93,21 @@ publishInterval: "30"
 snapshot:
   schedule: "0 3 * * *"
 
+# The gateway's spend and usage (the registry's registry/usage.py): hourly, the
+# gateway's access log lines from Loki (each with its project and key:
+# agentgateway-config policies.yaml) into Parquet in this bucket, shaped with
+# DuckDB; the portal's Usage page reads it through the API. Loki keeps about a
+# week, so a job that misses runs catches up within backfillHours.
+usage:
+  bucket: registry-usage
+  schedule: "7 * * * *"
+  lokiUrl: http://loki.mini-platform.svc.cluster.local:3100
+  lokiSelector: '{namespace="mini-platform", container="agentgateway"}'
+  lookbackHours: "3"
+  backfillHours: "168"
+  # On-prem tokens priced at this model's catalog price, on the Usage page.
+  referenceModel: gemini-3.5-flash
+
 # The registry applies its registered agents to agentregistry's catalog after
 # each publish and every hour (agentregistry-catalog has the static entries).
 agentregistryUrl: http://agentregistry.mini-platform.svc.cluster.local:12121
