@@ -9,6 +9,7 @@ mode="local"
 bind_address=""
 ACTION="start"
 SHOW_CREDENTIALS="true"
+SHOW_INGRESS="true"
 
 services=()
 credentials=()
@@ -26,6 +27,8 @@ Options:
   --pid-dir <path>              PID and log directory. Default: /tmp/mini-platform-port-forwards
   --no-credentials              Skip the credentials table. Use when the output
                                 goes into a screenshare, a log, or an issue.
+  --no-ingress                  Skip the ingress forward on port 80 (the
+                                http://<name>.test routes, and SSO with them)
   -h, --help                    Show this help
 EOF
 }
@@ -75,6 +78,10 @@ parse_args() {
         ;;
       --no-credentials)
         SHOW_CREDENTIALS="false"
+        shift
+        ;;
+      --no-ingress)
+        SHOW_INGRESS="false"
         shift
         ;;
       --mode)
@@ -377,10 +384,30 @@ wait_for_forward() {
   return 1
 }
 
+# Starts one forward unless its PID file names a live one. Returns 1 when
+# kubectl exits before forwarding, after printing its log.
+start_forward() {
+  local name="$1" namespace="$2" resource="$3" local_port="$4" remote_port="$5"
+  local key pid_file log_file pid
+  key="${name// /-}"
+  pid_file="$PID_DIR/$key.pid"
+  log_file="$PID_DIR/$key.log"
+  if [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+    return 0
+  fi
+  nohup kubectl -n "$namespace" port-forward --address "$listen_address" "$resource" "$local_port:$remote_port" \
+    >"$log_file" 2>&1 < /dev/null &
+  pid="$!"
+  if wait_for_forward "$pid" "$log_file"; then
+    printf '%s\n' "$pid" > "$pid_file"
+  else
+    rm -f "$pid_file"
+    return 1
+  fi
+}
+
 start_kubectl_forwards() {
-  local access_address listen_address spec name namespace resource local_port remote_port key pid_file log_file pid
-  access_address="$(resolve_access_address)"
-  listen_address="$(resolve_listen_address)"
+  local spec name namespace resource local_port remote_port
 
   command -v kubectl >/dev/null 2>&1 || {
     printf 'required command not found: kubectl\n' >&2
@@ -390,22 +417,35 @@ start_kubectl_forwards() {
   mkdir -p "$PID_DIR"
   for spec in "${services[@]}"; do
     IFS='|' read -r name namespace resource local_port remote_port <<<"$spec"
-    key="${name// /-}"
-    pid_file="$PID_DIR/$key.pid"
-    log_file="$PID_DIR/$key.log"
-    if [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
-      continue
-    fi
-    nohup kubectl -n "$namespace" port-forward --address "$listen_address" "$resource" "$local_port:$remote_port" \
-      >"$log_file" 2>&1 < /dev/null &
-    pid="$!"
-    if wait_for_forward "$pid" "$log_file"; then
-      printf '%s\n' "$pid" > "$pid_file"
-      printf '%-14s http://%s:%s\n' "$name" "$access_address" "$local_port"
-    else
-      rm -f "$pid_file"
-      exit 1
-    fi
+    start_forward "$name" "$namespace" "$resource" "$local_port" "$remote_port" || exit 1
+    printf '%-14s http://%s:%s\n' "$name" "$access_address" "$local_port"
+  done
+}
+
+# The ingress controller on port 80, which is what the http://<name>.test
+# routes need: every OIDC redirect URI in the realm is on port 80, so SSO only
+# works through this forward. Where the Minikube node IP is routable the
+# ingress is reachable without it; with rootless Docker this is the only way.
+# A failure here is a warning, not an exit -- the per-service forwards above
+# still work without it.
+start_ingress_forward() {
+  local hosts host
+
+  printf '\nIngress (http://<name>.test, with SSO)\n'
+  if ! start_forward "Ingress" ingress-nginx svc/ingress-nginx-controller 80 80; then
+    printf '  Port 80 forward failed. A non-root kubectl needs:\n' >&2
+    printf '    sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80\n' >&2
+    printf '  and nothing else listening on port 80. Then rerun with restart.\n' >&2
+    return 0
+  fi
+
+  hosts="$(kubectl get ingress -A -o jsonpath='{range .items[*]}{range .spec.rules[*]}{.host}{"\n"}{end}{end}' 2>/dev/null |
+    grep -v '^$' | sort -u | tr '\n' ' ')"
+  printf '  Reachable at %s:80. Point the hosts at it (/etc/hosts, or\n' "$access_address"
+  printf '  C:\\Windows\\System32\\drivers\\etc\\hosts on Windows):\n'
+  printf '    %s %s\n' "$access_address" "${hosts% }"
+  for host in $hosts; do
+    printf '  http://%s\n' "$host"
   done
 }
 
@@ -434,7 +474,12 @@ case "$ACTION" in
     ;;
 esac
 
+access_address="$(resolve_access_address)"
+listen_address="$(resolve_listen_address)"
 start_kubectl_forwards
+if [[ "$SHOW_INGRESS" == "true" ]]; then
+  start_ingress_forward
+fi
 
 if [[ "$SHOW_CREDENTIALS" == "true" ]]; then
   print_credentials
