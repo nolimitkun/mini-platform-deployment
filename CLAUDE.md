@@ -424,7 +424,8 @@ Minikube + Argo CD + Vault bring-up (key flags: `--reset`, `--local-source`,
 checkout only to bootstrap Argo CD itself and, in `--local-source` mode, to
 serve **both** repos through an in-cluster git daemon. The self-hosted models (KServe releases)
 need an NVIDIA GPU — for CPU-only work pass `--no-gpu`. `scripts/port-forward-services.sh` exposes
-services on the Minikube host (`--mode lan` for LAN access).
+services on the Minikube host (`--mode lan` for LAN access), including the ingress
+on port 80 for the `.test` routes (`--no-ingress` skips it).
 
 The README is the authoritative deployment/operations reference and includes the
 full manual bootstrap, service endpoints, and credential-retrieval commands.

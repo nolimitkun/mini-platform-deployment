@@ -109,7 +109,7 @@ Every browser-facing service authenticates against Keycloak — see
 | `minikube/gitops/root-application.yaml` | Root Argo CD Application that bootstraps the app-of-apps |
 | `scripts/deploy-minikube.sh` | Creates/resets Minikube and automates the Argo CD + Vault bootstrap |
 | `scripts/bootstrap-vault-secrets.sh` | Generates and writes initial credentials into Vault |
-| `scripts/port-forward-services.sh` | Host-local or LAN port forwards for browser services |
+| `scripts/port-forward-services.sh` | Host-local or LAN port forwards for browser services, plus the ingress on port 80 for the `.test` routes |
 | `scripts/check-local-deployment.sh` | Verifies local Argo CD sync/health, pod readiness, secret sync, and optional Open WebUI smoke test |
 | `scripts/set-repo.sh` | Repoints the charts/deploy repo URLs and revisions in one command |
 | `scripts/validate-gitops.sh` | Lints/renders the GitOps charts (and the gateway policy's `gateway-models` chart with this repo's values), shellchecks the scripts, checks this repo's wiring against the policy, and runs `promtool`; run in CI too |
@@ -635,7 +635,9 @@ Docker runs the cluster inside a user network namespace: the node IP has no
 route from the host at all, and neither the node port nor `minikube tunnel`
 helps. Check with `ip route get $(minikube ip -p mini-platform)` — if it
 resolves via your default gateway rather than a `br-*` interface, you are in
-this case. Forward the ingress controller to localhost instead:
+this case. Forward the ingress controller to localhost instead.
+`scripts/port-forward-services.sh` does this for you along with the per-service
+forwards (see [Via port-forward](#via-port-forward)); by hand it is:
 
 ```bash
 sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
@@ -702,8 +704,14 @@ If LAN IP autodetection picks the wrong interface, pass it explicitly:
 Services are then reachable at endpoints like `http://192.168.1.54:8080`. Stop
 the forwards with `./scripts/port-forward-services.sh stop`.
 
-For LAN access *with* SSO, forward the ingress controller on port 80 instead —
-see [Reaching the ingress](#reaching-the-ingress).
+The script also forwards the ingress controller on port 80, on the same address
+(`0.0.0.0` with `--mode lan`), and prints every `.test` host the cluster's
+ingresses route plus the hosts line to add on each client. That is the path
+*with* SSO — see [Reaching the ingress](#reaching-the-ingress). Binding port 80
+as a non-root user needs
+`sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80`; if the bind fails the
+script warns and keeps the other forwards. Pass `--no-ingress` where the node IP
+is routable and the ingress needs no forward.
 
 ### Retrieving credentials
 
