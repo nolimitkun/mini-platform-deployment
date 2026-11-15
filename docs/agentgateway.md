@@ -335,6 +335,8 @@ kagent-k8s-agent (project kagent)`.
 The project registry's `tool` records list every tool behind `/mcp` (189 today: Grafana MCP and
 kagent-tools) with the most it can do:
 
+The table is the registry's `autonomy` setting today (Settings in its portal):
+
 | Risk | Meaning | read-only agent | supervised agent | autonomous agent |
 |------|---------|-----------------|------------------|------------------|
 | `read` | only reads | yes | yes | yes |
@@ -405,8 +407,11 @@ merges first; this repo's CI checks the seed's kagent agents the same way.
   records rendered by `scripts/gen-projects.py` (the `gateway-projects` bundle)
 - `data.registry.catalog`, the registry's catalog records rendered by
   `scripts/gen-catalog.py` (in the same bundle)
-- `data.gateway.classes` in `policies/gateway/data.json`, which maps each data
-  class to the placements it may use
+- `data.registry.settings`, the registry's setting records rendered by
+  `scripts/gen-settings.py` (in the same bundle): `data_classes`, which maps each data
+  class to the placements it may use, `autonomy` (below) and `approvals` (who approves
+  which kind of registry change). Reviewers change them in the registry's portal
+  (Settings), approved by the platform team and security, like any record
 
 The rules:
 

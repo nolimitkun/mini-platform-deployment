@@ -102,12 +102,13 @@ and is decided by **OPA** (ext_authz, FailClosed) from two signed bundles in Min
 (disjoint `.manifest` roots, signed with a Vault Transit key that never leaves Vault).
 Three repos split this, and neither of the other two is in this one:
 - **nolimitkun/gateway-policy**: the Rego (`policies/gateway`, including who proposes and
-  who approves registry changes, `portal.rego`), the `gateway-models` chart, the record
-  schemas, and the scripts
-  (`gen-catalog.py`, `gen-projects.py`, `render-records.py`, `policy-replay.py`,
+  which kinds of registry change need approval, `portal.rego`), the `gateway-models`
+  chart, the record schemas, and the scripts
+  (`gen-settings.py`, `gen-catalog.py`, `gen-projects.py`, `render-records.py`, `policy-replay.py`,
   `tools-drift.py`). Its own CI tests the Rego. Change the policy there, never here.
 - **nolimitkun/project-registry** (deployed here by `project-registry`, design in its
-  `docs/design.md`): holds the projects, agents and exceptions and the model and tool catalog
+  `docs/design.md`): holds the projects, agents and exceptions, the model and tool catalog, and the
+  policy's settings (data classes, autonomy, who approves what; reviewed in its portal)
   (`model`, `google_api`, `tool`, `catalog` records; adding a model is a change request there), ONLY there (portal at
   `registry.test/portal/`, Keycloak login with PKCE, or its API), and publishes both
   bundles, every change after policy-decided approvals. It files every new commit on

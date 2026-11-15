@@ -1,6 +1,6 @@
 # The registry API, the publisher and the one-off import, all one image
 # (github.com/nolimitkun/project-registry). Design: nolimitkun/project-registry docs/design.md.
-image: ghcr.io/nolimitkun/project-registry:sha-7305dc681911e7fa60c040f1e1a49b272776a734
+image: ghcr.io/nolimitkun/project-registry:sha-4517b3db284920b4a2ee43ea3750d2cfee23d253
 
 # DATABASE_URL, from Vault (project-registry-db), for project-registry-postgresql.
 databaseSecret: project-registry-db
@@ -14,7 +14,7 @@ databaseSecret: project-registry-db
 # the cluster, set it here for the test, and back to main before the merge.
 policy:
   repo: https://github.com/nolimitkun/gateway-policy.git
-  ref: main
+  ref: feat/settings-records   # TEMPORARY: branch test, back to main before merge
   dir: policies/gateway
   # how often the branch is checked (seconds)
   poll: "60"
