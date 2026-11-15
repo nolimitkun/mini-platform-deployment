@@ -30,9 +30,11 @@ data:
           keyid: {{ $v.signing.keyid }}
         # Keep serving the last good bundle across restarts and MinIO outages.
         persist: true
+        # Each poll is a conditional GET (ETag): an unchanged bundle costs a 304. The
+        # publisher spaces new bundles by its MIN_INTERVAL, so OPA reloads at most that often.
         polling:
-          min_delay_seconds: 10
-          max_delay_seconds: 30
+          min_delay_seconds: {{ $v.polling.minDelaySeconds }}
+          max_delay_seconds: {{ $v.polling.maxDelaySeconds }}
       {{- end }}
     # The bundle revisions this OPA has loaded, for the registry: a change is
     # active once every ready OPA pod reports its revision. The pod name lets

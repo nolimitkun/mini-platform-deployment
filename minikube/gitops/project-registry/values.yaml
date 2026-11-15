@@ -1,6 +1,6 @@
 # The registry API, the publisher and the one-off import, all one image
 # (github.com/nolimitkun/project-registry). Design: nolimitkun/project-registry docs/design.md.
-image: ghcr.io/nolimitkun/project-registry:sha-59bbd989926a32de04e36c813bbec7dd46aa203b
+image: ghcr.io/nolimitkun/project-registry:sha-8a290fa171c58c8a1cebad389d4c935057542459
 
 # DATABASE_URL, from Vault (project-registry-db), for project-registry-postgresql.
 databaseSecret: project-registry-db
@@ -20,7 +20,7 @@ policy:
   ref: main
   dir: policies/gateway
   # how often the branch is checked (seconds)
-  poll: "60"
+  poll: "15"
 
 # A proposed kagent agent must be wired to its own key in this repo's kagent
 # values first (kagent-values.yaml modelConfigRef, a ModelConfig and the secret
@@ -35,6 +35,9 @@ kagentWiring:
 # (minio-values.yaml: anonymous download, the writer account may write it).
 gatewayModels:
   bucket: gateway-models
+  # Asked to refresh after each new version (the publisher may patch only this one
+  # Application), so the routes don't wait for Argo CD's ~3-minute poll.
+  argoApp: argocd/mini-platform-gateway-models
 
 # The gateway's API keys: the publisher writes agentgateway-api-keys and
 # agentgateway-client-keys in this KV mount from the records (its registry/keys.py),
