@@ -1,4 +1,7 @@
+{{- /* The MinIO account is the writers' (opa-bundles-writer) unless the caller passes
+  s3Secret: the API's own, narrower one (minio.apiSecret). */}}
 {{- define "registry.env" -}}
+{{- $s3 := .s3Secret | default .Values.minio.writerSecret }}
 - {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: {{ .Values.databaseSecret }}, key: DATABASE_URL}}}
 - {name: POLICY_REPO, value: {{ .Values.policy.repo | quote }}}
 - {name: POLICY_SUBDIR, value: {{ .Values.policy.subdir | default "" | quote }}}
@@ -7,8 +10,8 @@
 - {name: S3_ENDPOINT, value: {{ .Values.minio.url | quote }}}
 - {name: S3_BUCKET, value: {{ .Values.minio.bucket | quote }}}
 - {name: AWS_REGION, value: {{ .Values.minio.region | quote }}}
-- {name: AWS_ACCESS_KEY_ID, valueFrom: {secretKeyRef: {name: {{ .Values.minio.writerSecret }}, key: AWS_ACCESS_KEY_ID}}}
-- {name: AWS_SECRET_ACCESS_KEY, valueFrom: {secretKeyRef: {name: {{ .Values.minio.writerSecret }}, key: AWS_SECRET_ACCESS_KEY}}}
+- {name: AWS_ACCESS_KEY_ID, valueFrom: {secretKeyRef: {name: {{ $s3 }}, key: AWS_ACCESS_KEY_ID}}}
+- {name: AWS_SECRET_ACCESS_KEY, valueFrom: {secretKeyRef: {name: {{ $s3 }}, key: AWS_SECRET_ACCESS_KEY}}}
 - {name: BUNDLE_PREFIX, value: {{ .Values.bundles.prefix | quote }}}
 - {name: VAULT_ADDR, value: {{ .Values.signing.vaultAddr | quote }}}
 - {name: VAULT_ROLE, value: {{ .Values.signing.vaultRole | quote }}}

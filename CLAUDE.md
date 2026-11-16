@@ -345,7 +345,7 @@ A pod cannot go Ready without a Secret it mounts, and Argo CD holds each wave
 until the previous one is healthy, so a secret first needed in wave `-1` but
 declared on an application in wave `1` deadlocks the rollout. Placements that
 follow from that rule rather than from ownership are commented as such: the OPA
-bundle accounts (`opa-bundles-writer`, `opa-bundles-reader`) are declared on
+bundle accounts (`opa-bundles-writer`, `opa-bundles-reader`, and the registry API's `registry-api-s3`) are declared on
 MinIO (wave `-1`), which creates them, rather than on `opa-policy`; and MinIO
 sits well after the stateful tier it would otherwise belong to because its
 console login needs `keycloak-sso`.

@@ -383,6 +383,10 @@ kv_put mini-platform/opa-bundles-writer \
 kv_put mini-platform/opa-bundles-reader \
   AWS_ACCESS_KEY_ID=opa \
   AWS_SECRET_ACCESS_KEY="$(rand_b64)"
+# The project registry API's own, narrower account (minio-values.yaml registry-api).
+kv_put mini-platform/registry-api-s3 \
+  AWS_ACCESS_KEY_ID=registry-api \
+  AWS_SECRET_ACCESS_KEY="$(rand_b64)"
 
 printf '%s\n' \
   "Base Mini Platform secrets, including Langfuse project bootstrap keys, have been written to Vault."
