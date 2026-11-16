@@ -1,8 +1,10 @@
 # Edited by hand: it lists no project (the project registry's records reach the
 # gateway through OPA).
-# envoyproxy/ratelimit config for the gateway's per-project limits. The limits
-# themselves come from OPA with each request (limitOverride); the entry below
-# refuses a descriptor sent without one.
+# envoyproxy/ratelimit config for the gateway's per-project and per-key limits.
+# The limits themselves come from OPA with each request (limitOverride, which
+# the service applies without looking up an entry); the entry below refuses a
+# (project, kind) descriptor sent without one. The gateway never sends a
+# descriptor without one: a missing value defaults to 0 (ratelimit.yaml).
 domain: agentgateway
 descriptors:
 - key: project

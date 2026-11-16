@@ -64,7 +64,7 @@ flowchart LR
 | Model routes | `gateway-models` (a chart from the project registry's Helm repository in MinIO) | One `AgentgatewayModel` per model, the `auto` virtual models and the passthrough routes to Google's APIs, from the approved policy's catalog (the policy's `charts/gateway-models`) |
 | OPA | `opa-policy` (`minikube/gitops/opa-policy`) | `opa-envoy`, answering ext_authz over gRPC on `opa:9191` |
 | Project registry | `project-registry`, `project-registry-postgresql` | Publishes both of OPA's bundles, signed with Vault Transit, to MinIO (`opa-bundles/`). Projects, agents, exceptions and the catalog (models, Google APIs, MCP tools, settings) are change requests with approvals (`gateway-projects`). A new gateway-policy commit on `main` that changes a bundle is a policy change request, tested and replayed, published once approved (`gateway-policy`). It also publishes the `gateway-models` chart and writes the gateway's API keys to Vault. A portal at `registry.test/portal/`, and a daily snapshot of the records to the bundle store ([its design](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)) |
-| Rate-limit service | `rate-limit` (`minikube/gitops/rate-limit`) | Counts each project's requests, tokens and spend in Redis; the limits come from OPA with each request (see "Rate limits and budgets") |
+| Rate-limit service | `rate-limit` (`minikube/gitops/rate-limit`) | Counts each project's requests, tokens and spend in Redis, and each key's that has limits of its own; the limits come from OPA with each request (see "Rate limits and budgets") |
 | vLLM Semantic Router | `semantic-router` | Classifies `auto` prompts into task classes for the gateway, over ext_proc (see "The semantic router") |
 | agentregistry | `agentregistry`, `agentregistry-postgresql`, `agentregistry-catalog` | The catalog of MCP servers (and later agents), at `agentregistry.test` behind the Keycloak login. Its entries live in `minikube/gitops/agentregistry-catalog/files/catalog.yaml` |
 
@@ -336,7 +336,8 @@ An agent can only narrow its project. A call with one of its keys gets:
   `auto` chooses within them too, since the gateway passes the key id to OPA;
 - MCP tools that match both the project's and the agent's patterns, and no MCP
   at all if the agent lists none;
-- the project's rate limit and budget, shared with the project's other keys.
+- the project's rate limit and budget, shared with the project's other keys, and
+  the key's own if the project's `key_limits` gives it any.
 
 Denials name the agent, for example `model qwen3.6-27b is not allowed for agent
 kagent-k8s-agent (project kagent)`.
@@ -783,16 +784,17 @@ cluster enforces NetworkPolicy, so any pod can reach it there.
   Open WebUI projects), not a per-call gateway project like LiteLLM's.
 - **Alerts.** Prometheus rules in
   `minikube/gitops/app-resources/alerts/agentgateway-projects.yml`, edited by hand:
-  five alerts and two recording rules whatever the number of projects or models. The
+  six alerts and two recording rules whatever the number of projects, keys or models. The
   budget forecast joins the spend with `project_budget_usd`, and the price drift alert
   the tokens with `model_price_usd_per_million_tokens`, both exported by the project
-  registry, so they use each project's current budget and each model's current price. They show in Grafana under Alerting;
+  registry, so they use each project's current budget and each model's current price; a key's budget alert compares two of the registry's series, `key_spend_30d_usd` and `key_budget_usd`. They show in Grafana under Alerting;
   Alertmanager has no receivers yet, so nothing is sent anywhere.
 
   | Alert | Fires when |
   |---|---|
   | `GatewayProjectBudgetForecast` | The last 24 hours of spend, times 30, is over 80% of the project's 30-day budget, for 30 minutes |
-  | `GatewayProjectRateLimited` | The gateway answered 429 to a project because of its own limit or budget (`reason="RateLimit"`) in the last 10 minutes |
+  | `GatewayKeyBudgetHigh` | A key with a budget of its own (`key_limits`) has spent over 80% of it in the last 30 days, by the registry's usage ledger (hourly, so up to an hour late), for 30 minutes |
+  | `GatewayProjectRateLimited` | The gateway answered 429 to a project because of its own limit or budget, or one of its keys' own (`reason="RateLimit"`), in the last 10 minutes |
   | `GatewayUpstreamThrottled` | A provider answered 429 five times or more in 15 minutes (`reason="Upstream"`), usually the Vertex quota |
   | `GatewayModelPriceDrift` | Over 6 hours, what the gateway charged for a model (its own price table, what budgets use) differs by over 10% from its tokens at the catalog price, for 30 minutes; a model the gateway's table doesn't know is charged $0 |
   | `ProjectRegistryOutputStale` | One of the registry publisher's outputs (data, policy, chart, keys, activation, agentregistry) or its hourly usage job has had no successful round for 15 minutes (2 hours for agentregistry and usage), or fails and never succeeded (`registry_output_last_success_timestamp_seconds` on its `/metrics`) |
