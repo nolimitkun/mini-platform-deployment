@@ -121,3 +121,11 @@ spec:
             expression: apiKey.project
           - name: key_id
             expression: apiKey.key_id
+          # A call OPA refuses (ext_authz) never reaches the LLM or MCP handling, so
+          # gen_ai.request.model and gen_ai.tool.name are missing from its line: take
+          # them from the body (which ext_authz already buffers), on 403s only. A body
+          # without the field fails the expression and leaves the pair out.
+          - name: refused.model
+            expression: 'response.code == 403 ? json(request.body).model : fail("")'
+          - name: refused.tool
+            expression: 'response.code == 403 && json(request.body).method == "tools/call" ? json(request.body).params.name : fail("")'
