@@ -31,7 +31,7 @@ The default AI request path is:
 Open WebUI ──▶ agentgateway ──▶ KServe InferencePool (EPP) ──▶ vLLM   (weights from MinIO)
                   │  ▲
                   │  ├── vLLM Semantic Router (task class for model "auto")
-                  │  ├── rate-limit service (per-project limits and budgets)
+                  │  ├── rate-limit service (per-project and per-key limits and budgets)
                   │  └── OPA (allow/deny per project, model and tool; picks "auto")
                   │        ▲
                   │        └── signed bundles via MinIO ◀── project registry (approvals; policies/ in Git,
@@ -54,7 +54,7 @@ whose policy (the Rego in [the project registry's policy/](https://github.com/no
 per model, allowed tools, the model behind `auto`) and per-project data come in
 two signed bundles, both published by the **project registry** once a change is
 approved: the Rego from its policy/ directory, the project data from its own records
-([the project registry's design](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)). OPA verifies both. Each project's limits travel with OPA's decision, and a rate-limit service counts against them. **agentregistry** is the
+([the project registry's design](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)). OPA verifies both. Each project's limits, and each key's own, travel with OPA's decision, and a rate-limit service counts against them. **agentregistry** is the
 catalog of MCP servers and the registered agents. See [docs/agentgateway.md](docs/agentgateway.md).
 
 Supporting subsystems:
