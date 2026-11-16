@@ -55,6 +55,10 @@ minio:
   bucket: opa-bundles
   region: us-east-1
   writerSecret: opa-bundles-writer
+  # The API's account (minio-values.yaml registry-api): reads the bundles and the usage
+  # ledger, and writes only a bundle's current copy and active.json, which a rollback
+  # moves. The publisher and the jobs keep the writers' account.
+  apiSecret: registry-api-s3
 signing:
   vaultAddr: http://vault.mini-platform.svc.cluster.local:8200
   vaultRole: bundle-signer

@@ -83,7 +83,7 @@ spec:
           {{- include "registry.container" . | nindent 10 }}
           command: [uvicorn, registry.api:app, --host, 0.0.0.0, --port, "8080"]
           env:
-            {{- include "registry.env" . | nindent 12 }}
+            {{- include "registry.env" (merge (dict "s3Secret" .Values.minio.apiSecret) .) | nindent 12 }}
             - {name: OPA_URL, value: {{ .Values.opaUrl | quote }}}
             - {name: KEYCLOAK_JWKS_URL, value: {{ .Values.keycloak.jwksUrl | quote }}}
             - {name: KEYCLOAK_ISSUER, value: {{ .Values.keycloak.issuer | quote }}}

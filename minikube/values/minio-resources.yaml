@@ -13,6 +13,8 @@ vaultSecrets:
   # waves) read the same Secrets.
   - opa-bundles-writer
   - opa-bundles-reader
+  # The project registry API's account: what it reads, and a rollback's two objects.
+  - registry-api-s3
   # The model weight store's accounts (minio-values.yaml). The pipeline and
   # the serving namespaces get their own copies (model-serving-resources.yaml).
   - minio-model-onboarding

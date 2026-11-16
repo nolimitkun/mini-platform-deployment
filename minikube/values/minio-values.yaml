@@ -109,6 +109,22 @@ policies:
         actions: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
       - resources: ["arn:aws:s3:::opa-bundles", "arn:aws:s3:::gateway-models", "arn:aws:s3:::registry-usage"]
         actions: ["s3:GetBucketLocation", "s3:ListBucket", "s3:ListBucketMultipartUploads"]
+  # The project registry API: reads bundles and the usage ledger; a rollback rewrites a
+  # bundle's current copy and active.json (bundles.py Store.activate), nothing else. It
+  # can't add a revision, touch the model routes or delete; a current copy it rewrote
+  # with anything but a signed revision fails OPA's signature check.
+  - name: registry-api
+    statements:
+      - resources: ["arn:aws:s3:::opa-bundles/*", "arn:aws:s3:::registry-usage/*"]
+        actions: ["s3:GetObject"]
+      - resources: ["arn:aws:s3:::opa-bundles/*/bundle.tar.gz", "arn:aws:s3:::opa-bundles/*/active.json"]
+        actions: ["s3:PutObject"]
+      # "*" spans slashes: without this, .../revisions/<r>/bundle.tar.gz matches too
+      - effect: Deny
+        resources: ["arn:aws:s3:::opa-bundles/*/revisions/*"]
+        actions: ["s3:PutObject"]
+      - resources: ["arn:aws:s3:::opa-bundles", "arn:aws:s3:::registry-usage"]
+        actions: ["s3:GetBucketLocation", "s3:ListBucket"]
   - name: opa-bundles-read
     statements:
       - resources: ["arn:aws:s3:::opa-bundles/*"]
@@ -143,6 +159,10 @@ users:
     existingSecret: opa-bundles-reader
     existingSecretKey: AWS_SECRET_ACCESS_KEY
     policy: opa-bundles-read
+  - accessKey: registry-api
+    existingSecret: registry-api-s3
+    existingSecretKey: AWS_SECRET_ACCESS_KEY
+    policy: registry-api
   - accessKey: model-onboarding
     existingSecret: minio-model-onboarding
     existingSecretKey: secret-key
