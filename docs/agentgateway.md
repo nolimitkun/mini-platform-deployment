@@ -356,9 +356,9 @@ The table is the registry's `autonomy` setting today (Settings in its portal):
 | `irreversible` | deletes, uninstalls, runs arbitrary commands or API calls | no | needs approval | needs approval |
 
 An agent's tool call needs a match in its project's and its own `mcp_tools`
-and a risk its `autonomy` allows. A tool the catalog doesn't list counts as
-`irreversible`, so a new or renamed tool stays out of agents' reach until
-someone classifies it. There is no approval path through the gateway yet, so
+and a risk its `autonomy` allows. A tool the catalog doesn't list is refused
+for every key (`tool X is not in the catalog`), so a new or renamed tool stays
+out of reach until someone classifies it. There is no approval path through the gateway yet, so
 "needs approval" is a 403 that says so: `tool grafana_update_dashboard is write:
 agent holmes (supervised) needs a human approval for it`. A project's own keys
 keep the plain `mcp_tools` rule; risk applies to agents.
@@ -441,9 +441,11 @@ The rules:
 - **Google APIs.** Allowed when the API's placement (`gcp`) is in the project's
   placement.
 - **MCP.** A project with `mcp_tools` may open sessions and list tools. Each
-  `tools/call` must name a tool that matches one of its patterns, such as
-  `grafana_*`. Tool names carry the target's prefix: `grafana_...` or
-  `kagent-tools_...`.
+  `tools/call` must name a catalog tool that matches one of its patterns, such
+  as `grafana_*`. Tool names carry the target's prefix: `grafana_...` or
+  `kagent-tools_...`. `tools/list` shows a key only the tools it may call: OPA
+  sends them with its decision (`mcp_tools`) and the MCP backend's
+  authorization (`mcp.yaml`) filters the list.
 - **Everything else** is denied, with a 403 whose body gives the reason:
   ```json
   {"error":{"message":"model deepseek-v4-pro is not allowed for project open-webui (internal data)","type":"policy_denied"}}
