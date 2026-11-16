@@ -13,13 +13,26 @@ groups:
       summary: '{{ $labels.project }} is on course to use over 80% of its budget'
       description: The last 24 hours cost {{ $value | printf "%.2f" }} USD over 30 days. At the budget (project_budget_usd, from the project registry) the gateway answers 429. Raise the project's budget
         in the registry or find the caller (dashboard Agentgateway projects).
+  # A key's own budget (the project's key_limits). The gateway's metrics have
+  # no key label, so both sides come from the project registry's /metrics: the
+  # budget, and the key's spend over the last 30 days from its usage ledger,
+  # which is extracted hourly (so this lags by up to an hour). Only keys with a
+  # budget of their own have either series.
+  - alert: GatewayKeyBudgetHigh
+    expr: max by (project, key_id) (key_spend_30d_usd) > on (project, key_id) 0.8 * max by (project, key_id) (key_budget_usd)
+    for: 30m
+    labels:
+      severity: warning
+    annotations:
+      summary: 'Key {{ $labels.key_id }} of {{ $labels.project }} has used over 80% of its own budget'
+      description: It spent {{ $value | printf "%.2f" }} USD in the last 30 days (usage ledger). At its budget the gateway answers 429 for this key only. Raise the key's budget in the project registry (the project's per-key limits) or find the caller.
   - alert: GatewayProjectRateLimited
     expr: sum by (project) (increase(agentgateway_requests_total{gateway="mini-platform/agentgateway-proxy",reason="RateLimit"}[10m])) > 0
     labels:
       severity: warning
     annotations:
       summary: 'The gateway refused calls from {{ $labels.project }}: request limit or budget reached'
-      description: '{{ $value | printf "%.0f" }} calls got 429 in 10 minutes. The project''s limits and budget are in the project registry.'
+      description: '{{ $value | printf "%.0f" }} calls got 429 in 10 minutes: the project''s limits or budget, or one of its keys'' own. Both are in the project registry; the portal''s Usage page has the 429s per key.'
   # Price drift. Budgets are charged at agentgateway's built-in price table
   # (llm.cost.total, ratelimit.yaml); auto and the portal use the catalog's
   # prices, which the project registry exports as model_price_usd_per_million_tokens,

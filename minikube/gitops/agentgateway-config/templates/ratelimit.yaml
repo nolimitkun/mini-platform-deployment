@@ -1,7 +1,10 @@
 {{- $v := .Values }}
 {{- if $v.rateLimit.enabled }}
-# Per-project limits and spend caps, kept by the rate-limit service so they hold
-# across gateway replicas. Each descriptor is (project, kind), and its limit
+# Per-project and per-key limits and spend caps, kept by the rate-limit service
+# so they hold across gateway replicas. Each kind is counted twice: under
+# (project, kind) with the project's limit, and under (project, key_id, kind)
+# with the key's own (the project's key_limits, key_* in the decision; a key
+# without one gets unlimited). Either used up answers 429. Each descriptor's limit
 # comes from OPA: the allow decision carries the project's limits as dynamic
 # metadata (policies/gateway/authz.rego `limits`), read here as extauthz.* and
 # sent as the descriptor's limitOverride. A limit change therefore goes live
@@ -15,6 +18,10 @@
 #                     call (llm.cost.total), counted when it completes
 # Counted on completion means the call that crosses a limit still finishes and
 # the next one is refused (429).
+#
+# Rollout order: the per-key descriptors need a policy that sends key_*, or
+# every call gets 429 (the overrides default to 0). The project registry's
+# policy has sent them since project-registry#38.
 #
 # FailOpen: limits and budgets are cost control, not access control; if the
 # rate-limit service is down, requests go through (OPA still decides access).
@@ -56,4 +63,24 @@ spec:
             unit: Tokens
             cost: int(llm.cost.total * 1000000.0)
             limitOverride: '{"unit": "month", "requestsPerUnit": has(extauthz.budget_micro_usd) ? int(extauthz.budget_micro_usd) : 0}'
+          # The same three again, per key.
+          - entries:
+              - {name: project, expression: apiKey.project}
+              - {name: key_id, expression: apiKey.key_id}
+              - {name: kind, expression: '"requests"'}
+            unit: Requests
+            limitOverride: '{"unit": "minute", "requestsPerUnit": has(extauthz.key_requests_per_minute) ? int(extauthz.key_requests_per_minute) : 0}'
+          - entries:
+              - {name: project, expression: apiKey.project}
+              - {name: key_id, expression: apiKey.key_id}
+              - {name: kind, expression: '"tokens"'}
+            unit: Tokens
+            limitOverride: '{"unit": "minute", "requestsPerUnit": has(extauthz.key_tokens_per_minute) ? int(extauthz.key_tokens_per_minute) : 0}'
+          - entries:
+              - {name: project, expression: apiKey.project}
+              - {name: key_id, expression: apiKey.key_id}
+              - {name: kind, expression: '"budget_micro_usd"'}
+            unit: Tokens
+            cost: int(llm.cost.total * 1000000.0)
+            limitOverride: '{"unit": "month", "requestsPerUnit": has(extauthz.key_budget_micro_usd) ? int(extauthz.key_budget_micro_usd) : 0}'
 {{- end }}
