@@ -474,7 +474,12 @@ in the shared Redis, so they hold across gateway replicas and restarts. The
 limits themselves travel with OPA's allow decision: `authz.rego` returns the
 project's limits as dynamic metadata, agentgateway reads them as `extauthz.*`,
 and its `rateLimit` policy (`templates/ratelimit.yaml`) sends each one to the
-service as the descriptor's `limitOverride`. Three counters per project:
+service as the descriptor's `limitOverride`. Three counters per project, and
+the same three per key for a project's `key_limits` (a key's own limits, lower
+than the project's), counted under `(project, key_id, kind)` next to the
+project's `(project, kind)`; either one used up answers 429. A key without its
+own limits is sent as unlimited. The per-key descriptors need a policy that
+sends `key_*`: without it every override defaults to 0 and every call gets 429.
 
 | Field | Counted | When |
 |-------|---------|------|

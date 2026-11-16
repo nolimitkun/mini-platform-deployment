@@ -137,9 +137,11 @@ key is a VSO copy of one entry, a `vaultSecrets` entry with `gatewayKey` and `fi
 and the Vault bootstrap writes no gateway key), applies agentregistry's agent catalog
 itself, and `policy-replay.py` takes the active data bundle from it. A daily CronJob
 (`project-registry-snapshot`) copies the records into the bundle store, which an empty
-registry imports. Each project's rate limits travel with OPA's allow decision (dynamic
-metadata → `limitOverride`); the rate-limit config lists no project. The budget alert is
-one rule joining spend with the registry's `project_budget_usd`. Its hourly CronJob
+registry imports. Each project's rate limits, and each key's own (`key_limits`, counted
+per `(project, key_id, kind)` next to the project's), travel with OPA's allow decision
+(dynamic metadata → `limitOverride`); the rate-limit config lists no project. The budget
+alert is one rule joining spend with the registry's `project_budget_usd`; a key's, one rule
+over the registry's `key_spend_30d_usd` and `key_budget_usd`. Its hourly CronJob
 `project-registry-usage` turns the gateway's access log (Loki; every line has the
 project and key) into a spend and usage ledger, Parquet in the MinIO bucket
 `registry-usage`, for the portal's Usage page. OPA Control Plane was
