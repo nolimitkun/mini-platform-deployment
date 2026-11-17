@@ -26,8 +26,9 @@ spec:
 # this key may call (project-registry policy authz.rego listed_tools), and this
 # keeps only those in tools/list; a call to any other is refused here too, though
 # OPA has refused it before. Names are prefixed by target, as in the catalog.
-# Without mcp_tools (OPA from before it) everything passes: the list is cosmetic,
-# OPA decides each call.
+# Without mcp_tools everything passes: OPA leaves it out for a project key with
+# "*" (whose list must show new tools for the policy's tools-drift.py), and OPA
+# from before it had none. The list is cosmetic; OPA decides each call.
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
