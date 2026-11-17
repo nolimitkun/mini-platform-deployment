@@ -63,7 +63,7 @@ flowchart LR
 | Gateway config | `agentgateway-config` (`minikube/gitops/agentgateway-config`) | The `agentgateway-proxy` Gateway, the merged MCP endpoint, and policies for API keys, OPA, the semantic router, rate limits, the model list, metrics labels and tracing |
 | Model routes | `gateway-models` (a chart from the project registry's Helm repository in MinIO) | One `AgentgatewayModel` per model, the `auto` virtual models and the passthrough routes to Google's APIs, from the approved policy's catalog (the policy's `charts/gateway-models`) |
 | OPA | `opa-policy` (`minikube/gitops/opa-policy`) | `opa-envoy`, answering ext_authz over gRPC on `opa:9191` |
-| Project registry | `project-registry`, `project-registry-postgresql` | Publishes both of OPA's bundles, signed with Vault Transit, to MinIO (`opa-bundles/`). Projects, agents, exceptions and the catalog (models, Google APIs, MCP tools, settings) are change requests with approvals (`gateway-projects`). A new gateway-policy commit on `main` that changes a bundle is a policy change request, tested and replayed, published once approved (`gateway-policy`). It also publishes the `gateway-models` chart and writes the gateway's API keys to Vault. A portal at `registry.test/portal/`, and a daily snapshot of the records to the bundle store ([its design](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)) |
+| Project registry | `project-registry`, `project-registry-postgresql` | Publishes both of OPA's bundles, signed with Vault Transit, to MinIO (`opa-bundles/`). Projects, agents, exceptions and the catalog (models, Google APIs, MCP tools, settings) are change requests with approvals (`gateway-projects`). A commit on the registry's `main` that changes a bundle (its `policy/`) is a policy change request, tested and replayed, published once approved (`gateway-policy`). It also publishes the `gateway-models` chart and writes the gateway's API keys to Vault. A portal at `registry.test/portal/`, and a daily snapshot of the records to the bundle store ([its design](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)) |
 | Rate-limit service | `rate-limit` (`minikube/gitops/rate-limit`) | Counts each project's requests, tokens and spend in Redis, and each key's that has limits of its own; the limits come from OPA with each request (see "Rate limits and budgets") |
 | vLLM Semantic Router | `semantic-router` | Classifies `auto` prompts into task classes for the gateway, over ext_proc (see "The semantic router") |
 | agentregistry | `agentregistry`, `agentregistry-postgresql`, `agentregistry-catalog` | The catalog of MCP servers (and later agents), at `agentregistry.test` behind the Keycloak login. Its entries live in `minikube/gitops/agentregistry-catalog/files/catalog.yaml` |
@@ -379,13 +379,15 @@ record). `gen-catalog.py` puts the risks into `data.registry.catalog.tools`.
 
 `gen-projects.py` adds each agent's keys to its project with an `agent_keys`
 map (key id → agent) and writes `data.agents.<id>` into the `gateway-projects`
-bundle, so registering, changing or removing an agent touches only its own
-files. It also checks the wiring a kagent agent needs: a `modelConfigRef` in
+bundle, so registering, changing or removing an agent changes only its own
+record. It also checks the wiring a kagent agent needs: a `modelConfigRef` in
 `kagent-values.yaml` naming a ModelConfig in `kagent-resources.yaml`
 `extraObjects` whose `apiKeySecret` and `apiKeySecretKey` are a `vaultSecrets` copy
 of one of the agent's keys (`gatewayKey`, `field`). Where an agent's key goes is
 said only here; its record says which keys it has. Every agent appears in
-agentregistry as an `Agent` (`agentregistry-catalog/files/agents.yaml`, generated).
+agentregistry as an `Agent`, which the project registry's publisher renders from
+the records and applies itself (output `agentregistry`, hourly and after each
+publish).
 
 Registered today:
 
