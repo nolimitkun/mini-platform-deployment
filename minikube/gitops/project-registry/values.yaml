@@ -1,6 +1,6 @@
 # The registry API, the publisher and the one-off import, all one image
 # (github.com/nolimitkun/project-registry). Design: nolimitkun/project-registry docs/design.md.
-image: ghcr.io/nolimitkun/project-registry:sha-729e933f1b3bd1dc7100cfd9f12d032075ccd906
+image: ghcr.io/nolimitkun/project-registry:sha-82cde9251a1b2d5e99eb34e88b6c8b1eb9022770
 
 # DATABASE_URL, from Vault (project-registry-db), for project-registry-postgresql.
 databaseSecret: project-registry-db
