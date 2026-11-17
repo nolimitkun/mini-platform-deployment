@@ -369,7 +369,9 @@ Grafana's `alerting_manage_routing` claims read-only though it can change
 routing. A tool that can do several things is classed by the worst one.
 
 Each entry also has a `fingerprint`, a hash of the description and input
-schema the server announced when it was classified. The policy repo's `scripts/tools-drift.py`
+schema the server announced when it was classified, with any "(a, b, c)" list
+sorted first: kagent-tools rebuilds some such lists in a new order each time it
+starts, which is no change. The policy repo's `scripts/tools-drift.py`
 lists the live tools through the gateway and reports tools that are new,
 removed or changed since; run it after upgrading kagent or Grafana MCP, and
 before trusting a changed tool, re-check its risk (a change request to the tool's
