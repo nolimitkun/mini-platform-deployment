@@ -22,6 +22,29 @@ spec:
           protocol: StreamableHTTP
       {{- end }}
 ---
+# tools/list per key. OPA's allow decision for /mcp carries mcp_tools, the tools
+# this key may call (project-registry policy authz.rego listed_tools), and this
+# keeps only those in tools/list; a call to any other is refused here too, though
+# OPA has refused it before. Names are prefixed by target, as in the catalog.
+# Without mcp_tools (OPA from before it) everything passes: the list is cosmetic,
+# OPA decides each call.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: platform-mcp-tools
+spec:
+  targetRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: platform-mcp
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            - '!has(extauthz.mcp_tools) || (mcp.tool.target + "_" + mcp.tool.name) in extauthz.mcp_tools'
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
