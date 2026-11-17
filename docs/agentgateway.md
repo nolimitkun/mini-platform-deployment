@@ -445,7 +445,9 @@ The rules:
   as `grafana_*`. Tool names carry the target's prefix: `grafana_...` or
   `kagent-tools_...`. `tools/list` shows a key only the tools it may call: OPA
   sends them with its decision (`mcp_tools`) and the MCP backend's
-  authorization (`mcp.yaml`) filters the list.
+  authorization (`mcp.yaml`) filters the list. A project key with `*` sees
+  every tool the servers announce, new ones included, which is how the
+  policy's `tools-drift.py` finds tools to classify.
 - **Everything else** is denied, with a 403 whose body gives the reason:
   ```json
   {"error":{"message":"model deepseek-v4-pro is not allowed for project open-webui (internal data)","type":"policy_denied"}}
