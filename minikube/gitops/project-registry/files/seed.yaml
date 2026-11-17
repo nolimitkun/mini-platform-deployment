@@ -718,7 +718,7 @@ tool:
     fingerprint: 1e6d862c33e58569
     risk: irreversible
   kagent-tools_k8s_generate_resource:
-    fingerprint: 696addbf6e4b5ec3
+    fingerprint: bdfca60332d70c58
     risk: read
   kagent-tools_k8s_get_available_api_resources:
     fingerprint: 3885f76b734bdf40
