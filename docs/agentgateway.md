@@ -303,13 +303,20 @@ To add a project, request it in the project registry's portal. Once it is
 published, its keys are in Vault within seconds and the gateway knows them after
 the next VSO refresh (a minute); a client that needs one gets a copy entry here.
 
-To rotate a key:
+To rotate a key, use the Keys panel on the project's page in the project
+registry (or its `POST /projects/{id}/keys/{key_id}/rotate`); the project's
+owners and the platform team may, and it is not a change request:
 
-1. Add a second id, such as `holmes-2`, to the project or agent in the registry.
-2. Move the client's copy to the new key id.
-3. Remove the old id in the registry. OPA refuses the old key as soon as the new
-   bundle is live (`key holmes is not active for project holmes`), and the
-   registry drops it from both maps.
+1. The publisher gives the key id a fresh key in both maps within seconds. The
+   previous key stays in the gateway's map only, as `<key id>.previous` with the
+   same metadata, so OPA, the limits, usage and alerts see the same key id.
+2. Each client's copy takes the new key on its next refresh (15 s). A client
+   that reads its key from an environment variable needs a restart.
+3. The previous key is dropped when the grace period ends: 24 hours by default,
+   up to 7 days, or 0 to revoke it at once (a key that leaked). `Revoke it now`
+   on the same panel ends it early.
+
+`GatewayKeyOld` says when a key id's key is 90 days old.
 
 ## Agents
 
@@ -792,7 +799,7 @@ cluster enforces NetworkPolicy, so any pod can reach it there.
   Open WebUI projects), not a per-call gateway project like LiteLLM's.
 - **Alerts.** Prometheus rules in
   `minikube/gitops/app-resources/alerts/agentgateway-projects.yml`, edited by hand:
-  six alerts and two recording rules whatever the number of projects, keys or models. The
+  seven alerts and two recording rules whatever the number of projects, keys or models. The
   budget forecast joins the spend with `project_budget_usd`, and the price drift alert
   the tokens with `model_price_usd_per_million_tokens`, both exported by the project
   registry, so they use each project's current budget and each model's current price; a key's budget alert compares two of the registry's series, `key_spend_30d_usd` and `key_budget_usd`. They show in Grafana under Alerting;
@@ -802,6 +809,7 @@ cluster enforces NetworkPolicy, so any pod can reach it there.
   |---|---|
   | `GatewayProjectBudgetForecast` | The last 24 hours of spend, times 30, is over 80% of the project's 30-day budget, for 30 minutes |
   | `GatewayKeyBudgetHigh` | A key with a budget of its own (`key_limits`) has spent over 80% of it in the last 30 days, by the registry's usage ledger (hourly, so up to an hour late), for 30 minutes |
+  | `GatewayKeyOld` | A key id's current key was issued over 90 days ago, by the project registry's `gateway_key_issued_timestamp_seconds` (info) |
   | `GatewayProjectRateLimited` | The gateway answered 429 to a project because of its own limit or budget, or one of its keys' own (`reason="RateLimit"`), in the last 10 minutes |
   | `GatewayUpstreamThrottled` | A provider answered 429 five times or more in 15 minutes (`reason="Upstream"`), usually the Vertex quota |
   | `GatewayModelPriceDrift` | Over 6 hours, what the gateway charged for a model (its own price table, what budgets use) differs by over 10% from its tokens at the catalog price, for 30 minutes; a model the gateway's table doesn't know is charged $0 |
