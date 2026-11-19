@@ -26,6 +26,17 @@ groups:
     annotations:
       summary: 'Key {{ $labels.key_id }} of {{ $labels.project }} has used over 80% of its own budget'
       description: It spent {{ $value | printf "%.2f" }} USD in the last 30 days (usage ledger). At its budget the gateway answers 429 for this key only. Raise the key's budget in the project registry (the project's per-key limits) or find the caller.
+  # Keys not rotated for 90 days. The project registry serves when each key id's
+  # current key was issued (a key from before it kept this: when it first saw
+  # it); rotating it in the portal resets it and keeps the key id.
+  - alert: GatewayKeyOld
+    expr: time() - max by (project, key_id) (gateway_key_issued_timestamp_seconds) > 90 * 86400
+    for: 1h
+    labels:
+      severity: info
+    annotations:
+      summary: 'Key {{ $labels.key_id }} of {{ $labels.project }} has not been rotated for 90 days'
+      description: 'Its current key was issued {{ $value | humanizeDuration }} ago. Rotate it on the project''s page in the project registry: the key id stays, and the previous key works for the grace period.'
   - alert: GatewayProjectRateLimited
     expr: sum by (project) (increase(agentgateway_requests_total{gateway="mini-platform/agentgateway-proxy",reason="RateLimit"}[10m])) > 0
     labels:
