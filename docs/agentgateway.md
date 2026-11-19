@@ -278,11 +278,12 @@ scope:
 Their limits and budgets are under "Rate limits and budgets".
 
 The project registry issues the keys: its publisher writes two maps in Vault
-from its records, after each data bundle and every five minutes (its
-`registry/keys.py`):
+from its records, after each data bundle, every five minutes and at once for a
+rotation asked for or a grace period that ends (its `registry/keys.py`):
 
 - `mini-platform/agentgateway-api-keys` is what the gateway reads: one entry per
-  key id, `{"key": ..., "metadata": {"project": ..., "key_id": ...}}`.
+  key id, `{"key": ..., "metadata": {"project": ..., "key_id": ...}}`, plus
+  `<key id>.previous` for a rotated key during its grace period (below).
 - `mini-platform/agentgateway-client-keys` holds the raw keys under the same
   ids.
 
