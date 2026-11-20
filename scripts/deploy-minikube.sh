@@ -755,6 +755,10 @@ start_args=(
   # what tools/99-rootless-k8s-netlink.conf lifts. It is GA since v1.33 but
   # still not the default, so it has to be asked for.
   --extra-config=kube-proxy.mode=nftables
+  # The kubelet's default of 110 pods per node is less than the platform runs on its
+  # one node (about 115, more while CronJobs and rollouts run): the gateway's OPA
+  # replicas, OPA Control Plane and the admission fleet passed it.
+  --extra-config=kubelet.max-pods=250
   --cpus=8
   # Must stay ahead of the platform's total pod memory *requests*, which is not
   # the usual "give the VM enough RAM" sizing argument. On the docker driver

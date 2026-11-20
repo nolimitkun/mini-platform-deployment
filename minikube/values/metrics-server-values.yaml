@@ -1,0 +1,9 @@
+# metrics-server: CPU and memory of pods for HorizontalPodAutoscalers (the
+# gateway's OPA, opa-policy). Prometheus stays the place for metrics; this only
+# serves the resource metrics API (metrics.k8s.io).
+args:
+  # minikube's kubelet serves a self-signed certificate without the node's IP.
+  - --kubelet-insecure-tls
+resources:
+  requests: {cpu: 50m, memory: 64Mi}
+  limits: {memory: 256Mi}
