@@ -27,7 +27,7 @@ policy:
 # in kagent-resources.yaml): the registry checks it against this branch.
 kagentWiring:
   repo: https://github.com/nolimitkun/mini-platform-deployment.git
-  ref: feat/ocp-admission   # TRY: back to main before the merge
+  ref: main
 
 # The gateway's model routes: once a policy commit is active, the publisher
 # packages its charts/gateway-models with the catalog and publishes it to this
