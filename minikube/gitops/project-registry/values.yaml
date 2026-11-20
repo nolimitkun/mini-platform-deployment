@@ -17,7 +17,7 @@ policy:
   # the policy is this directory of the repository (policy/README.md there); a commit
   # that changes nothing in it is followed without a change request
   subdir: policy
-  ref: feat/ocp-admission   # TRY: back to main before the merge
+  ref: main
   dir: policies/gateway
   # how often the branch is checked (seconds)
   poll: "15"
