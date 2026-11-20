@@ -1,0 +1,52 @@
+{{- $v := .Values }}
+# The layout: bundles, the stack, and the sources as placeholders. The registry
+# owns the sources' contents: it sets admission and platform to git at its active
+# policy commit, and pushes the facts into registry (registry/ocp.py). A bundle
+# can't require a source this config lacks, and OCP reloads it on a restart,
+# resetting those sources until the registry pins them again (within 30 s).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ocp-config
+data:
+  config.yaml: |
+    database:
+      sql:
+        driver: sqlite3
+        dsn: /data/ocp.db
+    tokens:
+      registry:
+        api_key: ${OCP_API_TOKEN}
+        scopes:
+        - role: administrator
+    secrets:
+      minio-writer:
+        type: aws_auth
+        access_key_id: ${AWS_ACCESS_KEY_ID}
+        secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+    sources:
+      admission: {}
+      platform: {}
+      registry: {}
+    # The platform library in every bundle labelled fleet: admission, under its own
+    # package name (automount false: OCP would rename it under stacks.platform).
+    stacks:
+      platform:
+        selector:
+          fleet: [admission]
+        requirements:
+        - source: platform
+          automount: false
+    bundles:
+      admission:
+        labels: {fleet: admission}
+        object_storage:
+          aws:
+            url: {{ $v.minio.url }}
+            bucket: {{ $v.minio.bucket }}
+            key: admission/bundle.tar.gz
+            region: {{ $v.minio.region }}
+            credentials: minio-writer
+        requirements:
+        - source: admission
+        - source: registry

@@ -80,6 +80,11 @@ buckets:
   # Argo CD reads (gateway-models application): anonymous download, as Argo CD's
   # Helm repositories don't sign S3 requests. Model names, in-cluster backends
   # and secret names, no secret.
+  # OPA Control Plane's bundles for the platform's other OPA fleets (unsigned:
+  # only OCP's account may write here, which is what those fleets trust).
+  - name: ocp-bundles
+    policy: none
+    purge: false
   - name: gateway-models
     policy: download
     purge: false
@@ -131,6 +136,19 @@ policies:
         actions: ["s3:GetObject"]
       - resources: ["arn:aws:s3:::opa-bundles"]
         actions: ["s3:GetBucketLocation", "s3:ListBucket"]
+  # OPA Control Plane writes its fleets' bundles; the fleets read them.
+  - name: ocp-bundles-write
+    statements:
+      - resources: ["arn:aws:s3:::ocp-bundles/*"]
+        actions: ["s3:GetObject", "s3:PutObject"]
+      - resources: ["arn:aws:s3:::ocp-bundles"]
+        actions: ["s3:GetBucketLocation", "s3:ListBucket"]
+  - name: ocp-bundles-read
+    statements:
+      - resources: ["arn:aws:s3:::ocp-bundles/*"]
+        actions: ["s3:GetObject"]
+      - resources: ["arn:aws:s3:::ocp-bundles"]
+        actions: ["s3:GetBucketLocation", "s3:ListBucket"]
   # The onboarding pipeline: publishes weights (write, never delete: a
   # published revision is permanent), and reads and writes its own buckets.
   - name: model-onboarding
@@ -159,6 +177,14 @@ users:
     existingSecret: opa-bundles-reader
     existingSecretKey: AWS_SECRET_ACCESS_KEY
     policy: opa-bundles-read
+  - accessKey: ocp-builder
+    existingSecret: ocp-bundles-writer
+    existingSecretKey: AWS_SECRET_ACCESS_KEY
+    policy: ocp-bundles-write
+  - accessKey: opa-admission
+    existingSecret: ocp-bundles-reader
+    existingSecretKey: AWS_SECRET_ACCESS_KEY
+    policy: ocp-bundles-read
   - accessKey: registry-api
     existingSecret: registry-api-s3
     existingSecretKey: AWS_SECRET_ACCESS_KEY

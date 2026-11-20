@@ -7,3 +7,7 @@ routes:
     host: registry.test
     service: project-registry
     port: 8080
+
+vaultSecrets:
+  # OPA Control Plane's API key (ocp application): the publisher pins OCP's sources with it.
+  - ocp-api

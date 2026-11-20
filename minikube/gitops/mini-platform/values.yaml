@@ -295,6 +295,14 @@ applications:
     resourcesFile: minikube/values/opa-policy-resources.yaml
     releaseName: opa-policy
     wave: "0"
+  # The admission OPA fleet and the OPA Control Plane that builds its bundle, pinned
+  # by the project registry (nolimitkun/project-registry docs/design.md "Where OCP is").
+  opa-admission:
+    chartPath: minikube/gitops/opa-admission
+    valuesFile: minikube/gitops/opa-admission/values.yaml
+    releaseName: opa-admission
+    wave: "1"
+    retry: true
   # The project registry (nolimitkun/project-registry docs/design.md): projects, agents and
   # exceptions as change requests with approvals decided by policy, published
   # as the signed gateway-projects bundle. Its own database first.

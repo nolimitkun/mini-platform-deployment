@@ -1,0 +1,35 @@
+# OPA Control Plane: builds the admission fleet's bundle (policies/admission of the
+# project registry's policy/, with the policies/platform stack and the registry's
+# facts) into MinIO. One replica: OCP doesn't document running several.
+ocp:
+  image: openpolicyagent/opa-control-plane:v0.11.0
+  # Its state (SQLite: the sources the registry pinned, the pushed facts, build
+  # status) on a volume; the registry pins it again if it is lost (registry/ocp.py).
+  storage: 1Gi
+  # OCP's API key, which the registry's publisher also reads (Vault ocp-api).
+  apiSecret: ocp-api
+
+# The admission fleet: plain OPA answering the API server's AdmissionReviews
+# over TLS (cert-manager), from OCP's bundle.
+admission:
+  image: openpolicyagent/opa:1.22.2-static
+  replicas: 2
+  # Who it is asked about: these namespaces' Pods, VaultStaticSecrets and
+  # LLMInferenceServices.
+  namespaces: [mini-platform, model-onboarding, model-hprd, model-prod]
+  # Ignore: an unreachable OPA (or a bundle OCP hasn't built yet) admits. The
+  # rules only warn until one is in the policy's admission config.enforce.
+  failurePolicy: Ignore
+  timeoutSeconds: 5
+
+minio:
+  url: http://minio.mini-platform.svc.cluster.local:9000
+  bucket: ocp-bundles
+  region: us-east-1
+  writerSecret: ocp-bundles-writer
+  readerSecret: ocp-bundles-reader
+
+# How often the fleet checks MinIO for a new bundle (seconds).
+polling:
+  minDelaySeconds: 10
+  maxDelaySeconds: 20

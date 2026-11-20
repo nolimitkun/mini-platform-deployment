@@ -13,6 +13,9 @@ vaultSecrets:
   # waves) read the same Secrets.
   - opa-bundles-writer
   - opa-bundles-reader
+  # OPA Control Plane's account and the admission fleet's (ocp-bundles).
+  - ocp-bundles-writer
+  - ocp-bundles-reader
   # The project registry API's account: what it reads, and a rollback's two objects.
   - registry-api-s3
   # The model weight store's accounts (minio-values.yaml). The pipeline and

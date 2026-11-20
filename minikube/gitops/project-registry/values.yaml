@@ -1,6 +1,6 @@
 # The registry API, the publisher and the one-off import, all one image
 # (github.com/nolimitkun/project-registry). Design: nolimitkun/project-registry docs/design.md.
-image: ghcr.io/nolimitkun/project-registry:sha-3d62c0b05ac6a148c5da824e650c62eee2dadd9e
+image: ghcr.io/nolimitkun/project-registry:sha-be33299224f2a8dce84e899d5022c1466c2a9477
 
 # DATABASE_URL, from Vault (project-registry-db), for project-registry-postgresql.
 databaseSecret: project-registry-db
@@ -17,7 +17,7 @@ policy:
   # the policy is this directory of the repository (policy/README.md there); a commit
   # that changes nothing in it is followed without a change request
   subdir: policy
-  ref: main
+  ref: feat/ocp-admission   # TRY: back to main before the merge
   dir: policies/gateway
   # how often the branch is checked (seconds)
   poll: "15"
@@ -27,7 +27,7 @@ policy:
 # in kagent-resources.yaml): the registry checks it against this branch.
 kagentWiring:
   repo: https://github.com/nolimitkun/mini-platform-deployment.git
-  ref: main
+  ref: feat/ocp-admission   # TRY: back to main before the merge
 
 # The gateway's model routes: once a policy commit is active, the publisher
 # packages its charts/gateway-models with the catalog and publishes it to this
@@ -44,6 +44,13 @@ gatewayModels:
 # with the signing role's Vault token (policy gateway-keys, deploy-minikube.sh).
 gatewayKeys:
   mount: mini-platform
+
+# OPA Control Plane (the ocp application): the publisher pins its fleet sources to
+# the active policy commit and pushes the active records' facts (its registry/ocp.py).
+# The token is OCP's API key for the registry (Vault ocp-api, both sides read it).
+ocp:
+  url: http://ocp.mini-platform.svc.cluster.local:8282
+  tokenSecret: ocp-api
 
 # The bundle store and signing (OPA's side: opa-policy values.yaml).
 bundles:

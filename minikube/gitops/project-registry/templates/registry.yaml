@@ -143,6 +143,10 @@ spec:
             - {name: GATEWAY_MODELS_BUCKET, value: {{ .Values.gatewayModels.bucket | quote }}}
             - {name: GATEWAY_MODELS_ARGO_APP, value: {{ .Values.gatewayModels.argoApp | default "" | quote }}}
             - {name: GATEWAY_KEYS_MOUNT, value: {{ .Values.gatewayKeys.mount | quote }}}
+            {{- with .Values.ocp }}
+            - {name: OCP_URL, value: {{ .url | quote }}}
+            - {name: OCP_TOKEN, valueFrom: {secretKeyRef: {name: {{ .tokenSecret }}, key: OCP_API_TOKEN}}}
+            {{- end }}
           resources:
             requests: {cpu: 50m, memory: 128Mi}
             limits: {memory: 1Gi}
