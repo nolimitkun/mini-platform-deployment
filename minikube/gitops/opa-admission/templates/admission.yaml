@@ -59,12 +59,13 @@ spec:
           ports:
             - {name: https, containerPort: 8443}
             - {name: diag, containerPort: 8282}
+          # HTTPS: OPA serves its diagnostic port with the same certificate.
           # Ready once the bundle is loaded; until then the API server's call fails
           # and the webhook's failurePolicy (Ignore) admits.
           readinessProbe:
-            httpGet: {path: "/health?bundles", port: diag}
+            httpGet: {path: "/health?bundles", port: diag, scheme: HTTPS}
           livenessProbe:
-            httpGet: {path: /health, port: diag}
+            httpGet: {path: /health, port: diag, scheme: HTTPS}
           resources:
             requests: {cpu: 20m, memory: 64Mi}
             limits: {memory: 256Mi}
