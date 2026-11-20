@@ -55,7 +55,10 @@ per model, allowed tools, the model behind `auto`) and per-project data come in
 two signed bundles, both published by the **project registry** once a change is
 approved: the Rego from its policy/ directory, the project data from its own records
 ([the project registry's design](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)). OPA verifies both. Each project's limits, and each key's own, travel with OPA's decision, and a rate-limit service counts against them. **agentregistry** is the
-catalog of MCP servers and the registered agents. See [docs/agentgateway.md](docs/agentgateway.md).
+catalog of MCP servers and the registered agents. A second OPA fleet checks the
+platform's own workloads at admission (gateway key copies, model deployments, who
+reads the gateway's key map) against the registry's records; **OPA Control Plane**
+builds its bundle from what the registry pins. See [docs/agentgateway.md](docs/agentgateway.md).
 
 Supporting subsystems:
 
@@ -540,6 +543,7 @@ shared `minikube/gitops/app-resources` chart rendered against a sibling
 | `mini-platform-agentgateway` | `charts/agentgateway` | `minikube/values/agentgateway-values.yaml` |
 | `mini-platform-agentgateway-config` | `minikube/gitops/agentgateway-config` | `minikube/gitops/agentgateway-config/values.yaml` |
 | `mini-platform-opa-policy` | `minikube/gitops/opa-policy` | `minikube/gitops/opa-policy/values.yaml` |
+| `mini-platform-opa-admission` | `minikube/gitops/opa-admission` | `minikube/gitops/opa-admission/values.yaml` |
 | `mini-platform-semantic-router` | `charts/semantic-router` | `minikube/values/semantic-router-values.yaml` |
 | `mini-platform-rate-limit` | `minikube/gitops/rate-limit` | `minikube/gitops/rate-limit/values.yaml` |
 | `mini-platform-project-registry-postgresql` | `charts/postgresql` | `minikube/values/project-registry-postgresql-values.yaml` |

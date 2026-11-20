@@ -1,0 +1,28 @@
+{{- $v := .Values }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-admission-config
+data:
+  config.yaml: |
+    services:
+      minio:
+        url: {{ $v.minio.url }}/{{ $v.minio.bucket }}
+        credentials:
+          s3_signing:
+            environment_credentials: {}
+    # OCP's build of policies/admission and the policies/platform stack, with the
+    # registry's facts. Unsigned (OCP can't sign): only OCP's account may write it.
+    bundles:
+      admission:
+        service: minio
+        resource: admission/bundle.tar.gz
+        persist: true
+        polling:
+          min_delay_seconds: {{ $v.polling.minDelaySeconds }}
+          max_delay_seconds: {{ $v.polling.maxDelaySeconds }}
+    # POST / answers with data.system.main: the AdmissionReview (policies/admission/main.rego).
+    default_decision: /system/main
+    # Every decision to stdout (Loki), like the gateway's.
+    decision_logs:
+      console: true

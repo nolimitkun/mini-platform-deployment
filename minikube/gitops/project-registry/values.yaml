@@ -1,6 +1,6 @@
 # The registry API, the publisher and the one-off import, all one image
 # (github.com/nolimitkun/project-registry). Design: nolimitkun/project-registry docs/design.md.
-image: ghcr.io/nolimitkun/project-registry:sha-3d62c0b05ac6a148c5da824e650c62eee2dadd9e
+image: ghcr.io/nolimitkun/project-registry:sha-19c020f373b5ade0e664d863b9387928a73ff8ba
 
 # DATABASE_URL, from Vault (project-registry-db), for project-registry-postgresql.
 databaseSecret: project-registry-db
@@ -44,6 +44,13 @@ gatewayModels:
 # with the signing role's Vault token (policy gateway-keys, deploy-minikube.sh).
 gatewayKeys:
   mount: mini-platform
+
+# OPA Control Plane (the ocp application): the publisher pins its fleet sources to
+# the active policy commit and pushes the active records' facts (its registry/ocp.py).
+# The token is OCP's API key for the registry (Vault ocp-api, both sides read it).
+ocp:
+  url: http://ocp.mini-platform.svc.cluster.local:8282
+  tokenSecret: ocp-api
 
 # The bundle store and signing (OPA's side: opa-policy values.yaml).
 bundles:

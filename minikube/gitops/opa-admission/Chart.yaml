@@ -1,0 +1,9 @@
+apiVersion: v2
+name: opa-admission
+description: >-
+  The platform's admission OPA fleet and the OPA Control Plane (OCP) that builds
+  its bundle. The project registry pins OCP's sources to its active policy commit
+  and pushes the active records' facts, so OCP builds only what the registry has
+  approved. Kubernetes asks the fleet about workloads in the platform's namespaces.
+type: application
+version: 0.1.0

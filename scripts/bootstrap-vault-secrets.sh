@@ -383,6 +383,17 @@ kv_put mini-platform/opa-bundles-writer \
 kv_put mini-platform/opa-bundles-reader \
   AWS_ACCESS_KEY_ID=opa \
   AWS_SECRET_ACCESS_KEY="$(rand_b64)"
+# OPA Control Plane's MinIO account (writes ocp-bundles) and the admission fleet's
+# (reads it), and OCP's API key, which the project registry's publisher uses to pin
+# OCP's sources.
+kv_put mini-platform/ocp-bundles-writer \
+  AWS_ACCESS_KEY_ID=ocp-builder \
+  AWS_SECRET_ACCESS_KEY="$(rand_b64)"
+kv_put mini-platform/ocp-bundles-reader \
+  AWS_ACCESS_KEY_ID=opa-admission \
+  AWS_SECRET_ACCESS_KEY="$(rand_b64)"
+kv_put mini-platform/ocp-api \
+  OCP_API_TOKEN="$(rand_b64)"
 # The project registry API's own, narrower account (minio-values.yaml registry-api).
 kv_put mini-platform/registry-api-s3 \
   AWS_ACCESS_KEY_ID=registry-api \
