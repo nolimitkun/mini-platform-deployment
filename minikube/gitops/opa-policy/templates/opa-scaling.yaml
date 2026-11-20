@@ -1,0 +1,36 @@
+{{- $v := .Values }}
+# Every replica pulls both signed bundles from MinIO on its own and reports its
+# revisions to the registry, which marks a change active once every ready pod
+# has it; a pod is ready only once its bundles are loaded. So replicas can come
+# and go (the HPA, a drain) without a decision from an unloaded OPA.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: opa
+  labels: {app.kubernetes.io/name: opa}
+spec:
+  minAvailable: {{ $v.opa.minAvailable }}
+  selector:
+    matchLabels: {app.kubernetes.io/name: opa}
+{{- if $v.opa.autoscaling.enabled }}
+---
+# On CPU: a decision is CPU-bound (no I/O; the bundles are in memory). Needs
+# metrics-server.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: opa
+  labels: {app.kubernetes.io/name: opa}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: opa}
+  minReplicas: {{ $v.opa.autoscaling.minReplicas }}
+  maxReplicas: {{ $v.opa.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: {{ $v.opa.autoscaling.cpuUtilization }}}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+{{- end }}

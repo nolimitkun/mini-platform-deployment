@@ -5,7 +5,9 @@ metadata:
   name: opa
   labels: {app.kubernetes.io/name: opa}
 spec:
+  {{- if not $v.opa.autoscaling.enabled }}
   replicas: {{ $v.opa.replicas }}
+  {{- end }}
   selector:
     matchLabels: {app.kubernetes.io/name: opa}
   template:
@@ -20,6 +22,12 @@ spec:
         checksum/config: {{ include (print $.Template.BasePath "/opa-config.yaml") . | sha256sum | trunc 16 }}
     spec:
       automountServiceAccountToken: false
+      # Replicas on different nodes when there are several; one node takes them all.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app.kubernetes.io/name: opa}}
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -54,8 +62,7 @@ spec:
           livenessProbe:
             httpGet: {path: /health, port: diag}
           resources:
-            requests: {cpu: 50m, memory: 128Mi}
-            limits: {memory: 512Mi}
+            {{- toYaml $v.opa.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

@@ -37,7 +37,19 @@ minio:
 # OPA with the Envoy ext_authz gRPC plugin: agentgateway's extAuth backend.
 opa:
   image: openpolicyagent/opa:1.22.2-envoy-static
-  replicas: 1
+  # Without autoscaling; with it, minReplicas.
+  replicas: 3
+  # The PodDisruptionBudget: a drain or a rollout keeps this many serving.
+  minAvailable: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    cpuUtilization: 70
+  # The HPA's utilization is relative to the CPU request.
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {memory: 512Mi}
   grpcPort: 9191
   # The rule agentgateway's verdict comes from (policies/gateway/authz.rego).
   decision: gateway/authz/decision

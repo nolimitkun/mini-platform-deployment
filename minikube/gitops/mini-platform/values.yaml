@@ -18,6 +18,7 @@ destination:
 # model-serving application creates and fills (minikube/gitops/model-serving).
 extraNamespaces:
   - cert-manager
+  - kube-system         # metrics-server
   - lws-system
   - kserve
   - model-onboarding
@@ -200,6 +201,13 @@ applications:
     wave: "-2"
     retry: true
     serverSideDiff: true
+  # Resource metrics for HorizontalPodAutoscalers (the gateway's OPA).
+  metrics-server:
+    chartPath: charts/metrics-server
+    valuesFile: minikube/values/metrics-server-values.yaml
+    releaseName: metrics-server
+    namespace: kube-system
+    wave: "-2"
   prometheus:
     chartPath: charts/prometheus
     valuesFile: minikube/values/prometheus-values.yaml
