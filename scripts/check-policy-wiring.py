@@ -11,7 +11,8 @@ so both must agree:
   - the vLLM Semantic Router's decisions (semantic-router-values.yaml) route to
     exactly the catalog's task classes, auto-<task>, and so does its default;
   - the gateway admits routes from the catalog's serving namespaces
-    (agentgateway-config values servingNamespaces).
+    (agentgateway-config values servingNamespaces), and the project registry
+    may read the model deployments there (project-registry values servingNamespaces).
 """
 import sys
 from pathlib import Path
@@ -22,6 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 GATEWAY_VALUES = ROOT / "minikube" / "gitops" / "agentgateway-config" / "values.yaml"
 VSR_VALUES = ROOT / "minikube" / "values" / "semantic-router-values.yaml"
 SEED = ROOT / "minikube" / "gitops" / "project-registry" / "files" / "seed.yaml"
+REGISTRY_VALUES = ROOT / "minikube" / "gitops" / "project-registry" / "values.yaml"
 
 
 def main() -> int:
@@ -35,6 +37,10 @@ def main() -> int:
     if set(gateway.get("servingNamespaces") or []) != set(catalog.get("servingNamespaces") or []):
         errors.append(f"{GATEWAY_VALUES.relative_to(ROOT)}: servingNamespaces {gateway.get('servingNamespaces')} are not "
                       f"the catalog's {catalog.get('servingNamespaces')}")
+    registry = yaml.safe_load(REGISTRY_VALUES.read_text()) or {}
+    if set(registry.get("servingNamespaces") or []) != set(catalog.get("servingNamespaces") or []):
+        errors.append(f"{REGISTRY_VALUES.relative_to(ROOT)}: servingNamespaces {registry.get('servingNamespaces')} are "
+                      f"not the catalog's {catalog.get('servingNamespaces')}")
     targets = set((gateway.get("mcp") or {}).get("targets") or {})
     if targets != set(tools.get("targets") or []):
         errors.append(f"{GATEWAY_VALUES.relative_to(ROOT)}: mcp.targets {sorted(targets)} are not the "
