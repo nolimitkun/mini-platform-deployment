@@ -100,10 +100,13 @@ keycloak:
   clientId: project-registry
 
 # The publisher replays this window of OPA's decision log (Loki) before every
-# publish: a change may change decisions only for the projects it touches.
+# publish: a change may change decisions only for the projects it touches. A week,
+# Loki's retention (loki-values.yaml): a day of this platform's traffic can be a
+# handful of decisions, too few to show a change's effect. The most recent `limit`
+# of them count; each replay evaluates them in one OPA run.
 replay:
   lokiUrl: http://loki.mini-platform.svc.cluster.local:3100
-  since: 24h
+  since: 168h
   limit: "2000"
 # Approved changes are batched: at most one publish this often (seconds).
 publishInterval: "30"
