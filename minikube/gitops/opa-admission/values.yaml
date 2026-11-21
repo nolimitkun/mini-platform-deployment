@@ -17,8 +17,8 @@ admission:
   # Who it is asked about: these namespaces' Pods, VaultStaticSecrets and
   # LLMInferenceServices.
   namespaces: [mini-platform, model-onboarding, model-hprd, model-prod]
-  # Ignore: an unreachable OPA (or a bundle OCP hasn't built yet) admits. The
-  # rules only warn until one is in the policy's admission config.enforce.
+  # Ignore: an unreachable OPA (or a bundle OCP hasn't built yet) admits. A rule
+  # warns until it is in the policy's admission config.enforce, then denies.
   failurePolicy: Ignore
   timeoutSeconds: 5
 

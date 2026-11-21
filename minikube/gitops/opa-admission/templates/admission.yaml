@@ -104,8 +104,9 @@ spec:
   ports:
     - {name: https, port: 443, targetPort: https}
 ---
-# Report-only until a rule is enforced (the policy's admission config.enforce): the
-# API server shows the fleet's warnings to whoever applies (kubectl, Argo CD).
+# A rule's findings are warnings, which the API server shows to whoever applies
+# (kubectl, Argo CD), until the rule is in the policy's admission config.enforce;
+# then they are denials.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:

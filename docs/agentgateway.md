@@ -63,7 +63,7 @@ flowchart LR
 | Gateway config | `agentgateway-config` (`minikube/gitops/agentgateway-config`) | The `agentgateway-proxy` Gateway, the merged MCP endpoint, and policies for API keys, OPA, the semantic router, rate limits, the model list, metrics labels and tracing |
 | Model routes | `gateway-models` (a chart from the project registry's Helm repository in MinIO) | One `AgentgatewayModel` per model, the `auto` virtual models and the passthrough routes to Google's APIs, from the approved policy's catalog (the policy's `charts/gateway-models`) |
 | OPA | `opa-policy` (`minikube/gitops/opa-policy`) | `opa-envoy`, answering ext_authz over gRPC on `opa:9191`: 3 to 10 replicas (an HPA on CPU, through `metrics-server`) and a PodDisruptionBudget keeping 2. Each replica pulls the signed bundles itself and reports its revisions to the registry, which marks a change active once every ready replica has it; a replica is ready only once its bundles are loaded. The gateway spreads its calls across the replicas |
-| Admission OPA and OPA Control Plane | `opa-admission` (`minikube/gitops/opa-admission`) | A second OPA fleet (2 replicas) behind a `ValidatingWebhookConfiguration` for Pods, VaultStaticSecrets and LLMInferenceServices in `mini-platform` and the model namespaces: a gateway key copy must name a key id the registry lists, a serving namespace's deployment must be a catalog model's, and only `mini-platform` may read `agentgateway-api-keys`. A finding is a warning until its rule is in the policy's `admission/config.rego` `enforce`, and then a denial: Pods outside `mini-platform` that read `agentgateway-api-keys` are denied, the other two rules warn. The webhook's `failurePolicy: Ignore` admits everything while the fleet is down. Its bundle comes from OPA Control Plane, which the registry pins: OCP's git sources (the policy's `policies/admission`, and `policies/platform` through a stack) at the active policy commit, and the active records' facts pushed as `data.registry`. A registry change reaches the fleet in about 40 s. The bundle is unsigned (OCP can't sign), in its own bucket (`ocp-bundles`) that only OCP's MinIO account writes. OCP is not in the gateway's chain |
+| Admission OPA and OPA Control Plane | `opa-admission` (`minikube/gitops/opa-admission`) | A second OPA fleet (2 replicas) behind a `ValidatingWebhookConfiguration` for Pods, VaultStaticSecrets and LLMInferenceServices in `mini-platform` and the model namespaces: a gateway key copy must name a key id the registry lists, a serving namespace's deployment must be a catalog model's, and only `mini-platform` may read `agentgateway-api-keys`. A finding is a warning until its rule is in the policy's `admission/config.rego` `enforce`, and then a denial: Pods outside `mini-platform` that read `agentgateway-api-keys` are denied, the other two rules warn. KServe's own dry-run copies of a deployment (`<deployment>-validation-<suffix>`, sent by its controller to validate it) are not deployments and aren't checked. The webhook's `failurePolicy: Ignore` admits everything while the fleet is down. Its bundle comes from OPA Control Plane, which the registry pins: OCP's git sources (the policy's `policies/admission`, and `policies/platform` through a stack) at the active policy commit, and the active records' facts pushed as `data.registry`. A registry change reaches the fleet in about 40 s. The bundle is unsigned (OCP can't sign), in its own bucket (`ocp-bundles`) that only OCP's MinIO account writes. OCP is not in the gateway's chain |
 | Project registry | `project-registry`, `project-registry-postgresql` | Publishes both of OPA's bundles, signed with Vault Transit, to MinIO (`opa-bundles/`). Projects, agents, exceptions and the catalog (models, Google APIs, MCP tools, settings) are change requests with approvals (`gateway-projects`). A commit on the registry's `main` that changes a bundle (its `policy/`) is a policy change request, tested and replayed, published once approved (`gateway-policy`). It also publishes the `gateway-models` chart and writes the gateway's API keys to Vault. A portal at `registry.test/portal/`, and a daily snapshot of the records to the bundle store ([its design](https://github.com/nolimitkun/project-registry/blob/main/docs/design.md)) |
 | Rate-limit service | `rate-limit` (`minikube/gitops/rate-limit`) | Counts each project's requests, tokens and spend in Redis, and each key's that has limits of its own; the limits come from OPA with each request (see "Rate limits and budgets") |
 | vLLM Semantic Router | `semantic-router` | Classifies `auto` prompts into task classes for the gateway, over ext_proc (see "The semantic router") |
@@ -583,8 +583,18 @@ so a missing rankings bundle would make OPA unready and the gateway refuse
 everything.
 
 Catalog prices are the rates agentgateway v1.7.0's built-in price table bills
-in USD per million tokens, checked against its cost metrics. On-prem Qwen has
-no per-token charge, so `cheapest` picks it whenever a project may use it.
+in USD per million tokens, checked against its cost metrics. On-prem models have
+no per-token charge, so `cheapest` picks `qwen3.6-27b` whenever a project may
+use it.
+
+A catalog model with `auto: false` is left out of the cheapest and fastest
+orders: only a caller that names it, or `fixed:<model>`, gets it, and no task
+list may name it. `qwen2.5-1.5b`, at price 0 and scaled to zero, is one: it
+would otherwise win `cheapest` on its name. The registry also shows every
+change's effect on what `auto` picks, project by project, before it is
+approved, and refuses a change that would move a pick onto a KServe model with
+no replicas (its `registry/picks.py`; it reads the LLMInferenceServices in the
+serving namespaces for this).
 
 Clients reach it through the gateway's virtual models (the registry's
 `gateway-models` chart, `policy/charts/gateway-models/templates/auto.yaml` in
