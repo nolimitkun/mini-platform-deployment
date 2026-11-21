@@ -28,6 +28,33 @@ subjects:
   - kind: ServiceAccount
     name: {{ .Values.serviceAccount }}
 ---
+{{- range .Values.servingNamespaces }}
+# Whether a catalog model's deployment has replicas, for the auto picks a change moves.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: project-registry-model-replicas
+  namespace: {{ . }}
+rules:
+  - apiGroups: [serving.kserve.io]
+    resources: [llminferenceservices]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: project-registry-model-replicas
+  namespace: {{ . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: project-registry-model-replicas
+subjects:
+  - kind: ServiceAccount
+    name: {{ $.Values.serviceAccount }}
+    namespace: {{ $.Release.Namespace }}
+---
+{{- end }}
 {{- with .Values.gatewayModels.argoApp }}
 {{- $app := splitList "/" . }}
 # The publisher may ask Argo CD to refresh the gateway-models Application, and nothing

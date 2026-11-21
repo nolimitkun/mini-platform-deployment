@@ -1,6 +1,6 @@
 # The registry API, the publisher and the one-off import, all one image
 # (github.com/nolimitkun/project-registry). Design: nolimitkun/project-registry docs/design.md.
-image: ghcr.io/nolimitkun/project-registry:sha-e6080ef065cb60e4e4205aa6fb6a844a89cb0f2a
+image: ghcr.io/nolimitkun/project-registry:sha-e3077637e1cbd4746fbb8c0fa5f131e76dc50ac0
 
 # DATABASE_URL, from Vault (project-registry-db), for project-registry-postgresql.
 databaseSecret: project-registry-db
@@ -76,6 +76,14 @@ signing:
   keyVersion: 2
   keyid: opa-bundles-v2
 serviceAccount: project-registry
+
+# The catalog's serving namespaces (the seed's catalog settings; scripts/check-policy-wiring.py
+# keeps them equal). The registry reads LLMInferenceServices there, and only reads: a
+# change that moves a project's model "auto" onto a model with no replicas is refused
+# (its registry/picks.py).
+servingNamespaces:
+  - model-hprd
+  - model-prod
 
 # Who may propose a change and who must approve it: data.portal.may_submit and
 # data.portal.required_approvals on the gateway's OPA (its policy bundle
