@@ -176,7 +176,9 @@ keycloakConfigCli:
         # The project registry's API checks access tokens issued to this client
         # (azp) and reads the groups claim. Public, no secret: its portal page
         # (registry.test/portal/) logs in with the authorization code flow and
-        # PKCE, and the password grant gives a token on the command line.
+        # PKCE, the password grant gives a token on the command line, and the
+        # device grant signs in a script as the person approving its link in the
+        # browser (the model onboarding pipeline's promote-catalog.sh).
         # webOrigins: the page fetches its tokens from Keycloak cross-origin.
         - clientId: project-registry
           name: Project registry
@@ -193,6 +195,7 @@ keycloakConfigCli:
           attributes:
             pkce.code.challenge.method: S256
             post.logout.redirect.uris: http://registry.test/portal/*
+            oauth2.device.authorization.grant.enabled: "true"
           defaultClientScopes: [acr, basic, email, profile, roles, web-origins, groups]
 
         - clientId: grafana
