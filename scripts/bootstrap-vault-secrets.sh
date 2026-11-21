@@ -87,7 +87,14 @@ KAGENT_LANGFUSE_PUBLIC_KEY="${KAGENT_LANGFUSE_PUBLIC_KEY:-$(reuse_or_generate mi
 KAGENT_LANGFUSE_PUBLIC_KEY="${KAGENT_LANGFUSE_PUBLIC_KEY:-lf_pk_$(rand_hex)}"
 KAGENT_LANGFUSE_SECRET_KEY="${KAGENT_LANGFUSE_SECRET_KEY:-$(reuse_or_generate mini-platform/kagent-langfuse-project LANGFUSE_SECRET_KEY)}"
 KAGENT_LANGFUSE_SECRET_KEY="${KAGENT_LANGFUSE_SECRET_KEY:-lf_sk_$(rand_hex)}"
+# Superset's database and Redis passwords are each written twice (the server's
+# secret and superset-env, which Superset reads): reused on a seed-missing pass,
+# so a newly added one of the pair gets the value the other already holds.
+SUPERSET_DB_PASSWORD="${SUPERSET_DB_PASSWORD:-$(reuse_or_generate mini-platform/superset-postgresql password)}"
+SUPERSET_DB_PASSWORD="${SUPERSET_DB_PASSWORD:-$(reuse_or_generate mini-platform/superset-env DB_PASS)}"
 SUPERSET_DB_PASSWORD="${SUPERSET_DB_PASSWORD:-$(rand_hex)}"
+SUPERSET_REDIS_PASSWORD="${SUPERSET_REDIS_PASSWORD:-$(reuse_or_generate mini-platform/superset-redis redis-password)}"
+SUPERSET_REDIS_PASSWORD="${SUPERSET_REDIS_PASSWORD:-$(reuse_or_generate mini-platform/superset-env REDIS_PASSWORD)}"
 SUPERSET_REDIS_PASSWORD="${SUPERSET_REDIS_PASSWORD:-$(rand_hex)}"
 SUPERSET_ADMIN_PASSWORD="${SUPERSET_ADMIN_PASSWORD:-$(rand_b64)}"
 
@@ -374,7 +381,9 @@ kv_put mini-platform/keycloak-registry-users \
   SSO_COST_OWNER_PASSWORD="$(rand_b64)"
 
 # MinIO accounts for the OPA policy bundles: the project registry writes them,
-# OPA reads them.
+# OPA reads them. The writer's account is named ocp from when OPA Control Plane
+# built these bundles; the name stays so existing credentials keep working
+# (minio-values.yaml). OCP's own account now is ocp-builder, below.
 # The access key names the account; the field names are what the AWS SDKs in
 # both read from the environment.
 kv_put mini-platform/opa-bundles-writer \
