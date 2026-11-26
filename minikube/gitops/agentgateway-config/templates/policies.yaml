@@ -21,6 +21,14 @@ spec:
 # Then OPA decides (opa-policy chart; policies/gateway in the registry's policy/). It gets
 # the request with its body, plus the key's project and key id; FailClosed,
 # so an unreachable OPA denies everything rather than allowing it.
+#
+# gRPC calls (content-type application/grpc: Google's streaming speech and TTS)
+# go without the body. The gateway would wait for the end of the request body
+# before asking, and a stream's body ends only when the client stops sending,
+# so a live transcription would get its answer, or its denial, only after the
+# last chunk. OPA decides those by the path (the gRPC service) and the key alone.
+# Nothing is gained by sending a model or MCP call as gRPC: without a body, the
+# rules that read the requested model or tool deny it.
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
@@ -32,17 +40,14 @@ spec:
       name: {{ $v.gatewayName }}
   traffic:
     extAuth:
-      backendRef:
-        name: {{ $v.extAuth.service }}
-        port: {{ $v.extAuth.port }}
-      failureMode: FailClosed
-      forwardBody:
-        maxSize: {{ $v.extAuth.maxBodyBytes }}
-      grpc:
-        # Each entry becomes one metadata_context.filter_metadata struct, so
-        # the value has to be a CEL map, not a bare string.
-        requestMetadata:
-          agentgateway: '{"project": apiKey.project, "key_id": apiKey.key_id}'
+      conditional:
+        - condition: '"content-type" in request.headers && request.headers["content-type"].startsWith("application/grpc")'
+          policy:
+            {{- include "agentgateway-config.opaExtAuth" $v | nindent 12 }}
+        - policy:
+            {{- include "agentgateway-config.opaExtAuth" $v | nindent 12 }}
+            forwardBody:
+              maxSize: {{ int $v.extAuth.maxBodyBytes }}
 ---
 # /v1/models per project. OPA's decision for that path sets x-allowed-models to
 # the models the project may use (policies/gateway/authz.rego), and this answers

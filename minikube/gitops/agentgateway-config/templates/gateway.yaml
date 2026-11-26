@@ -128,6 +128,23 @@ spec:
             kind: AgentgatewayModel
           - group: gateway.networking.k8s.io
             kind: HTTPRoute
+    {{- with $v.grpc }}
+    # gRPC (HTTP/2 without TLS): Google's streaming speech and TTS, routed by
+    # their gRPC service (the project registry's google_api grpcServices). A
+    # listener of its own because the semantic router's policy reads the
+    # request body (vsr.yaml), and a policy that does makes the proxy hold
+    # every request on its listener until the body ends, which for a stream is
+    # when the caller stops talking. Only HTTPRoutes of this namespace.
+    - name: grpc
+      port: {{ .port }}
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
+        kinds:
+          - group: gateway.networking.k8s.io
+            kind: HTTPRoute
+    {{- end }}
 {{- with $v.admin }}
 ---
 # The admin UI, for the SSO-protected ingress only (values.yaml, admin).

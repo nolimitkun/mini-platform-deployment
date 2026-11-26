@@ -201,6 +201,39 @@ curl -s http://agentgateway.test/google/tts/v1/text:synthesize \
   -d '{"input":{"text":"Bonjour"},"voice":{"languageCode":"fr-FR","name":"fr-FR-Chirp3-HD-Aoede"},"audioConfig":{"audioEncoding":"MP3"}}'
 ```
 
+**Streaming speech and TTS (gRPC).** `StreamingRecognize` and
+`StreamingSynthesize` exist only over gRPC. The gateway serves them on a
+listener of its own, port 81 (`grpc` in values.yaml), by service. These are
+the `grpcServices` of the registry's `google_api` records:
+
+| gRPC service | Google API |
+|--------------|------------|
+| `google.cloud.speech.v2.Speech` | Speech-to-Text v2, `eu-speech.googleapis.com` |
+| `google.cloud.texttospeech.v1.TextToSpeech` | Text-to-Speech, `eu-texttospeech.googleapis.com` |
+
+Clients open an insecure (h2c) channel to
+`agentgateway-proxy.mini-platform.svc.cluster.local:81`, and send their key as
+`authorization: Bearer <key>` metadata. The gateway swaps it for the Google
+token, as on the REST routes. With Google's Python client:
+
+```python
+channel = grpc.insecure_channel("agentgateway-proxy.mini-platform.svc.cluster.local:81")
+client = speech_v2.SpeechClient(transport=SpeechGrpcTransport(channel=channel))
+responses = client.streaming_recognize(requests=requests(), metadata=[("authorization", f"Bearer {key}")])
+# first request: recognizer="projects/mini-cloud-499820/locations/eu/recognizers/_" and the streaming config
+```
+
+There is a separate listener because two gateway-wide policies would
+otherwise hold every stream until the caller stops sending:
+
+- **The semantic router's policy reads the request body.** Any policy whose
+  CEL reads `request.body` makes the proxy buffer the whole body on the
+  listener it applies to, whatever its condition. That policy is scoped to the
+  `http` listener.
+- **OPA's ext_authz forwards the body.** It now skips the body for
+  `content-type: application/grpc`. A gRPC call is decided by its service and
+  key. A model or MCP call sent as gRPC has no body, so OPA denies it.
+
 ## Projects and keys
 
 > **The projects, agents and exceptions live in the
