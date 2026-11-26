@@ -115,9 +115,13 @@ exception:
     why: multi-step tool calling the single-GPU local model can't carry; cluster state and telemetry only
 google_api:
   speech:
+    grpcServices:
+    - google.cloud.speech.v2.Speech
     host: eu-speech.googleapis.com
     placement: gcp
   tts:
+    grpcServices:
+    - google.cloud.texttospeech.v1.TextToSpeech
     host: eu-texttospeech.googleapis.com
     placement: gcp
   vertex-eu:
