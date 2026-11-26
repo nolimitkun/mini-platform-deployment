@@ -1,7 +1,11 @@
 {{/* The OPA ext_authz call, shared by the gRPC and HTTP branches of the
      gateway's OPA policy (policies.yaml). */}}
 {{- define "agentgateway-config.opaExtAuth" -}}
+# group and kind spelled out: the API server defaults them in a conditional
+# policy, and Argo CD would otherwise report it as OutOfSync.
 backendRef:
+  group: ""
+  kind: Service
   name: {{ .extAuth.service }}
   port: {{ .extAuth.port }}
 failureMode: FailClosed
