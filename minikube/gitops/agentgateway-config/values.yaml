@@ -61,6 +61,12 @@ rateLimit:
   port: 8081
   domain: agentgateway
 
+# The gRPC listener (gateway.yaml): Google's streaming speech and TTS. Clients
+# use an insecure (h2c) channel to this port with their API key as
+# "authorization: Bearer <key>" metadata.
+grpc:
+  port: 81
+
 # Client API keys, one per key id, written to Vault by the project registry
 # (its registry/keys.py) and copied into this Secret by VSO.
 apiKeysSecret: agentgateway-api-keys

@@ -19,6 +19,9 @@ spec:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: {{ $v.gatewayName }}
+      # Only the http listener: the condition reads the body, which makes the
+      # proxy buffer every request where the policy applies (gateway.yaml, grpc).
+      sectionName: http
   traffic:
     phase: PreRouting
     extProc:
