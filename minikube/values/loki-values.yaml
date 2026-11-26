@@ -40,6 +40,14 @@ loki:
     delete_request_store: filesystem
   analytics:
     reporting_enabled: false
+  # A query's result goes from the querier to the query frontend over gRPC,
+  # which refuses messages over 4 MiB by default: the project registry's replay
+  # (the newest 2000 gateway decisions, about 2.3 KB each) is more than that
+  # when they come from a busy hour, and the query then hangs until the client
+  # gives up. Merged with the chart's own server settings (ports, timeouts).
+  server:
+    grpc_server_max_recv_msg_size: 16777216
+    grpc_server_max_send_msg_size: 16777216
 
 singleBinary:
   replicas: 1
